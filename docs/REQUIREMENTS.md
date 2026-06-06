@@ -3,8 +3,8 @@
 ## Goal
 
 Create a native Linux wlroots compositor prototype in C that recreates the
-provided macOS Tahoe 26 desktop screenshot as closely as practical in one
-iteration.
+provided macOS Tahoe 26 desktop screenshot visually and behaves like a usable
+macOS-style shell prototype.
 
 ## Functional Requirements
 
@@ -23,6 +23,21 @@ iteration.
   Apple-provided asset overrides from ignored paths under `assets/apple/`.
 - Provide a headless `--once` mode that renders one frame and exits for CI-style
   validation.
+- Manage normal Wayland xdg-shell toplevel windows:
+  - map/unmap/destroy,
+  - focus and raise on click,
+  - basic move and resize,
+  - maximize/fullscreen requests,
+  - close focused window from a shortcut.
+- Provide clickable shell areas:
+  - Dock launchers for common apps/actions,
+  - desktop folder/document launchers,
+  - Apple-style menu popover with shell actions.
+- Provide keyboard shortcuts modeled after a Mac-like Command key flow:
+  - Super/Logo+Return launches a terminal,
+  - Super/Logo+Space launches an app picker if available,
+  - Super/Logo+Q closes the focused window,
+  - Super/Logo+Tab cycles focus.
 
 ## Non-Functional Requirements
 
@@ -34,10 +49,13 @@ iteration.
 
 ## Scope Boundaries
 
-- This is a visual/technical prototype, not a full macOS clone.
+- This is a visual/technical shell prototype, not a full macOS implementation.
 - Full macOS behavior, proprietary animations, WindowServer compatibility,
   Finder, Notification Center, real Dock app launching, and Apple private APIs
   are out of scope.
+- A production Finder replacement, full menu bar app integration, Mission
+  Control, Spotlight indexing, real LaunchServices, notarization, iCloud,
+  Continuity, and system settings backends are out of scope.
 - Exact Apple fonts, shipped wallpaper, official icons, and trademarks are only
   loaded if the user provides local licensed files; the repo ships replacements.
 
@@ -49,4 +67,6 @@ iteration.
 - `WLR_BACKENDS=headless build/tahoe-wlroots --headless --once` renders and
   exits successfully.
 - Runtime logs include selected renderer type information.
+- A user can launch configured apps from the Dock/desktop and interact with
+  ordinary Wayland windows.
 - `PROJECT_STATE.md` documents status, risks, and continuation steps.
