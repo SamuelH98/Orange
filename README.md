@@ -50,6 +50,17 @@ Optional local files:
 
 - `assets/apple/wallpaper.png`
 - `assets/apple/apple-menu.png`
-- `assets/apple/icons/*.png`
+- Dock icons in `assets/apple/icons/`:
+  `finder.png`, `launchpad.png`, `safari.png`, `messages.png`, `mail.png`,
+  `maps.png`, `photos.png`, `facetime.png`, `phone.png`, `calendar.png`,
+  `contacts.png`, `reminders.png`, `notes.png`, `tv.png`, `music.png`,
+  `rocket.png`, `app-store.png`, `calculator.png`, `settings.png`,
+  `desktop-preview.png`, `trash.png`
 
 These files are intentionally not tracked.
+
+To render a reference-size PNG for comparison:
+
+```sh
+build/tahoe-render-shell /tmp/tahoe-reference.png
+```

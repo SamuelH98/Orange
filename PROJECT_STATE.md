@@ -16,9 +16,10 @@ wlroots.
 ### Current Status
 
 Functional shell prototype is implemented and validated locally. It includes a
-wlroots compositor, scalable Tahoe-style shell renderer, basic xdg-shell window
-management, Dock/menu/desktop launchers, keyboard shortcuts, optional Apple
-asset overrides, and headless one-shot validation.
+wlroots compositor, reference-sized Tahoe shell geometry based on the supplied
+2048x1153 screenshot, scalable layout, basic xdg-shell window management,
+Dock/menu/desktop launchers, keyboard shortcuts, optional Apple asset
+overrides, PNG reference export, and headless one-shot validation.
 
 ---
 
@@ -43,6 +44,7 @@ scaling, and a render smoke test.
 - `meson setup build` passed.
 - `ninja -C build` passed.
 - `meson test -C build --print-errorlogs` passed.
+- `build/tahoe-render-shell /tmp/tahoe-reference.png` passed.
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe-wlroots --headless --once`
   passed and rendered one headless frame.
 
@@ -65,6 +67,7 @@ Implementation compiles and runs in headless validation mode.
 ### Remaining Work
 
 Interactive testing under WSLg or a nested Wayland session is still needed.
+Pixel-level 1:1 requires user-provided Apple assets under `assets/apple/`.
 More faithful behavior would require server-side macOS-style window frames,
 real app/menu integration, richer animation, and full desktop services.
 
@@ -97,6 +100,9 @@ wlroots 0.17 APIs are unstable and may need porting for newer distros. Vulkan
 renderer availability depends on the local GPU/driver and wlroots runtime
 support. In this sandbox, `WLR_BACKENDS=headless WLR_RENDERER=vulkan` fails
 because wlroots has no DRM FD in headless mode.
+The committed procedural fallback is not pixel-identical to Apple proprietary
+wallpaper/icons; exact local visual matching depends on ignored asset
+overrides.
 
 ---
 

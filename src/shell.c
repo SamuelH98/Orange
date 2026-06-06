@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#define REFERENCE_WIDTH 2048.0
+#define REFERENCE_HEIGHT 1153.0
+
 struct launcher {
 	const char *label;
 	const char *command;
@@ -26,6 +29,7 @@ static const struct launcher dock_launchers[] = {
 	{"Notes", "gnome-text-editor || gedit || mousepad || ${TAHOE_TERMINAL:-xterm} -e nano"},
 	{"TV", "xdg-open \"https://tv.apple.com\""},
 	{"Music", "xdg-open \"$HOME/Music\""},
+	{"Rocket", "${TAHOE_APP_PICKER:-wofi --show drun || rofi -show drun || true}"},
 	{"App Store", "gnome-software || plasma-discover || true"},
 	{"Calculator", "gnome-calculator || kcalc || xcalc || true"},
 	{"Settings", "gnome-control-center || systemsettings || xfce4-settings-manager || true"},
@@ -63,7 +67,8 @@ static double clamp(double value, double min_value, double max_value) {
 }
 
 static double ui_scale_for_size(int width, int height) {
-	double scale = fmin((double)width / 1920.0, (double)height / 1080.0);
+	double scale = fmin((double)width / REFERENCE_WIDTH,
+		(double)height / REFERENCE_HEIGHT);
 	return clamp(scale, 0.58, 1.60);
 }
 
@@ -84,6 +89,27 @@ static void rounded_rect(cairo_t *cr, double x, double y,
 	cairo_arc(cr, x + r, y + height - r, r, M_PI / 2.0, M_PI);
 	cairo_arc(cr, x + r, y + r, r, M_PI, 3.0 * M_PI / 2.0);
 	cairo_close_path(cr);
+}
+
+static void draw_image_cover(cairo_t *cr, cairo_surface_t *surface,
+		struct tahoe_rect r) {
+	int sw = cairo_image_surface_get_width(surface);
+	int sh = cairo_image_surface_get_height(surface);
+	if (sw <= 0 || sh <= 0) {
+		return;
+	}
+	double scale = fmax((double)r.width / (double)sw,
+		(double)r.height / (double)sh);
+	double tx = r.x + ((double)r.width - sw * scale) * 0.5;
+	double ty = r.y + ((double)r.height - sh * scale) * 0.5;
+	cairo_save(cr);
+	rounded_rect(cr, r.x, r.y, r.width, r.height, r.width * 0.22);
+	cairo_clip(cr);
+	cairo_translate(cr, tx, ty);
+	cairo_scale(cr, scale, scale);
+	cairo_set_source_surface(cr, surface, 0, 0);
+	cairo_paint(cr);
+	cairo_restore(cr);
 }
 
 static void set_source_rgba255(cairo_t *cr, int r, int g, int b, double a) {
@@ -528,7 +554,11 @@ static void draw_dock(cairo_t *cr, const struct tahoe_shell_layout *layout,
 				item.width * 0.64, 0, 2.0 * M_PI);
 			cairo_fill(cr);
 		}
-		if (i == 0) {
+		if (state->assets != NULL &&
+				i < state->assets->dock_icon_count &&
+				state->assets->dock_icons[i] != NULL) {
+			draw_image_cover(cr, state->assets->dock_icons[i], item);
+		} else if (i == 0) {
 			draw_finder_icon(cr, item);
 		} else {
 			draw_symbol_icon(cr, item, i);
@@ -625,26 +655,26 @@ void tahoe_shell_layout_compute(
 	layout->height = height;
 	layout->menu_bar = (struct tahoe_rect){0, 0, width, scaled_i(32, s)};
 	layout->apple_menu_button = (struct tahoe_rect){
-		scaled_i(18, s), 0, scaled_i(42, s), layout->menu_bar.height};
+		scaled_i(18, s), 0, scaled_i(43, s), layout->menu_bar.height};
 
 	layout->calendar_widget = (struct tahoe_rect){
-		scaled_i(22, s), scaled_i(64, s), scaled_i(228, s), scaled_i(228, s)};
+		scaled_i(23, s), scaled_i(66, s), scaled_i(233, s), scaled_i(234, s)};
 	layout->weather_widget = (struct tahoe_rect){
-		scaled_i(272, s), scaled_i(66, s), scaled_i(228, s), scaled_i(224, s)};
+		scaled_i(272, s), scaled_i(66, s), scaled_i(232, s), scaled_i(232, s)};
 
 	layout->desktop_item_count = 2;
-	int item_x = width - scaled_i(172, s);
+	int item_x = width - scaled_i(164, s);
 	layout->desktop_items[0] = (struct tahoe_rect){
 		item_x, scaled_i(74, s), scaled_i(126, s), scaled_i(106, s)};
 	layout->desktop_items[1] = (struct tahoe_rect){
-		item_x - scaled_i(4, s), scaled_i(220, s),
+		item_x - scaled_i(5, s), scaled_i(222, s),
 		scaled_i(138, s), scaled_i(116, s)};
 
 	int icon = scaled_i(64, s);
-	int gap = scaled_i(14, s);
+	int gap = scaled_i(26, s);
 	int dock_count = (int)(sizeof(dock_launchers) / sizeof(dock_launchers[0]));
 	int dock_width = dock_count * icon + (dock_count - 1) * gap + scaled_i(44, s);
-	while (dock_width > width - scaled_i(72, s) && icon > scaled_i(42, s)) {
+	while (dock_width > width - scaled_i(136, s) && icon > scaled_i(42, s)) {
 		icon -= 2;
 		gap = gap > 6 ? gap - 1 : gap;
 		dock_width = dock_count * icon + (dock_count - 1) * gap + scaled_i(44, s);
@@ -652,12 +682,12 @@ void tahoe_shell_layout_compute(
 	layout->dock_item_count = dock_count;
 	layout->dock = (struct tahoe_rect){
 		(width - dock_width) / 2,
-		height - icon - scaled_i(34, s),
+		height - icon - scaled_i(42, s),
 		dock_width,
-		icon + scaled_i(26, s),
+		icon + scaled_i(36, s),
 	};
 	int x = layout->dock.x + scaled_i(22, s);
-	int y = layout->dock.y + scaled_i(11, s);
+	int y = layout->dock.y + scaled_i(20, s);
 	for (int i = 0; i < dock_count; i++) {
 		layout->dock_items[i] = (struct tahoe_rect){x, y, icon, icon};
 		x += icon + gap;

@@ -79,6 +79,14 @@ executable(
   install: false,
 )
 
+executable(
+  'tahoe-render-shell',
+  files('tools/render_shell.c'),
+  include_directories: inc,
+  dependencies: [tahoe_core_dep, cairo_dep],
+  install: false,
+)
+
 test_shell_layout = executable(
   'test-shell-layout',
   files('tests/test_shell_layout.c'),

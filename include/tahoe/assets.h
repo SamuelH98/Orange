@@ -4,9 +4,13 @@
 #include <cairo/cairo.h>
 #include <stdbool.h>
 
+#define TAHOE_ASSET_DOCK_ICON_MAX 32
+
 struct tahoe_assets {
 	cairo_surface_t *wallpaper;
 	cairo_surface_t *apple_menu;
+	cairo_surface_t *dock_icons[TAHOE_ASSET_DOCK_ICON_MAX];
+	int dock_icon_count;
 };
 
 void tahoe_assets_init(struct tahoe_assets *assets);
