@@ -23,6 +23,21 @@ From a nested Wayland/X11 session:
 WLR_RENDERER=vulkan build/tahoe-wlroots
 ```
 
+`WLR_RENDERER=vulkan` requires a backend with a DRM device. Headless validation
+uses Pixman because wlroots cannot create its Vulkan renderer without DRM.
+
+On WSLg, run it nested inside the existing WSLg Wayland session:
+
+```sh
+WLR_BACKENDS=wayland WLR_RENDERER=pixman build/tahoe-wlroots
+```
+
+If your WSLg/Mesa stack exposes what wlroots needs for Vulkan, try:
+
+```sh
+WLR_BACKENDS=wayland WLR_RENDERER=vulkan build/tahoe-wlroots
+```
+
 For automated/headless validation:
 
 ```sh

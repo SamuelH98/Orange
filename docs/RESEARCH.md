@@ -25,7 +25,9 @@ The installed wlroots uses the unstable 0.17 renderer API:
 
 The Vulkan renderer can be selected through wlroots with
 `WLR_RENDERER=vulkan`. The project checks `wlr_renderer_is_vk()` at runtime
-when the Vulkan renderer headers are available.
+when the Vulkan renderer headers are available. On this machine, the headless
+backend cannot create a Vulkan renderer because wlroots has no DRM file
+descriptor in that mode; headless validation uses Pixman.
 
 ## Visual Reference Notes
 

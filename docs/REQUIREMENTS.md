@@ -19,6 +19,8 @@ macOS-style shell prototype.
   - right-side desktop items,
   - translucent bottom dock with app icons, divider, running indicators, and
     trash.
+- Scale menu bar, widgets, desktop items, and Dock geometry from the output
+  resolution so the shell remains usable on small and large displays.
 - Provide fallback assets implemented in project code, while supporting local
   Apple-provided asset overrides from ignored paths under `assets/apple/`.
 - Provide a headless `--once` mode that renders one frame and exits for CI-style
