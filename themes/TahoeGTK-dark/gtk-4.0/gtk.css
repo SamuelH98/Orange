@@ -1,0 +1,38 @@
+@define-color tahoe_titlebar_bg rgba(18, 20, 26, 0.78);
+@define-color tahoe_titlebar_fg #f4f6fb;
+@define-color tahoe_close #ff5f57;
+@define-color tahoe_minimize #febc2e;
+@define-color tahoe_maximize #28c840;
+
+window, window.background {
+  background: rgba(22, 24, 31, 0.94);
+  color: #f4f6fb;
+  font-family: "SF Pro Text", "Inter", "Cantarell", sans-serif;
+}
+
+headerbar, .titlebar {
+  min-height: 34px;
+  padding: 0 10px;
+  background: @tahoe_titlebar_bg;
+  color: @tahoe_titlebar_fg;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.13);
+}
+
+windowcontrols.start button.close,
+windowcontrols.start button.minimize,
+windowcontrols.start button.maximize {
+  min-width: 12px;
+  min-height: 12px;
+  margin: 0 4px;
+  border-radius: 999px;
+  padding: 0;
+}
+
+windowcontrols.start button.close { background: @tahoe_close; }
+windowcontrols.start button.minimize { background: @tahoe_minimize; }
+windowcontrols.start button.maximize { background: @tahoe_maximize; }
+
+switch:checked slider,
+scale highlight {
+  background: #0a84ff;
+}

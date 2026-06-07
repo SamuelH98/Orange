@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Images
+Icon=desktop-preview
+Exec=xdg-open "$HOME/Pictures"
+Terminal=false

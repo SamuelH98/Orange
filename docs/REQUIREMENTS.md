@@ -13,7 +13,8 @@ macOS-style shell prototype.
   is Vulkan when `WLR_RENDERER=vulkan` is requested.
 - Render a full-output desktop shell with:
   - clear lake/mountain-style wallpaper,
-  - transparent menu bar with Apple-style menu glyph area and menu titles,
+  - fully transparent menu bar with Apple-style menu glyph area and menu
+    titles drawn directly over the wallpaper,
   - right-aligned status area and date/time,
   - calendar and weather widgets in the upper-left area,
   - right-side desktop items,
@@ -21,8 +22,42 @@ macOS-style shell prototype.
     trash.
 - Scale menu bar, widgets, desktop items, and Dock geometry from the output
   resolution so the shell remains usable on small and large displays.
-- Provide fallback assets implemented in project code, while supporting local
-  Apple-provided asset overrides from ignored paths under `assets/apple/`.
+- Match the reference Dock measurements with resolution-scaled constants for
+  icon size, icon gaps, glass padding, indicator lane, and bottom edge
+  alignment.
+- Provide procedural wallpaper/background fallback only. Dock icons, desktop
+  shortcut icons, weather icons, and status icons are local-file sourced.
+- Load all shell icon imagery from local `./assets/` paths. Dock icons,
+  desktop shortcut icons, weather icons, and status tray icons must not use web
+  URLs or system icon theme lookups.
+- Provide a persistent desktop configuration model:
+  - global light/dark appearance,
+  - desktop shortcut visibility, grid spacing, text label size, and icon scale,
+  - Dock scale, icon scale, magnification, and active indicator visibility.
+- Provide a root desktop widget system similar in spirit to GNOME Shell:
+  - widgets are defined as typed objects with stable IDs, rectangles, and
+    visibility flags,
+  - the existing Calendar and Weather cards render through this widget layer,
+  - widgets remain pinned below floating application windows.
+- Provide a native GTK Settings application source that controls this
+  configuration and uses the bundled GTK theme when GTK development libraries
+  are available at build time.
+- Bundle macOS-style GTK CSD theme variants and configure GTK clients launched
+  from the shell to use them.
+- Provide a bundled GTK icon theme (`TahoeIcons`) that maps the local dock and
+  shortcut icon names into standard GTK icon-theme lookup paths when populated
+  from `./assets/`.
+- Disable server-side compositor decorations and prefer client-side window
+  decorations for xdg-decoration and KDE server-decoration protocols.
+- Replace static desktop shortcut placeholders with XDG `.desktop` entries.
+- Fix visible layout bugs:
+  - menu bar item spacing,
+  - tray glyph replacement with local battery/Wi-Fi/control icons,
+  - calendar header padding and centered day grid,
+  - weather-condition icon sourced from assets,
+  - desktop label wrapping and centering,
+  - Dock indicator dot bottom padding,
+  - Dock Calendar icon day/date sync.
 - Provide a headless `--once` mode that renders one frame and exits for CI-style
   validation.
 - Manage normal Wayland xdg-shell toplevel windows:
@@ -59,7 +94,8 @@ macOS-style shell prototype.
   Control, Spotlight indexing, real LaunchServices, notarization, iCloud,
   Continuity, and system settings backends are out of scope.
 - Exact Apple fonts, shipped wallpaper, official icons, and trademarks are only
-  loaded if the user provides local licensed files; the repo ships replacements.
+  loaded if the user provides local licensed files. The runtime is designed to
+  source from local `./assets/` paths.
 
 ## Acceptance Criteria
 
@@ -71,4 +107,7 @@ macOS-style shell prototype.
 - Runtime logs include selected renderer type information.
 - A user can launch configured apps from the Dock/desktop and interact with
   ordinary Wayland windows.
+- `.desktop` parser tests pass.
+- Config parser tests pass.
+- Shell render tests cover both light and dark appearance.
 - `PROJECT_STATE.md` documents status, risks, and continuation steps.

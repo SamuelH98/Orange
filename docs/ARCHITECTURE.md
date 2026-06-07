@@ -24,21 +24,72 @@ Cairo. The buffer is uploaded to a wlroots texture and composited to the output.
 Responsibilities:
 
 - draw wallpaper,
-- draw menu bar, widgets, desktop items, dock, and icons,
-- load optional local asset overrides,
+- draw a transparent menu bar, widgets, desktop items, dock, and icons,
+- apply persistent appearance, desktop, and Dock configuration,
+- load local assets from `./assets/`,
 - expose deterministic layout and hit-test math for tests,
 - maintain transient UI state such as the Apple-style menu popover.
 
-### Asset Loader
+### Widget Layer
 
-Loads optional PNG overrides from ignored paths. Missing files are non-fatal and
-fall back to procedural art.
+Root-window widget registry for desktop cards. Calendar and Weather are the
+initial built-in widgets.
 
 Responsibilities:
 
-- keep Apple asset use local-only,
+- compute widget rectangles from output size and config,
+- keep stable widget IDs and types,
+- draw widgets beneath application windows,
+- expose deterministic layout for tests.
+
+### Asset Loader
+
+Loads PNG assets from local `./assets/` roots. The loader maps specific Dock,
+desktop, weather, and status icon names so shell code never asks the system icon
+theme or web for shortcut graphics.
+
+Responsibilities:
+
+- keep asset use local-only,
+- resolve desktop shortcut icons from each parsed `.desktop` file's `Icon=`
+  name,
 - validate loaded image dimensions,
 - avoid failing startup when optional files are absent.
+
+### Configuration Store
+
+Small line-oriented config model used by both the compositor and Settings app.
+
+Responsibilities:
+
+- read and write `appearance`, desktop icon, and Dock preferences,
+- provide defaults when config is missing,
+- expose one struct consumed by shell layout and rendering.
+
+### Settings App
+
+GTK application source that edits the configuration store. It is conditionally
+built when GTK development libraries are present, and it loads the bundled GTK
+theme CSS.
+
+Responsibilities:
+
+- appearance toggle,
+- desktop icon settings,
+- Dock settings,
+- write config changes without requiring compositor restart.
+
+### Bundled GTK Theme
+
+CSS files under `themes/TahoeGTK/` define light and dark macOS-style GTK CSD,
+including left-aligned traffic-light window controls where supported by GTK
+clients. The compositor exports GTK environment variables for launched clients.
+
+### GTK Icon Theme
+
+`themes/TahoeIcons/` contains icon-theme metadata and expected app icon names.
+Local PNGs from `./assets/` can be copied into this theme so GTK clients and
+the Settings app can resolve the same Tahoe icon names used by the shell.
 
 ### View Management And Input
 
@@ -63,6 +114,7 @@ Responsibilities:
 
 - launch commands through `/bin/sh -c` in a child process,
 - prefer user-configured environment variables for terminal/app picker,
+- export `GTK_THEME` and related theme search paths for launched GTK clients,
 - avoid blocking the compositor event loop.
 
 ## Data Flow
@@ -74,15 +126,21 @@ Responsibilities:
 5. Runtime commits the scene output and sends frame callbacks.
 6. Pointer hit testing first finds client surfaces; if none, shell hit testing
    handles Dock, desktop, and menu clicks.
+7. Shell click handlers launch commands from Dock definitions or parsed XDG
+   `.desktop` entries.
 
 ## Failure Modes
 
 - Renderer creation failure: exit with an error.
 - Output render initialization failure: disable that output and continue.
-- Asset load failure: use fallback drawing.
+- Asset load failure: use procedural background fallback only.
+- Missing local assets: log/continue; affected icon slot is left without system
+  fallback imagery.
 - Headless `--once` no output: create an explicit headless output.
 - Vulkan unavailable: wlroots renderer creation may fail; the log identifies
   the selected renderer when it succeeds.
 - Launcher command missing: child exits; compositor remains running.
 - Input device absent in headless mode: shell still renders and exits in
   `--once` validation.
+- GTK missing at build time: Settings app target is skipped, compositor and
+  tests remain buildable.

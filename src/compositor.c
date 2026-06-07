@@ -1,5 +1,7 @@
 #include "tahoe/buffer.h"
 #include "tahoe/compositor.h"
+#include "tahoe/config.h"
+#include "tahoe/desktop_entry.h"
 #include "tahoe/shell.h"
 
 #include <assert.h>
@@ -121,6 +123,9 @@ struct tahoe_server {
 	struct wlr_cursor *cursor;
 	struct wlr_xcursor_manager *xcursor_manager;
 	struct tahoe_assets assets;
+	struct tahoe_config config;
+	struct tahoe_desktop_entry desktop_entries[TAHOE_DESKTOP_MAX];
+	size_t desktop_entry_count;
 
 	struct wl_list outputs;
 	struct wl_list views;
@@ -160,6 +165,37 @@ struct tahoe_server {
 };
 
 static void server_mark_shell_dirty(struct tahoe_server *server);
+
+static void server_apply_theme_env(struct tahoe_server *server) {
+	const char *theme = server->config.appearance == TAHOE_APPEARANCE_DARK ?
+		"TahoeGTK-dark" : "TahoeGTK";
+	setenv("GTK_THEME", theme, true);
+	setenv("GTK_ICON_THEME", "TahoeIcons", true);
+	setenv("GTK_CSD", "1", true);
+	if (server->options->theme_root != NULL) {
+		const char *old_dirs = getenv("XDG_DATA_DIRS");
+		char dirs[4096];
+		if (old_dirs != NULL && old_dirs[0] != '\0') {
+			snprintf(dirs, sizeof(dirs), "%s:%s",
+				server->options->theme_root, old_dirs);
+		} else {
+			snprintf(dirs, sizeof(dirs), "%s:/usr/local/share:/usr/share",
+				server->options->theme_root);
+		}
+		setenv("XDG_DATA_DIRS", dirs, true);
+	}
+}
+
+static void server_load_config(struct tahoe_server *server, bool force_dirty) {
+	struct tahoe_config next;
+	tahoe_config_load(&next, server->options->config_path);
+	bool changed = memcmp(&server->config, &next, sizeof(next)) != 0;
+	server->config = next;
+	server_apply_theme_env(server);
+	if (changed || force_dirty) {
+		server_mark_shell_dirty(server);
+	}
+}
 
 static bool shell_buffer_accepts_input(
 		struct wlr_scene_buffer *buffer,
@@ -312,6 +348,9 @@ static void output_redraw_shell(struct tahoe_output *output) {
 		.hot_dock_index = output->server->hot_dock_index,
 		.now = time(NULL),
 		.assets = &output->server->assets,
+		.config = &output->server->config,
+		.desktop_entries = output->server->desktop_entries,
+		.desktop_entry_count = (int)output->server->desktop_entry_count,
 	};
 	tahoe_shell_draw(output->shell_buffer->pixels,
 		output->width,
@@ -459,7 +498,8 @@ static void process_cursor_motion(struct tahoe_server *server, uint32_t time_mse
 	if (output != NULL) {
 		struct tahoe_shell_layout layout;
 		tahoe_shell_layout_compute(output->width, output->height,
-			server->apple_menu_open, &layout);
+			server->apple_menu_open, &server->config,
+			(int)server->desktop_entry_count, &layout);
 		struct tahoe_shell_hit hit =
 			tahoe_shell_hit_test(&layout, local_x, local_y);
 		if (hit.kind == TAHOE_HIT_DOCK_ITEM) {
@@ -581,7 +621,7 @@ static void apply_fullscreen(struct tahoe_view *view, bool fullscreen) {
 static void handle_shell_menu_action(struct tahoe_server *server, int index) {
 	switch (index) {
 	case 1:
-		launch_command(tahoe_shell_dock_command(17));
+		launch_command("build/tahoe-settings tahoe.conf || true");
 		break;
 	case 2:
 		launch_app_picker();
@@ -614,7 +654,8 @@ static void handle_shell_click(struct tahoe_server *server, int x, int y) {
 
 	struct tahoe_shell_layout layout;
 	tahoe_shell_layout_compute(output->width, output->height,
-		server->apple_menu_open, &layout);
+		server->apple_menu_open, &server->config,
+		(int)server->desktop_entry_count, &layout);
 	struct tahoe_shell_hit hit = tahoe_shell_hit_test(&layout, local_x, local_y);
 
 	switch (hit.kind) {
@@ -632,7 +673,9 @@ static void handle_shell_click(struct tahoe_server *server, int x, int y) {
 		break;
 	case TAHOE_HIT_DESKTOP_ITEM:
 		server->apple_menu_open = false;
-		launch_command(tahoe_shell_desktop_command(hit.index));
+		if (hit.index >= 0 && hit.index < (int)server->desktop_entry_count) {
+			launch_command(server->desktop_entries[hit.index].exec);
+		}
 		server_mark_shell_dirty(server);
 		break;
 	case TAHOE_HIT_NONE:
@@ -1191,6 +1234,7 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 
 static int handle_clock_timer(void *data) {
 	struct tahoe_server *server = data;
+	server_load_config(server, false);
 	server_mark_shell_dirty(server);
 	wl_event_source_timer_update(server->clock_timer, 1000);
 	return 0;
@@ -1232,6 +1276,12 @@ static bool server_init(struct tahoe_server *server,
 	wl_list_init(&server->outputs);
 	wl_list_init(&server->views);
 	wl_list_init(&server->keyboards);
+	tahoe_config_set_defaults(&server->config);
+	server_load_config(server, false);
+	tahoe_desktop_entry_load_all(options->desktop_entry_dir,
+		server->desktop_entries,
+		TAHOE_DESKTOP_MAX,
+		&server->desktop_entry_count);
 	tahoe_assets_init(&server->assets);
 	tahoe_assets_load(&server->assets, options->asset_root);
 

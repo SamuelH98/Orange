@@ -10,6 +10,8 @@
 - `meson`: 1.3.2
 - `ninja`: 1.11.1
 - `gcc`: 13.3.0
+- `gtk4`: not installed in this environment
+- `gtk+-3.0`: not installed in this environment
 
 ## wlroots Notes
 
@@ -48,6 +50,11 @@ For this prototype, that is approximated with:
 - Running a real compositor outside headless mode may require a nested Wayland
   or X11 session, or a TTY with seat permissions.
 - Exact Apple assets cannot be redistributed in this repository.
+- The native GTK Settings app is implemented conditionally because GTK
+  development headers are not installed in this environment.
+- Client-side traffic-light controls depend on GTK client support for CSD and
+  theme CSS. The compositor can force client-side preference, but non-GTK
+  clients may not honor GTK CSS.
 
 ## References
 

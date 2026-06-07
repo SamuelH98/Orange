@@ -1,5 +1,8 @@
 build/
 .cache/
 assets/apple/
+themes/TahoeIcons/apps/
+themes/TahoeIcons/places/
+themes/TahoeIcons/status/
 *.o
 *.png.tmp

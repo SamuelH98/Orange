@@ -26,6 +26,7 @@ wayland_server_dep = dependency('wayland-server')
 wlroots_dep = dependency('wlroots')
 xkbcommon_dep = dependency('xkbcommon')
 vulkan_dep = dependency('vulkan')
+gtk4_dep = dependency('gtk4', required: false)
 math_dep = cc.find_library('m', required: true)
 wayland_scanner = find_program('wayland-scanner')
 wayland_protocols_dir = dependency('wayland-protocols').get_variable(
@@ -41,6 +42,8 @@ xdg_shell_protocol = custom_target(
 
 tahoe_core_sources = files(
   'src/assets.c',
+  'src/config.c',
+  'src/desktop_entry.c',
   'src/shell.c',
 )
 
@@ -87,6 +90,18 @@ executable(
   install: false,
 )
 
+if gtk4_dep.found()
+  executable(
+    'tahoe-settings',
+    files('src/settings_app.c'),
+    include_directories: inc,
+    dependencies: [tahoe_core_dep, gtk4_dep],
+    install: false,
+  )
+else
+  message('gtk4 development files not found; skipping tahoe-settings target')
+endif
+
 test_shell_layout = executable(
   'test-shell-layout',
   files('tests/test_shell_layout.c'),
@@ -95,3 +110,20 @@ test_shell_layout = executable(
 )
 
 test('shell-layout', test_shell_layout)
+
+test_config = executable(
+  'test-config',
+  files('tests/test_config.c'),
+  include_directories: inc,
+  dependencies: [tahoe_core_dep],
+)
+
+test_desktop_entry = executable(
+  'test-desktop-entry',
+  files('tests/test_desktop_entry.c'),
+  include_directories: inc,
+  dependencies: [tahoe_core_dep],
+)
+
+test('config', test_config)
+test('desktop-entry', test_desktop_entry)

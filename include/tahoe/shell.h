@@ -6,10 +6,13 @@
 #include <time.h>
 
 #include "tahoe/assets.h"
+#include "tahoe/config.h"
+#include "tahoe/desktop_entry.h"
 
 #define TAHOE_DOCK_MAX 24
 #define TAHOE_DESKTOP_MAX 8
 #define TAHOE_MENU_ITEM_MAX 8
+#define TAHOE_WIDGET_MAX 16
 
 struct tahoe_rect {
 	int x;
@@ -31,6 +34,18 @@ struct tahoe_shell_hit {
 	int index;
 };
 
+enum tahoe_widget_type {
+	TAHOE_WIDGET_CALENDAR,
+	TAHOE_WIDGET_WEATHER,
+};
+
+struct tahoe_widget {
+	int id;
+	enum tahoe_widget_type type;
+	bool visible;
+	struct tahoe_rect rect;
+};
+
 struct tahoe_shell_layout {
 	int width;
 	int height;
@@ -43,6 +58,8 @@ struct tahoe_shell_layout {
 
 	struct tahoe_rect calendar_widget;
 	struct tahoe_rect weather_widget;
+	struct tahoe_widget widgets[TAHOE_WIDGET_MAX];
+	int widget_count;
 
 	struct tahoe_rect desktop_items[TAHOE_DESKTOP_MAX];
 	int desktop_item_count;
@@ -57,12 +74,17 @@ struct tahoe_shell_state {
 	int hot_dock_index;
 	time_t now;
 	const struct tahoe_assets *assets;
+	const struct tahoe_config *config;
+	const struct tahoe_desktop_entry *desktop_entries;
+	int desktop_entry_count;
 };
 
 void tahoe_shell_layout_compute(
 	int width,
 	int height,
 	bool apple_menu_open,
+	const struct tahoe_config *config,
+	int desktop_entry_count,
 	struct tahoe_shell_layout *layout);
 
 struct tahoe_shell_hit tahoe_shell_hit_test(
@@ -79,8 +101,6 @@ void tahoe_shell_draw(
 
 const char *tahoe_shell_dock_label(int index);
 const char *tahoe_shell_dock_command(int index);
-const char *tahoe_shell_desktop_label(int index);
-const char *tahoe_shell_desktop_command(int index);
 const char *tahoe_shell_menu_label(int index);
 
 #endif
