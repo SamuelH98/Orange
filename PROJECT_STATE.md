@@ -118,16 +118,50 @@ Shell layout/hit-test/render smoke unit tests.
 - `.desktop`-required desktop icon layout test.
 - Reference Dock measurement test.
 
+### macOS Tahoe 26 Context Menus & Apple Menu
+
+#### Implemented
+
+- Full macOS Tahoe Apple menu (10 items) with separator lines between groups:
+  About Tahoe wlroots, System Settings..., App Store..., Recent Items,
+  Force Quit..., Sleep, Restart..., Shut Down..., Lock Screen, Log Out.
+- System actions: `systemctl suspend/reboot/poweroff`,
+  `xdg-screensaver lock` for Lock Screen, `wl_display_terminate` for Log Out.
+- Dock right-click context menu (5 items, 2 separators): Open,
+  Show in Finder, Remove from Dock, Open at Login, Dock Settings.
+- Desktop background right-click context menu (8 items, 2 separators):
+  New Folder, Get Info, Use Stacks, Sort By, Clean Up By,
+  Show View Options, Change Desktop Background..., Edit Widgets.
+- Desktop icon right-click context menu (9 items, 3 separators):
+  Open, Show in Finder, Copy, Get Info, Rename, Duplicate,
+  Quick Look, Share, Move to Trash.
+- `TAHOE_CONTEXT_MENU_DESKTOP_ICON` enum for icon vs. background menus.
+- `TAHOE_HIT_DESKTOP` hit kind for empty desktop background detection.
+- Separator line support (`separator_before[]` arrays with flags in layout).
+- Cursor-position-driven desktop background menu placement.
+
+#### Tests Added
+
+- Reference measurements at 2048×1153 for: menu bar (0,0 2048×32),
+  Apple menu button (18,0 43×32), Apple menu panel (18,36 260×358),
+  10 menu items with 34px spacing, separator flags at indices 3/4/5/8.
+- Reference widget measurements (calendar 23,66 233×234,
+  weather 272,66 232×232).
+- Reference desktop items (item 0: 1884,74 138×120; item 1: 1879,220 138×120).
+- Dock context menu panel at dock item 0 (112,889 184×167, 5 items).
+- Desktop icon context menu (DESKTOP_ICON, item 0, 9 items, 3 separators).
+- Desktop background context menu at cursor (960,540) → (850,532 220×260, 8 items).
+- Desktop background hit test (TAHOE_HIT_DESKTOP on empty desktop area).
+
 ## Current Work
 
 ### Active Feature
 
-Cursor/menu/Dock/asset enhancement complete for this session.
+Context menus, Apple menu, and expanded reference tests complete.
 
 ### Progress
 
-Implementation compiles, unit tests pass, PNG render works, and compositor
-headless one-shot validation works.
+Implementation compiles, all 25 unit tests pass, compositor builds clean.
 
 ### Remaining Work
 
