@@ -22,7 +22,9 @@
 #include <wlr/backend/headless.h>
 #include <wlr/config.h>
 #include <wlr/render/allocator.h>
+#ifdef TAHOE_HAVE_VULKAN
 #include <wlr/render/vulkan.h>
+#endif
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
@@ -1561,6 +1563,12 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 	if (output_ensure_shell_buffer(output)) {
 		wlr_output_schedule_frame(wlr_output);
 	}
+
+	if (server->xcursor_manager != NULL) {
+		wlr_cursor_set_xcursor(server->cursor,
+			server->xcursor_manager, "default");
+	}
+
 	wlr_log(WLR_INFO, "enabled output %s (%dx%d)",
 		wlr_output->name,
 		output->width,
@@ -1643,7 +1651,17 @@ static bool server_init(struct tahoe_server *server,
 
 	server->renderer = wlr_renderer_autocreate(server->backend);
 	if (server->renderer == NULL) {
-		wlr_log(WLR_ERROR, "failed to create renderer");
+		const char *renderer_env = getenv("WLR_RENDERER");
+		if (renderer_env != NULL && renderer_env[0] != '\0') {
+			wlr_log(WLR_ERROR,
+				"WLR_RENDERER=%s failed, falling back to auto-detected renderer",
+				renderer_env);
+			unsetenv("WLR_RENDERER");
+			server->renderer = wlr_renderer_autocreate(server->backend);
+		}
+	}
+	if (server->renderer == NULL) {
+		wlr_log(WLR_ERROR, "failed to create renderer — no renderer is available");
 		return false;
 	}
 	if (!wlr_renderer_init_wl_display(server->renderer, server->display)) {
@@ -1651,11 +1669,15 @@ static bool server_init(struct tahoe_server *server,
 		return false;
 	}
 
+#ifdef TAHOE_HAVE_VULKAN
 	if (wlr_renderer_is_vk(server->renderer)) {
 		wlr_log(WLR_INFO, "wlroots selected the Vulkan renderer");
 	} else {
 		wlr_log(WLR_INFO, "wlroots selected a non-Vulkan renderer");
 	}
+#else
+	wlr_log(WLR_INFO, "wlroots selected a non-Vulkan renderer (Vulkan not available at build time)");
+#endif
 
 	server->allocator = wlr_allocator_autocreate(server->backend, server->renderer);
 	if (server->allocator == NULL) {
@@ -1755,6 +1777,11 @@ static bool server_init(struct tahoe_server *server,
 	if (!wlr_backend_start(server->backend)) {
 		wlr_log(WLR_ERROR, "failed to start backend");
 		return false;
+	}
+
+	if (server->xcursor_manager != NULL) {
+		wlr_cursor_set_xcursor(server->cursor,
+			server->xcursor_manager, "default");
 	}
 
 	if (socket != NULL) {

@@ -165,6 +165,20 @@ Apple proprietary assets are not included. GTK4 development headers are not
 installed in this environment, so `tahoe-settings` is skipped here but will
 build where `gtk4` is available.
 
+### Fixed
+
+- **Vulkan dependency made optional**: The `vulkan` dependency in `meson.build`
+  was hard-required, preventing builds on systems without the Vulkan SDK.
+  Changed to `required: false` with a `TAHOE_HAVE_VULKAN` preprocessor guard
+  around the `wlr_renderer_is_vk()` runtime check. The compositor now builds
+  and runs with any renderer (Pixman, GLES2, Vulkan) without requiring the
+  Vulkan SDK at build time.
+- **Cursor theme applied on output creation**: `server_apply_cursor_config()`
+  was called before `wlr_backend_start()` when no outputs exist, making
+  `wlr_cursor_set_xcursor()` a no-op. The cursor theme now gets applied:
+  (1) after backend start so all initial outputs receive it, and
+  (2) in `handle_new_output()` so hotplugged outputs also get the theme.
+
 ### Technical Concerns
 
 wlroots 0.17 APIs are unstable and may need porting for newer distros. Vulkan
