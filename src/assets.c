@@ -88,7 +88,10 @@ bool tahoe_assets_load(struct tahoe_assets *assets, const char *root) {
 	assets->wallpaper_beach_day = load_root_png(root, "wallpaper-beach-day.png");
 	loaded = loaded || assets->wallpaper_beach_day != NULL;
 
-	assets->apple_menu = load_root_png(root, "apple-menu.png");
+	assets->apple_menu = load_root_png(root, "tahoe-menu.png");
+	if (assets->apple_menu == NULL) {
+		assets->apple_menu = load_root_png(root, "apple-menu.png");
+	}
 	loaded = loaded || assets->apple_menu != NULL;
 
 	int icon_count = (int)(sizeof(dock_icon_names) / sizeof(dock_icon_names[0]));

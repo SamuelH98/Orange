@@ -160,11 +160,23 @@ struct tahoe_server {
 
 	bool apple_menu_open;
 	int hot_dock_index;
+	bool dock_open[TAHOE_DOCK_MAX];
+	enum tahoe_context_menu_kind context_menu_kind;
+	int context_menu_index;
+	bool desktop_drag_active;
+	bool desktop_drag_moved;
+	int desktop_drag_index;
+	int desktop_drag_offset_x;
+	int desktop_drag_offset_y;
+	int desktop_drag_start_x;
+	int desktop_drag_start_y;
 	bool once_committed;
 	uint32_t seat_caps;
 };
 
 static void server_mark_shell_dirty(struct tahoe_server *server);
+static void server_apply_cursor_config(struct tahoe_server *server);
+static void process_desktop_drag(struct tahoe_server *server);
 
 static void server_apply_theme_env(struct tahoe_server *server) {
 	const char *theme = server->config.appearance == TAHOE_APPEARANCE_DARK ?
@@ -186,12 +198,47 @@ static void server_apply_theme_env(struct tahoe_server *server) {
 	}
 }
 
+static void server_apply_cursor_config(struct tahoe_server *server) {
+	if (server->cursor == NULL) {
+		return;
+	}
+	const char *theme = server->config.cursor_theme[0] != '\0' ?
+		server->config.cursor_theme : NULL;
+	int size = server->config.cursor_size > 0 ? server->config.cursor_size : 28;
+	char size_text[16];
+	snprintf(size_text, sizeof(size_text), "%d", size);
+	if (theme != NULL) {
+		setenv("XCURSOR_THEME", theme, true);
+	} else {
+		unsetenv("XCURSOR_THEME");
+	}
+	setenv("XCURSOR_SIZE", size_text, true);
+
+	if (server->xcursor_manager != NULL) {
+		wlr_xcursor_manager_destroy(server->xcursor_manager);
+		server->xcursor_manager = NULL;
+	}
+	server->xcursor_manager = wlr_xcursor_manager_create(theme, (uint32_t)size);
+	if (server->xcursor_manager == NULL) {
+		wlr_log(WLR_ERROR, "failed to create xcursor manager");
+		return;
+	}
+	wlr_xcursor_manager_load(server->xcursor_manager, 1.0);
+	wlr_cursor_set_xcursor(server->cursor, server->xcursor_manager, "default");
+}
+
 static void server_load_config(struct tahoe_server *server, bool force_dirty) {
 	struct tahoe_config next;
 	tahoe_config_load(&next, server->options->config_path);
 	bool changed = memcmp(&server->config, &next, sizeof(next)) != 0;
+	bool cursor_changed =
+		strcmp(server->config.cursor_theme, next.cursor_theme) != 0 ||
+		server->config.cursor_size != next.cursor_size;
 	server->config = next;
 	server_apply_theme_env(server);
+	if (cursor_changed || force_dirty) {
+		server_apply_cursor_config(server);
+	}
 	if (changed || force_dirty) {
 		server_mark_shell_dirty(server);
 	}
@@ -242,6 +289,81 @@ static void launch_app_picker(void) {
 	launch_command("wofi --show drun || rofi -show drun || true");
 }
 
+static bool contains_case(const char *haystack, const char *needle) {
+	return haystack != NULL && needle != NULL && strcasestr(haystack, needle) != NULL;
+}
+
+static int dock_index_for_view(struct tahoe_view *view) {
+	if (view == NULL || view->xdg_surface == NULL ||
+			view->xdg_surface->toplevel == NULL) {
+		return -1;
+	}
+	const char *app_id = view->xdg_surface->toplevel->app_id;
+	const char *title = view->xdg_surface->toplevel->title;
+	if (contains_case(app_id, "finder") || contains_case(app_id, "files") ||
+			contains_case(app_id, "nautilus") || contains_case(title, "files")) {
+		return 0;
+	}
+	if (contains_case(app_id, "safari") || contains_case(app_id, "browser") ||
+			contains_case(app_id, "firefox") || contains_case(app_id, "chrom") ||
+			contains_case(title, "browser")) {
+		return 2;
+	}
+	if (contains_case(app_id, "mail") || contains_case(title, "mail")) {
+		return 4;
+	}
+	if (contains_case(app_id, "map") || contains_case(title, "map")) {
+		return 5;
+	}
+	if (contains_case(app_id, "photo") || contains_case(title, "photo")) {
+		return 6;
+	}
+	if (contains_case(app_id, "calendar") || contains_case(title, "calendar")) {
+		return 9;
+	}
+	if (contains_case(app_id, "contact") || contains_case(title, "contact")) {
+		return 10;
+	}
+	if (contains_case(app_id, "todo") || contains_case(app_id, "endeavour") ||
+			contains_case(app_id, "reminder") || contains_case(title, "reminder")) {
+		return 11;
+	}
+	if (contains_case(app_id, "text") || contains_case(app_id, "gedit") ||
+			contains_case(app_id, "mousepad") || contains_case(title, "notes")) {
+		return 12;
+	}
+	if (contains_case(app_id, "music") || contains_case(title, "music")) {
+		return 14;
+	}
+	if (contains_case(app_id, "software") || contains_case(app_id, "discover") ||
+			contains_case(title, "software")) {
+		return 16;
+	}
+	if (contains_case(app_id, "calculator") || contains_case(app_id, "kcalc") ||
+			contains_case(title, "calculator")) {
+		return 17;
+	}
+	if (contains_case(app_id, "settings") || contains_case(app_id, "control-center") ||
+			contains_case(title, "settings")) {
+		return 18;
+	}
+	return -1;
+}
+
+static void server_update_dock_open(struct tahoe_server *server) {
+	memset(server->dock_open, 0, sizeof(server->dock_open));
+	struct tahoe_view *view;
+	wl_list_for_each(view, &server->views, link) {
+		if (!view->mapped) {
+			continue;
+		}
+		int index = dock_index_for_view(view);
+		if (index >= 0 && index < TAHOE_DOCK_MAX) {
+			server->dock_open[index] = true;
+		}
+	}
+}
+
 static struct tahoe_output *output_from_wlr_output(
 		struct tahoe_server *server,
 		struct wlr_output *wlr_output) {
@@ -272,6 +394,20 @@ static struct tahoe_output *output_at_cursor(
 	*local_x = (int)lx;
 	*local_y = (int)ly;
 	return output_from_wlr_output(server, wlr_output);
+}
+
+static void compute_shell_layout_for_output(
+		struct tahoe_server *server,
+		struct tahoe_output *output,
+		struct tahoe_shell_layout *layout) {
+	tahoe_shell_layout_compute(output->width, output->height,
+		server->apple_menu_open,
+		&server->config,
+		(int)server->desktop_entry_count,
+		layout);
+	tahoe_shell_layout_set_context_menu(layout,
+		server->context_menu_kind,
+		server->context_menu_index);
 }
 
 static void server_mark_shell_dirty(struct tahoe_server *server) {
@@ -343,6 +479,7 @@ static void output_redraw_shell(struct tahoe_output *output) {
 		return;
 	}
 
+	server_update_dock_open(output->server);
 	struct tahoe_shell_state state = {
 		.apple_menu_open = output->server->apple_menu_open,
 		.hot_dock_index = output->server->hot_dock_index,
@@ -351,7 +488,10 @@ static void output_redraw_shell(struct tahoe_output *output) {
 		.config = &output->server->config,
 		.desktop_entries = output->server->desktop_entries,
 		.desktop_entry_count = (int)output->server->desktop_entry_count,
+		.context_menu_kind = output->server->context_menu_kind,
+		.context_menu_index = output->server->context_menu_index,
 	};
+	memcpy(state.dock_open, output->server->dock_open, sizeof(state.dock_open));
 	tahoe_shell_draw(output->shell_buffer->pixels,
 		output->width,
 		output->height,
@@ -473,6 +613,11 @@ static void process_cursor_motion(struct tahoe_server *server, uint32_t time_mse
 		return;
 	}
 
+	if (server->desktop_drag_active) {
+		process_desktop_drag(server);
+		return;
+	}
+
 	double sx = 0.0;
 	double sy = 0.0;
 	struct tahoe_view *view = NULL;
@@ -497,9 +642,7 @@ static void process_cursor_motion(struct tahoe_server *server, uint32_t time_mse
 	int new_hot = -1;
 	if (output != NULL) {
 		struct tahoe_shell_layout layout;
-		tahoe_shell_layout_compute(output->width, output->height,
-			server->apple_menu_open, &server->config,
-			(int)server->desktop_entry_count, &layout);
+		compute_shell_layout_for_output(server, output, &layout);
 		struct tahoe_shell_hit hit =
 			tahoe_shell_hit_test(&layout, local_x, local_y);
 		if (hit.kind == TAHOE_HIT_DOCK_ITEM) {
@@ -642,6 +785,149 @@ static void handle_shell_menu_action(struct tahoe_server *server, int index) {
 	server_mark_shell_dirty(server);
 }
 
+static void clear_context_menu(struct tahoe_server *server) {
+	if (server->context_menu_kind != TAHOE_CONTEXT_MENU_NONE) {
+		server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
+		server->context_menu_index = -1;
+		server_mark_shell_dirty(server);
+	}
+}
+
+static void handle_context_menu_action(struct tahoe_server *server, int item_index) {
+	enum tahoe_context_menu_kind kind = server->context_menu_kind;
+	int target = server->context_menu_index;
+	server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
+	server->context_menu_index = -1;
+
+	if (kind == TAHOE_CONTEXT_MENU_DOCK) {
+		switch (item_index) {
+		case 0:
+			launch_command(tahoe_shell_dock_command(target));
+			break;
+		case 1:
+			launch_command("build/tahoe-settings tahoe.conf || true");
+			break;
+		case 2:
+			server->config.dock_show_indicators = false;
+			tahoe_config_save(&server->config, server->options->config_path);
+			break;
+		default:
+			break;
+		}
+	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP) {
+		switch (item_index) {
+		case 0:
+			if (target >= 0 && target < (int)server->desktop_entry_count) {
+				launch_command(server->desktop_entries[target].exec);
+			}
+			break;
+		case 1:
+			if (target >= 0 && target < TAHOE_DESKTOP_POSITION_MAX) {
+				server->config.desktop_positions[target].valid = false;
+				tahoe_config_save(&server->config, server->options->config_path);
+			}
+			break;
+		case 2:
+			server->config.desktop_icons_visible = false;
+			tahoe_config_save(&server->config, server->options->config_path);
+			break;
+		default:
+			break;
+		}
+	}
+	server_mark_shell_dirty(server);
+}
+
+static void start_desktop_drag(struct tahoe_server *server,
+		struct tahoe_output *output,
+		const struct tahoe_shell_layout *layout,
+		int index,
+		int local_x,
+		int local_y) {
+	if (index < 0 || index >= layout->desktop_item_count ||
+			index >= TAHOE_DESKTOP_POSITION_MAX) {
+		return;
+	}
+	struct tahoe_rect item = layout->desktop_items[index];
+	(void)output;
+	server->desktop_drag_active = true;
+	server->desktop_drag_moved = false;
+	server->desktop_drag_index = index;
+	server->desktop_drag_offset_x = local_x - item.x;
+	server->desktop_drag_offset_y = local_y - item.y;
+	server->desktop_drag_start_x = local_x;
+	server->desktop_drag_start_y = local_y;
+	clear_context_menu(server);
+}
+
+static void process_desktop_drag(struct tahoe_server *server) {
+	if (!server->desktop_drag_active) {
+		return;
+	}
+
+	int local_x = 0;
+	int local_y = 0;
+	struct tahoe_output *output = output_at_cursor(server, &local_x, &local_y);
+	if (output == NULL) {
+		return;
+	}
+
+	struct tahoe_shell_layout layout;
+	compute_shell_layout_for_output(server, output, &layout);
+	int index = server->desktop_drag_index;
+	if (index < 0 || index >= layout.desktop_item_count ||
+			index >= TAHOE_DESKTOP_POSITION_MAX) {
+		return;
+	}
+
+	int dx = local_x - server->desktop_drag_start_x;
+	int dy = local_y - server->desktop_drag_start_y;
+	if (abs(dx) > 4 || abs(dy) > 4) {
+		server->desktop_drag_moved = true;
+	}
+	if (!server->desktop_drag_moved) {
+		return;
+	}
+
+	struct tahoe_rect item = layout.desktop_items[index];
+	int next_x = local_x - server->desktop_drag_offset_x;
+	int next_y = local_y - server->desktop_drag_offset_y;
+	if (next_x < 0) {
+		next_x = 0;
+	}
+	if (next_y < layout.menu_bar.height) {
+		next_y = layout.menu_bar.height;
+	}
+	if (next_x + item.width > output->width) {
+		next_x = output->width - item.width;
+	}
+	if (next_y + item.height > output->height) {
+		next_y = output->height - item.height;
+	}
+	server->config.desktop_positions[index].valid = true;
+	server->config.desktop_positions[index].x = next_x;
+	server->config.desktop_positions[index].y = next_y;
+	server_mark_shell_dirty(server);
+}
+
+static void finish_desktop_drag(struct tahoe_server *server) {
+	if (!server->desktop_drag_active) {
+		return;
+	}
+	int index = server->desktop_drag_index;
+	bool moved = server->desktop_drag_moved;
+	server->desktop_drag_active = false;
+	server->desktop_drag_moved = false;
+	server->desktop_drag_index = -1;
+
+	if (moved) {
+		tahoe_config_save(&server->config, server->options->config_path);
+		server_mark_shell_dirty(server);
+	} else if (index >= 0 && index < (int)server->desktop_entry_count) {
+		launch_command(server->desktop_entries[index].exec);
+	}
+}
+
 static void handle_shell_click(struct tahoe_server *server, int x, int y) {
 	int local_x = 0;
 	int local_y = 0;
@@ -653,38 +939,70 @@ static void handle_shell_click(struct tahoe_server *server, int x, int y) {
 	}
 
 	struct tahoe_shell_layout layout;
-	tahoe_shell_layout_compute(output->width, output->height,
-		server->apple_menu_open, &server->config,
-		(int)server->desktop_entry_count, &layout);
+	compute_shell_layout_for_output(server, output, &layout);
 	struct tahoe_shell_hit hit = tahoe_shell_hit_test(&layout, local_x, local_y);
 
 	switch (hit.kind) {
+	case TAHOE_HIT_CONTEXT_MENU_ITEM:
+		handle_context_menu_action(server, hit.index);
+		break;
 	case TAHOE_HIT_APPLE_MENU:
+		clear_context_menu(server);
 		server->apple_menu_open = !server->apple_menu_open;
 		server_mark_shell_dirty(server);
 		break;
 	case TAHOE_HIT_APPLE_MENU_ITEM:
+		clear_context_menu(server);
 		handle_shell_menu_action(server, hit.index);
 		break;
 	case TAHOE_HIT_DOCK_ITEM:
+		clear_context_menu(server);
 		server->apple_menu_open = false;
 		launch_command(tahoe_shell_dock_command(hit.index));
 		server_mark_shell_dirty(server);
 		break;
 	case TAHOE_HIT_DESKTOP_ITEM:
+		clear_context_menu(server);
 		server->apple_menu_open = false;
-		if (hit.index >= 0 && hit.index < (int)server->desktop_entry_count) {
-			launch_command(server->desktop_entries[hit.index].exec);
-		}
+		start_desktop_drag(server, output, &layout, hit.index, local_x, local_y);
 		server_mark_shell_dirty(server);
 		break;
 	case TAHOE_HIT_NONE:
+		clear_context_menu(server);
 		if (server->apple_menu_open) {
 			server->apple_menu_open = false;
 			server_mark_shell_dirty(server);
 		}
 		break;
 	}
+}
+
+static void handle_shell_right_click(struct tahoe_server *server, int x, int y) {
+	int local_x = 0;
+	int local_y = 0;
+	struct tahoe_output *output = output_at_cursor(server, &local_x, &local_y);
+	if (output == NULL) {
+		(void)x;
+		(void)y;
+		return;
+	}
+
+	struct tahoe_shell_layout layout;
+	compute_shell_layout_for_output(server, output, &layout);
+	struct tahoe_shell_hit hit = tahoe_shell_hit_test(&layout, local_x, local_y);
+
+	server->apple_menu_open = false;
+	if (hit.kind == TAHOE_HIT_DOCK_ITEM) {
+		server->context_menu_kind = TAHOE_CONTEXT_MENU_DOCK;
+		server->context_menu_index = hit.index;
+	} else if (hit.kind == TAHOE_HIT_DESKTOP_ITEM) {
+		server->context_menu_kind = TAHOE_CONTEXT_MENU_DESKTOP;
+		server->context_menu_index = hit.index;
+	} else {
+		server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
+		server->context_menu_index = -1;
+	}
+	server_mark_shell_dirty(server);
 }
 
 static void handle_cursor_motion(struct wl_listener *listener, void *data) {
@@ -717,6 +1035,12 @@ static void handle_cursor_button(struct wl_listener *listener, void *data) {
 		server->cursor_mode = TAHOE_CURSOR_PASSTHROUGH;
 		server->grabbed_view = NULL;
 	}
+	if (event->state == WLR_BUTTON_RELEASED &&
+			event->button == BTN_LEFT &&
+			server->desktop_drag_active) {
+		finish_desktop_drag(server);
+		return;
+	}
 
 	double sx = 0.0;
 	double sy = 0.0;
@@ -730,12 +1054,21 @@ static void handle_cursor_button(struct wl_listener *listener, void *data) {
 
 	if (event->state == WLR_BUTTON_PRESSED && event->button == BTN_LEFT) {
 		if (surface != NULL && view != NULL) {
+			clear_context_menu(server);
 			focus_view(view, surface);
 			wlr_seat_pointer_notify_enter(server->seat, surface, sx, sy);
 		} else {
 			wlr_seat_pointer_notify_clear_focus(server->seat);
 			wlr_seat_keyboard_notify_clear_focus(server->seat);
 			handle_shell_click(server, (int)server->cursor->x, (int)server->cursor->y);
+			return;
+		}
+	} else if (event->state == WLR_BUTTON_PRESSED && event->button == BTN_RIGHT) {
+		if (surface == NULL) {
+			wlr_seat_pointer_notify_clear_focus(server->seat);
+			handle_shell_right_click(server,
+				(int)server->cursor->x,
+				(int)server->cursor->y);
 			return;
 		}
 	}
@@ -985,6 +1318,7 @@ static void handle_view_map(struct wl_listener *listener, void *data) {
 	wlr_scene_node_set_enabled(&view->scene_tree->node, true);
 	view->mapped = true;
 	focus_view(view, view->xdg_surface->surface);
+	server_mark_shell_dirty(view->server);
 }
 
 static void handle_view_unmap(struct wl_listener *listener, void *data) {
@@ -1000,6 +1334,7 @@ static void handle_view_unmap(struct wl_listener *listener, void *data) {
 		view->server->cursor_mode = TAHOE_CURSOR_PASSTHROUGH;
 		view->server->grabbed_view = NULL;
 	}
+	server_mark_shell_dirty(view->server);
 }
 
 static void handle_view_destroy(struct wl_listener *listener, void *data) {
@@ -1234,7 +1569,9 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 
 static int handle_clock_timer(void *data) {
 	struct tahoe_server *server = data;
-	server_load_config(server, false);
+	if (!server->desktop_drag_active) {
+		server_load_config(server, false);
+	}
 	server_mark_shell_dirty(server);
 	wl_event_source_timer_update(server->clock_timer, 1000);
 	return 0;
@@ -1272,6 +1609,9 @@ static bool server_init(struct tahoe_server *server,
 	memset(server, 0, sizeof(*server));
 	server->options = options;
 	server->hot_dock_index = -1;
+	server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
+	server->context_menu_index = -1;
+	server->desktop_drag_index = -1;
 	server->cursor_mode = TAHOE_CURSOR_PASSTHROUGH;
 	wl_list_init(&server->outputs);
 	wl_list_init(&server->views);
@@ -1353,9 +1693,7 @@ static bool server_init(struct tahoe_server *server,
 
 	server->cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
-	server->xcursor_manager = wlr_xcursor_manager_create(NULL, 24);
-	wlr_xcursor_manager_load(server->xcursor_manager, 1.0);
-	wlr_cursor_set_xcursor(server->cursor, server->xcursor_manager, "default");
+	server_apply_cursor_config(server);
 
 	server->cursor_motion.notify = handle_cursor_motion;
 	wl_signal_add(&server->cursor->events.motion, &server->cursor_motion);
@@ -1427,6 +1765,10 @@ static bool server_init(struct tahoe_server *server,
 
 static void server_finish(struct tahoe_server *server) {
 	tahoe_assets_finish(&server->assets);
+	if (server->xcursor_manager != NULL) {
+		wlr_xcursor_manager_destroy(server->xcursor_manager);
+		server->xcursor_manager = NULL;
+	}
 	if (server->display != NULL) {
 		wl_display_destroy_clients(server->display);
 		wl_display_destroy(server->display);

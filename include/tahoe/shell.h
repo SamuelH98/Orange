@@ -13,6 +13,7 @@
 #define TAHOE_DESKTOP_MAX 8
 #define TAHOE_MENU_ITEM_MAX 8
 #define TAHOE_WIDGET_MAX 16
+#define TAHOE_CONTEXT_MENU_ITEM_MAX 6
 
 struct tahoe_rect {
 	int x;
@@ -27,6 +28,7 @@ enum tahoe_shell_hit_kind {
 	TAHOE_HIT_APPLE_MENU_ITEM,
 	TAHOE_HIT_DOCK_ITEM,
 	TAHOE_HIT_DESKTOP_ITEM,
+	TAHOE_HIT_CONTEXT_MENU_ITEM,
 };
 
 struct tahoe_shell_hit {
@@ -44,6 +46,12 @@ struct tahoe_widget {
 	enum tahoe_widget_type type;
 	bool visible;
 	struct tahoe_rect rect;
+};
+
+enum tahoe_context_menu_kind {
+	TAHOE_CONTEXT_MENU_NONE,
+	TAHOE_CONTEXT_MENU_DOCK,
+	TAHOE_CONTEXT_MENU_DESKTOP,
 };
 
 struct tahoe_shell_layout {
@@ -67,6 +75,12 @@ struct tahoe_shell_layout {
 	struct tahoe_rect dock;
 	struct tahoe_rect dock_items[TAHOE_DOCK_MAX];
 	int dock_item_count;
+
+	enum tahoe_context_menu_kind context_menu_kind;
+	int context_menu_index;
+	struct tahoe_rect context_menu_panel;
+	struct tahoe_rect context_menu_items[TAHOE_CONTEXT_MENU_ITEM_MAX];
+	int context_menu_item_count;
 };
 
 struct tahoe_shell_state {
@@ -77,6 +91,9 @@ struct tahoe_shell_state {
 	const struct tahoe_config *config;
 	const struct tahoe_desktop_entry *desktop_entries;
 	int desktop_entry_count;
+	bool dock_open[TAHOE_DOCK_MAX];
+	enum tahoe_context_menu_kind context_menu_kind;
+	int context_menu_index;
 };
 
 void tahoe_shell_layout_compute(
@@ -86,6 +103,10 @@ void tahoe_shell_layout_compute(
 	const struct tahoe_config *config,
 	int desktop_entry_count,
 	struct tahoe_shell_layout *layout);
+void tahoe_shell_layout_set_context_menu(
+	struct tahoe_shell_layout *layout,
+	enum tahoe_context_menu_kind kind,
+	int index);
 
 struct tahoe_shell_hit tahoe_shell_hit_test(
 	const struct tahoe_shell_layout *layout,
@@ -102,5 +123,8 @@ void tahoe_shell_draw(
 const char *tahoe_shell_dock_label(int index);
 const char *tahoe_shell_dock_command(int index);
 const char *tahoe_shell_menu_label(int index);
+const char *tahoe_shell_context_menu_label(
+	enum tahoe_context_menu_kind kind,
+	int index);
 
 #endif

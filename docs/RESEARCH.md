@@ -12,6 +12,8 @@
 - `gcc`: 13.3.0
 - `gtk4`: not installed in this environment
 - `gtk+-3.0`: not installed in this environment
+- `convert` / ImageMagick: installed and used to generate repo-safe Tahoe
+  placeholder PNG assets
 
 ## wlroots Notes
 

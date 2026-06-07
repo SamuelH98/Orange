@@ -3,10 +3,9 @@
 A small wlroots compositor prototype that recreates the supplied macOS Tahoe 26
 desktop reference on Linux with C rendering code.
 
-The committed project uses original procedural/vector-style assets. It also
-supports local Apple-provided asset overrides from `assets/apple/`, which is
-ignored by Git. Put licensed wallpaper/icon/logo files there if you want a
-closer private run.
+The committed project ships repo-safe Tahoe-branded placeholder assets under
+`assets/`, using a `T` mark instead of Apple imagery. Private Apple-provided
+assets can still live under ignored `assets/apple/` for local experiments.
 
 ## Build
 
@@ -46,10 +45,23 @@ For automated/headless validation:
 WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe-wlroots --headless --once
 ```
 
-## Apple Asset Overrides
+## Assets
 
-Optional local files are loaded from `assets/` first, then `assets/apple/`.
-`assets/apple/` is ignored by Git.
+Tracked Tahoe placeholder files live in:
+
+- `assets/tahoe-menu.png`
+- `assets/icons/*.png`
+- `assets/icons/*-dark.png`
+- `assets/status/*.png`
+
+Regenerate them with:
+
+```sh
+./tools/generate_tahoe_assets.sh assets
+```
+
+Optional private files can live in `assets/apple/`, which is ignored by Git.
+To make a run use only that private root, pass `--assets assets/apple`.
 
 - `assets/apple/wallpaper.png`
 - `assets/apple/wallpaper-dark.png`
@@ -88,6 +100,14 @@ must match PNG files in `assets/icons/` or `assets/apple/icons/`.
 The compositor reloads `tahoe.conf` once per second. The GTK Settings app source
 is included and will build as `build/tahoe-settings` when GTK4 development
 headers are installed.
+
+Settings currently covers appearance, desktop icon visibility/scale/labels,
+Dock size/icon/magnification/indicator controls, and cursor theme/size. Cursor
+settings write `cursor_theme=` and `cursor_size=` to `tahoe.conf`.
+
+Desktop icons can be dragged; custom positions are persisted in `tahoe.conf` as
+`desktop_icon_N_position=x,y`. Right-click desktop icons or Dock items to open
+their shell context menus.
 
 Bundled GTK themes live under `themes/TahoeGTK/` and
 `themes/TahoeGTK-dark/`. The compositor exports GTK theme variables for

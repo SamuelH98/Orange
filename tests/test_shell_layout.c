@@ -43,6 +43,17 @@ static void test_desktop_requires_entries(void) {
 	assert(layout.desktop_item_count == 0);
 }
 
+static void test_desktop_custom_position(void) {
+	struct tahoe_config config;
+	tahoe_config_set_defaults(&config);
+	config.desktop_positions[1] =
+		(struct tahoe_desktop_icon_position){true, 512, 144};
+	struct tahoe_shell_layout layout;
+	tahoe_shell_layout_compute(1920, 1080, false, &config, 2, &layout);
+	assert(layout.desktop_items[1].x == 512);
+	assert(layout.desktop_items[1].y == 144);
+}
+
 static void test_apple_menu_hit(void) {
 	struct tahoe_config config;
 	tahoe_config_set_defaults(&config);
@@ -95,14 +106,31 @@ static void test_reference_dock_measurements(void) {
 	tahoe_config_set_defaults(&config);
 	struct tahoe_shell_layout layout;
 	tahoe_shell_layout_compute(2048, 1153, false, &config, 2, &layout);
-	assert(layout.dock.x == 70);
-	assert(layout.dock.y == 1045);
-	assert(layout.dock.width == 1908);
-	assert(layout.dock.height == 108);
-	assert(layout.dock_items[0].width == 64);
-	assert(layout.dock_items[0].x == 92);
-	assert(layout.dock_items[0].y == 1059);
-	assert(layout.dock_items[1].x - layout.dock_items[0].x == 90);
+	assert(layout.dock.x == 153);
+	assert(layout.dock.y == 1055);
+	assert(layout.dock.width == 1742);
+	assert(layout.dock.height == 98);
+	assert(layout.dock_items[0].width == 62);
+	assert(layout.dock_items[0].x == 173);
+	assert(layout.dock_items[0].y == 1066);
+	assert(layout.dock_items[1].x - layout.dock_items[0].x == 82);
+}
+
+static void test_context_menu_hit(void) {
+	struct tahoe_config config;
+	tahoe_config_set_defaults(&config);
+	struct tahoe_shell_layout layout;
+	tahoe_shell_layout_compute(1920, 1080, false, &config, 2, &layout);
+	tahoe_shell_layout_set_context_menu(&layout, TAHOE_CONTEXT_MENU_DOCK, 0);
+	assert(layout.context_menu_item_count == 3);
+	struct tahoe_rect item = layout.context_menu_items[1];
+	struct tahoe_shell_hit hit = tahoe_shell_hit_test(
+		&layout,
+		item.x + item.width / 2,
+		item.y + item.height / 2);
+	assert(hit.kind == TAHOE_HIT_CONTEXT_MENU_ITEM);
+	assert(hit.index == 1);
+	assert(tahoe_shell_context_menu_label(TAHOE_CONTEXT_MENU_DOCK, hit.index) != NULL);
 }
 
 static void test_render_smoke(void) {
@@ -179,10 +207,12 @@ int main(void) {
 	test_dock_hit();
 	test_desktop_hit();
 	test_desktop_requires_entries();
+	test_desktop_custom_position();
 	test_apple_menu_hit();
 	test_small_width_dock_fits();
 	test_resolution_scaling();
 	test_reference_dock_measurements();
+	test_context_menu_hit();
 	test_render_smoke();
 	test_dark_render_smoke();
 	test_widget_layer_exists();

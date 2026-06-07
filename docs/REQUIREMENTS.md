@@ -20,6 +20,9 @@ macOS-style shell prototype.
   - right-side desktop items,
   - translucent bottom dock with app icons, divider, running indicators, and
     trash.
+- Ship a tracked, non-Apple Tahoe placeholder asset pack under `assets/` using
+  Tahoe `T` branding for app/menu icons, with private Apple assets remaining
+  optional under ignored paths.
 - Scale menu bar, widgets, desktop items, and Dock geometry from the output
   resolution so the shell remains usable on small and large displays.
 - Match the reference Dock measurements with resolution-scaled constants for
@@ -33,7 +36,8 @@ macOS-style shell prototype.
 - Provide a persistent desktop configuration model:
   - global light/dark appearance,
   - desktop shortcut visibility, grid spacing, text label size, and icon scale,
-  - Dock scale, icon scale, magnification, and active indicator visibility.
+  - Dock scale, icon scale, magnification, and active indicator visibility,
+  - cursor theme name and cursor size.
 - Provide a root desktop widget system similar in spirit to GNOME Shell:
   - widgets are defined as typed objects with stable IDs, rectangles, and
     visibility flags,
@@ -50,6 +54,8 @@ macOS-style shell prototype.
 - Disable server-side compositor decorations and prefer client-side window
   decorations for xdg-decoration and KDE server-decoration protocols.
 - Replace static desktop shortcut placeholders with XDG `.desktop` entries.
+- Allow desktop shortcuts to be dragged to custom persisted positions.
+- Provide right-click context menus for desktop shortcuts and Dock items.
 - Fix visible layout bugs:
   - menu bar item spacing,
   - tray glyph replacement with local battery/Wi-Fi/control icons,
@@ -57,7 +63,9 @@ macOS-style shell prototype.
   - weather-condition icon sourced from assets,
   - desktop label wrapping and centering,
   - Dock indicator dot bottom padding,
-  - Dock Calendar icon day/date sync.
+  - Dock Calendar icon day/date sync,
+  - Dock active indicators showing only mapped/open applications,
+  - top menu logo sizing/color and tighter menu item spacing.
 - Provide a headless `--once` mode that renders one frame and exits for CI-style
   validation.
 - Manage normal Wayland xdg-shell toplevel windows:

@@ -17,10 +17,11 @@ wlroots.
 
 Functional shell prototype is implemented and validated locally. It includes a
 wlroots compositor, reference-sized Tahoe shell geometry, transparent menu bar,
-macOS-measured Dock layout, scalable widgets, basic xdg-shell window
-management, Dock launchers, XDG `.desktop` desktop launchers, keyboard
-shortcuts, local asset sourcing, GTK theme/icon theme scaffolding, PNG reference
-export, and headless one-shot validation.
+compact macOS-style Dock layout, scalable widgets, basic xdg-shell window
+management, Dock launchers, XDG `.desktop` desktop launchers with drag/context
+menus, keyboard shortcuts, cursor customization, local Tahoe asset sourcing,
+GTK theme/icon theme scaffolding, PNG reference export, and headless one-shot
+validation.
 
 ---
 
@@ -82,7 +83,31 @@ Shell layout/hit-test/render smoke unit tests.
 - Dock indicator dots stay inside the glass container.
 - Top menu bar background fill removed so it is transparent over wallpaper.
 - Reference Dock measurements are unit-tested at 2048x1153:
-  `x=70`, `y=1045`, `w=1908`, `h=108`, 64 px icons, 26 px gaps.
+  `x=153`, `y=1055`, `w=1742`, `h=98`, 62 px icons, 20 px gaps.
+
+### Cursor, Menus, And Tahoe Assets
+
+#### Implemented
+
+- Cursor theme and cursor size settings in `tahoe.conf`.
+- GTK Settings app controls for cursor theme and cursor size.
+- Config-driven `wlr_xcursor_manager` setup and `XCURSOR_*` environment export.
+- Tracked Tahoe placeholder PNG asset pack under `assets/` using `T` branding.
+- Asset generator script: `tools/generate_tahoe_assets.sh`.
+- Larger white Tahoe menu logo in the transparent menu bar.
+- Appearance-aware status icon tinting; status glyphs render light in dark mode.
+- Tighter menu bar spacing.
+- Compact Dock icon sizing and spacing to better match the latest Dock crop.
+- Dock active indicators now reflect mapped/open client windows only.
+- Desktop shortcut dragging with persisted `desktop_icon_N_position=x,y`.
+- Right-click context menus for desktop shortcuts and Dock items.
+
+#### Tests Added
+
+- Cursor config load/save coverage.
+- Persisted desktop icon position load/save coverage.
+- Custom desktop position layout coverage.
+- Context menu layout and hit-test coverage.
 
 #### Tests Added
 
@@ -97,7 +122,7 @@ Shell layout/hit-test/render smoke unit tests.
 
 ### Active Feature
 
-Settings/theme/widget/icon-pack enhancement complete for this session.
+Cursor/menu/Dock/asset enhancement complete for this session.
 
 ### Progress
 
@@ -107,10 +132,9 @@ headless one-shot validation works.
 ### Remaining Work
 
 Interactive testing under WSLg or a nested Wayland session is still needed.
-Pixel-level 1:1 requires user-provided Apple assets under `assets/apple/`.
-The local assets currently do not include `assets/apple/status/weather.png`,
-`assets/apple/status/control-center.png`, or the later blue abstract wallpaper;
-those paths are wired and will render when supplied.
+Pixel-level 1:1 requires higher-quality final assets. The repo now ships
+tracked Tahoe placeholder icons, while optional private Apple assets can still
+be used with a different `--assets` root.
 More faithful behavior would require real app/menu integration, richer
 animation, and full desktop services.
 
@@ -121,10 +145,8 @@ animation, and full desktop services.
 1. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/tahoe-wlroots`.
 2. If WSLg exposes a suitable DRM/Vulkan path, try
    `WLR_BACKENDS=wayland WLR_RENDERER=vulkan build/tahoe-wlroots`.
-3. Add optional local files under `assets/apple/` for private Apple-provided
-   wallpaper/icon overrides, especially:
-   `wallpaper-beach-day.png`, `status/weather.png`, and
-   `status/control-center.png`.
+3. Replace generated Tahoe placeholder PNGs under `assets/icons/` and
+   `assets/status/` with final repo-safe GitHub-sourced Tahoe assets.
 4. Populate the GTK icon pack with
    `./tools/populate_icon_theme.sh assets themes/TahoeIcons` after local
    assets are present.
@@ -139,10 +161,9 @@ None blocking for the prototype.
 
 ### Known Issues
 
-Apple proprietary assets are not included; users must supply local licensed
-files under ignored paths for private 1:1 asset replacement. GTK4 development
-headers are not installed in this environment, so `tahoe-settings` is skipped
-here but will build where `gtk4` is available.
+Apple proprietary assets are not included. GTK4 development headers are not
+installed in this environment, so `tahoe-settings` is skipped here but will
+build where `gtk4` is available.
 
 ### Technical Concerns
 

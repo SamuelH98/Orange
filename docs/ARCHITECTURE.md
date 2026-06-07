@@ -27,6 +27,8 @@ Responsibilities:
 - draw a transparent menu bar, widgets, desktop items, dock, and icons,
 - apply persistent appearance, desktop, and Dock configuration,
 - load local assets from `./assets/`,
+- place desktop icons from persisted coordinates when the user drags them,
+- draw shell context menus for Dock and desktop items,
 - expose deterministic layout and hit-test math for tests,
 - maintain transient UI state such as the Apple-style menu popover.
 
@@ -51,6 +53,7 @@ theme or web for shortcut graphics.
 Responsibilities:
 
 - keep asset use local-only,
+- provide tracked Tahoe-branded placeholder PNGs by default,
 - resolve desktop shortcut icons from each parsed `.desktop` file's `Icon=`
   name,
 - validate loaded image dimensions,
@@ -63,6 +66,7 @@ Small line-oriented config model used by both the compositor and Settings app.
 Responsibilities:
 
 - read and write `appearance`, desktop icon, and Dock preferences,
+- read and write cursor theme/size and dragged desktop icon positions,
 - provide defaults when config is missing,
 - expose one struct consumed by shell layout and rendering.
 
@@ -77,6 +81,7 @@ Responsibilities:
 - appearance toggle,
 - desktop icon settings,
 - Dock settings,
+- cursor theme and size settings,
 - write config changes without requiring compositor restart.
 
 ### Bundled GTK Theme
@@ -102,6 +107,7 @@ Responsibilities:
 - send basic configure events,
 - render client textures,
 - focus and raise windows,
+- collect mapped toplevel app IDs/titles for Dock active indicators,
 - move/resize windows from compositor grabs,
 - respond to maximize/fullscreen/close requests,
 - dispatch pointer and keyboard input to the focused client.
@@ -128,6 +134,10 @@ Responsibilities:
    handles Dock, desktop, and menu clicks.
 7. Shell click handlers launch commands from Dock definitions or parsed XDG
    `.desktop` entries.
+8. Desktop drag state updates the in-memory config while dragging and saves
+   `tahoe.conf` on release.
+9. Right-click hit testing opens a shell context menu above a Dock item or near
+   a desktop item.
 
 ## Failure Modes
 
@@ -136,6 +146,7 @@ Responsibilities:
 - Asset load failure: use procedural background fallback only.
 - Missing local assets: log/continue; affected icon slot is left without system
   fallback imagery.
+- Missing cursor theme: wlroots falls back according to xcursor lookup rules.
 - Headless `--once` no output: create an explicit headless output.
 - Vulkan unavailable: wlroots renderer creation may fail; the log identifies
   the selected renderer when it succeeds.

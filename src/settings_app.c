@@ -102,6 +102,22 @@ static void on_dock_mag_scale(GtkRange *range, gpointer data) {
 	save_config(settings);
 }
 
+static void on_cursor_size(GtkRange *range, gpointer data) {
+	struct settings_app *settings = data;
+	settings->config.cursor_size = (int)gtk_range_get_value(range);
+	save_config(settings);
+}
+
+static void on_cursor_theme(GtkEditable *editable, gpointer data) {
+	struct settings_app *settings = data;
+	const char *text = gtk_editable_get_text(editable);
+	snprintf(settings->config.cursor_theme,
+		sizeof(settings->config.cursor_theme),
+		"%s",
+		text != NULL ? text : "");
+	save_config(settings);
+}
+
 static GtkWidget *section_label(const char *title) {
 	GtkWidget *label = gtk_label_new(title);
 	gtk_widget_set_margin_top(label, 18);
@@ -183,6 +199,17 @@ static void activate(GtkApplication *app, gpointer data) {
 	g_signal_connect(indicators, "notify::active",
 		G_CALLBACK(on_dock_indicators), settings);
 	gtk_box_append(GTK_BOX(content), row_new("Active Indicator Dots", indicators));
+
+	gtk_box_append(GTK_BOX(content), section_label("Cursor"));
+	GtkWidget *cursor_theme = gtk_entry_new();
+	gtk_editable_set_text(GTK_EDITABLE(cursor_theme), settings->config.cursor_theme);
+	gtk_widget_set_size_request(cursor_theme, 220, -1);
+	g_signal_connect(cursor_theme, "changed", G_CALLBACK(on_cursor_theme), settings);
+	gtk_box_append(GTK_BOX(content), row_new("Cursor Theme", cursor_theme));
+
+	GtkWidget *cursor_size = scale_new(settings->config.cursor_size, 16, 96, 1);
+	g_signal_connect(cursor_size, "value-changed", G_CALLBACK(on_cursor_size), settings);
+	gtk_box_append(GTK_BOX(content), row_new("Cursor Size", cursor_size));
 
 	gtk_window_present(GTK_WINDOW(window));
 }
