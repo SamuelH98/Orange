@@ -11,9 +11,9 @@
 
 #define TAHOE_DOCK_MAX 24
 #define TAHOE_DESKTOP_MAX 8
-#define TAHOE_MENU_ITEM_MAX 8
+#define TAHOE_MENU_ITEM_MAX 20
 #define TAHOE_WIDGET_MAX 16
-#define TAHOE_CONTEXT_MENU_ITEM_MAX 6
+#define TAHOE_CONTEXT_MENU_ITEM_MAX 16
 
 struct tahoe_rect {
 	int x;
@@ -28,6 +28,7 @@ enum tahoe_shell_hit_kind {
 	TAHOE_HIT_APPLE_MENU_ITEM,
 	TAHOE_HIT_DOCK_ITEM,
 	TAHOE_HIT_DESKTOP_ITEM,
+	TAHOE_HIT_DESKTOP,
 	TAHOE_HIT_CONTEXT_MENU_ITEM,
 };
 
@@ -52,6 +53,7 @@ enum tahoe_context_menu_kind {
 	TAHOE_CONTEXT_MENU_NONE,
 	TAHOE_CONTEXT_MENU_DOCK,
 	TAHOE_CONTEXT_MENU_DESKTOP,
+	TAHOE_CONTEXT_MENU_DESKTOP_ICON,
 };
 
 struct tahoe_shell_layout {
@@ -62,6 +64,7 @@ struct tahoe_shell_layout {
 	struct tahoe_rect apple_menu_button;
 	struct tahoe_rect apple_menu_panel;
 	struct tahoe_rect apple_menu_items[TAHOE_MENU_ITEM_MAX];
+	bool apple_menu_separator[TAHOE_MENU_ITEM_MAX];
 	int apple_menu_item_count;
 
 	struct tahoe_rect calendar_widget;
@@ -80,6 +83,7 @@ struct tahoe_shell_layout {
 	int context_menu_index;
 	struct tahoe_rect context_menu_panel;
 	struct tahoe_rect context_menu_items[TAHOE_CONTEXT_MENU_ITEM_MAX];
+	bool context_menu_separator[TAHOE_CONTEXT_MENU_ITEM_MAX];
 	int context_menu_item_count;
 };
 
@@ -94,6 +98,8 @@ struct tahoe_shell_state {
 	bool dock_open[TAHOE_DOCK_MAX];
 	enum tahoe_context_menu_kind context_menu_kind;
 	int context_menu_index;
+	int context_menu_cursor_x;
+	int context_menu_cursor_y;
 };
 
 void tahoe_shell_layout_compute(
@@ -106,7 +112,9 @@ void tahoe_shell_layout_compute(
 void tahoe_shell_layout_set_context_menu(
 	struct tahoe_shell_layout *layout,
 	enum tahoe_context_menu_kind kind,
-	int index);
+	int index,
+	int cursor_x,
+	int cursor_y);
 
 struct tahoe_shell_hit tahoe_shell_hit_test(
 	const struct tahoe_shell_layout *layout,

@@ -40,23 +40,56 @@ static const struct launcher dock_launchers[] = {
 static const char *menu_labels[] = {
 	"About Tahoe wlroots",
 	"System Settings...",
-	"App Launcher",
-	"Terminal",
-	"Close Focused Window",
-	"Quit Tahoe wlroots",
+	"App Store...",
+	"Recent Items",
+	"Force Quit...",
+	"Sleep",
+	"Restart...",
+	"Shut Down...",
+	"Lock Screen",
+	"Log Out",
 };
+
+/* Index of first separator after each group; -1 marks end.
+   A separator is drawn before the item at this index. */
+static const int menu_separator_before[] = {3, 4, 5, 8, -1};
 
 static const char *dock_context_labels[] = {
 	"Open",
+	"Show in Finder",
+	"Remove from Dock",
+	"Open at Login",
 	"Dock Settings",
-	"Hide Indicators",
 };
 
+static const int dock_context_separator_before[] = {2, 4, -1};
+
 static const char *desktop_context_labels[] = {
-	"Open",
-	"Reset Position",
-	"Hide Desktop Icons",
+	"New Folder",
+	"Get Info",
+	"Use Stacks",
+	"Sort By",
+	"Clean Up By",
+	"Show View Options",
+	"Change Desktop Background...",
+	"Edit Widgets",
 };
+
+static const int desktop_context_separator_before[] = {2, 5, -1};
+
+static const char *desktop_icon_context_labels[] = {
+	"Open",
+	"Show in Finder",
+	"Copy",
+	"Get Info",
+	"Rename",
+	"Duplicate",
+	"Quick Look",
+	"Share",
+	"Move to Trash",
+};
+
+static const int desktop_icon_context_separator_before[] = {2, 6, 8, -1};
 
 static bool rect_contains(const struct tahoe_rect *rect, int x, int y) {
 	return x >= rect->x && y >= rect->y &&
@@ -688,10 +721,10 @@ static void draw_apple_menu(cairo_t *cr,
 	draw_liquid_panel(cr, &panel, 14 * s, 0.70, false);
 	for (int i = 0; i < layout->apple_menu_item_count; i++) {
 		struct tahoe_rect item = layout->apple_menu_items[i];
-		if (i == 0 || i == 4) {
+		if (i > 0 && layout->apple_menu_separator[i]) {
 			set_source_rgba255(cr, 42, 42, 46, 0.18);
 			cairo_rectangle(cr, panel.x + scaled_i(12, s),
-				item.y + item.height - 1,
+				item.y - 1,
 				panel.width - scaled_i(24, s), 1);
 			cairo_fill(cr);
 		}
@@ -714,9 +747,10 @@ static void draw_context_menu(cairo_t *cr,
 	draw_liquid_panel(cr, &panel, 13 * s, 0.74, false);
 	for (int i = 0; i < layout->context_menu_item_count; i++) {
 		struct tahoe_rect item = layout->context_menu_items[i];
-		if (i > 0) {
+		if (i > 0 && layout->context_menu_separator[i]) {
 			set_source_rgba255(cr, 32, 36, 42, 0.13);
-			cairo_rectangle(cr, panel.x + scaled_i(11, s), item.y,
+			cairo_rectangle(cr, panel.x + scaled_i(11, s),
+				item.y - 1,
 				panel.width - scaled_i(22, s), 1);
 			cairo_fill(cr);
 		}
@@ -725,7 +759,7 @@ static void draw_context_menu(cairo_t *cr,
 			item.x + scaled_i(13, s),
 			item.y + scaled_i(22, s),
 			13 * s,
-			22, 25, 30, 0.92, i == 0);
+			22, 25, 30, 0.92, false);
 	}
 }
 
@@ -831,8 +865,16 @@ void tahoe_shell_layout_compute(
 			(int)(sizeof(menu_labels) / sizeof(menu_labels[0]));
 		layout->apple_menu_panel = (struct tahoe_rect){
 			scaled_i(18, s), layout->menu_bar.height + scaled_i(4, s),
-			scaled_i(246, s),
+			scaled_i(260, s),
 			scaled_i(18, s) + layout->apple_menu_item_count * scaled_i(34, s)};
+		memset(layout->apple_menu_separator, 0,
+			sizeof(layout->apple_menu_separator));
+		for (int si = 0; menu_separator_before[si] >= 0; si++) {
+			int idx = menu_separator_before[si];
+			if (idx < layout->apple_menu_item_count) {
+				layout->apple_menu_separator[idx] = true;
+			}
+		}
 		for (int i = 0; i < layout->apple_menu_item_count; i++) {
 			layout->apple_menu_items[i] = (struct tahoe_rect){
 				layout->apple_menu_panel.x + scaled_i(8, s),
@@ -847,27 +889,37 @@ void tahoe_shell_layout_compute(
 void tahoe_shell_layout_set_context_menu(
 		struct tahoe_shell_layout *layout,
 		enum tahoe_context_menu_kind kind,
-		int index) {
+		int index,
+		int cursor_x,
+		int cursor_y) {
 	layout->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
 	layout->context_menu_index = -1;
 	layout->context_menu_item_count = 0;
-	if (kind == TAHOE_CONTEXT_MENU_NONE || index < 0) {
+	if (kind == TAHOE_CONTEXT_MENU_NONE) {
 		return;
 	}
 
 	double s = layout_scale(layout);
 	int item_count = 0;
 	struct tahoe_rect anchor = {0};
+	const int *separator_before = NULL;
+
 	if (kind == TAHOE_CONTEXT_MENU_DOCK &&
-			index < layout->dock_item_count) {
+			index >= 0 && index < layout->dock_item_count) {
 		anchor = layout->dock_items[index];
 		item_count = (int)(sizeof(dock_context_labels) /
 			sizeof(dock_context_labels[0]));
-	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP &&
-			index < layout->desktop_item_count) {
+		separator_before = dock_context_separator_before;
+	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP_ICON &&
+			index >= 0 && index < layout->desktop_item_count) {
 		anchor = layout->desktop_items[index];
+		item_count = (int)(sizeof(desktop_icon_context_labels) /
+			sizeof(desktop_icon_context_labels[0]));
+		separator_before = desktop_icon_context_separator_before;
+	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP) {
 		item_count = (int)(sizeof(desktop_context_labels) /
 			sizeof(desktop_context_labels[0]));
+		separator_before = desktop_context_separator_before;
 	} else {
 		return;
 	}
@@ -876,12 +928,20 @@ void tahoe_shell_layout_set_context_menu(
 	}
 
 	int item_h = scaled_i(31, s);
-	int panel_w = scaled_i(kind == TAHOE_CONTEXT_MENU_DOCK ? 184 : 196, s);
+	int panel_w = scaled_i(kind == TAHOE_CONTEXT_MENU_DOCK ? 184 : 220, s);
 	int panel_h = scaled_i(12, s) + item_count * item_h;
-	int x = anchor.x + anchor.width / 2 - panel_w / 2;
-	int y = kind == TAHOE_CONTEXT_MENU_DOCK ?
-		anchor.y - panel_h - scaled_i(10, s) :
-		anchor.y + scaled_i(20, s);
+	int x, y;
+	if (kind == TAHOE_CONTEXT_MENU_DESKTOP || (
+			kind == TAHOE_CONTEXT_MENU_DESKTOP_ICON && index < 0)) {
+		x = cursor_x - panel_w / 2;
+		y = cursor_y - scaled_i(8, s);
+	} else if (kind == TAHOE_CONTEXT_MENU_DOCK) {
+		x = anchor.x + anchor.width / 2 - panel_w / 2;
+		y = anchor.y - panel_h - scaled_i(10, s);
+	} else {
+		x = anchor.x + anchor.width / 2 - panel_w / 2;
+		y = anchor.y + scaled_i(20, s);
+	}
 
 	if (x < scaled_i(8, s)) {
 		x = scaled_i(8, s);
@@ -900,6 +960,16 @@ void tahoe_shell_layout_set_context_menu(
 	layout->context_menu_index = index;
 	layout->context_menu_panel = (struct tahoe_rect){x, y, panel_w, panel_h};
 	layout->context_menu_item_count = item_count;
+	memset(layout->context_menu_separator, 0,
+		sizeof(layout->context_menu_separator));
+	if (separator_before != NULL) {
+		for (int si = 0; separator_before[si] >= 0; si++) {
+			int idx = separator_before[si];
+			if (idx < item_count) {
+				layout->context_menu_separator[idx] = true;
+			}
+		}
+	}
 	for (int i = 0; i < item_count; i++) {
 		layout->context_menu_items[i] = (struct tahoe_rect){
 			x + scaled_i(7, s),
@@ -945,6 +1015,9 @@ struct tahoe_shell_hit tahoe_shell_hit_test(
 			return (struct tahoe_shell_hit){TAHOE_HIT_DESKTOP_ITEM, i};
 		}
 	}
+	if (y > layout->menu_bar.height) {
+		return (struct tahoe_shell_hit){TAHOE_HIT_DESKTOP, -1};
+	}
 	return (struct tahoe_shell_hit){TAHOE_HIT_NONE, -1};
 }
 
@@ -988,7 +1061,9 @@ void tahoe_shell_draw(
 		state->desktop_entry_count, &layout);
 	tahoe_shell_layout_set_context_menu(&layout,
 		state->context_menu_kind,
-		state->context_menu_index);
+		state->context_menu_index,
+		state->context_menu_cursor_x,
+		state->context_menu_cursor_y);
 
 	draw_wallpaper(cr, width, height, state->assets, config);
 	draw_menu_bar(cr, &layout, state, config);
@@ -1042,6 +1117,13 @@ const char *tahoe_shell_context_menu_label(
 				index < (int)(sizeof(desktop_context_labels) /
 					sizeof(desktop_context_labels[0]))) {
 			return desktop_context_labels[index];
+		}
+		break;
+	case TAHOE_CONTEXT_MENU_DESKTOP_ICON:
+		if (index >= 0 &&
+				index < (int)(sizeof(desktop_icon_context_labels) /
+					sizeof(desktop_icon_context_labels[0]))) {
+			return desktop_icon_context_labels[index];
 		}
 		break;
 	case TAHOE_CONTEXT_MENU_NONE:

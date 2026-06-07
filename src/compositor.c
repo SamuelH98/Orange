@@ -165,6 +165,8 @@ struct tahoe_server {
 	bool dock_open[TAHOE_DOCK_MAX];
 	enum tahoe_context_menu_kind context_menu_kind;
 	int context_menu_index;
+	int context_menu_cursor_x;
+	int context_menu_cursor_y;
 	bool desktop_drag_active;
 	bool desktop_drag_moved;
 	int desktop_drag_index;
@@ -409,7 +411,9 @@ static void compute_shell_layout_for_output(
 		layout);
 	tahoe_shell_layout_set_context_menu(layout,
 		server->context_menu_kind,
-		server->context_menu_index);
+		server->context_menu_index,
+		server->context_menu_cursor_x,
+		server->context_menu_cursor_y);
 }
 
 static void server_mark_shell_dirty(struct tahoe_server *server) {
@@ -492,6 +496,8 @@ static void output_redraw_shell(struct tahoe_output *output) {
 		.desktop_entry_count = (int)output->server->desktop_entry_count,
 		.context_menu_kind = output->server->context_menu_kind,
 		.context_menu_index = output->server->context_menu_index,
+		.context_menu_cursor_x = output->server->context_menu_cursor_x,
+		.context_menu_cursor_y = output->server->context_menu_cursor_y,
 	};
 	memcpy(state.dock_open, output->server->dock_open, sizeof(state.dock_open));
 	tahoe_shell_draw(output->shell_buffer->pixels,
@@ -771,13 +777,22 @@ static void handle_shell_menu_action(struct tahoe_server *server, int index) {
 	case 2:
 		launch_app_picker();
 		break;
-	case 3:
-		launch_terminal();
-		break;
 	case 4:
 		close_focused_view(server);
 		break;
 	case 5:
+		launch_command("systemctl suspend || true");
+		break;
+	case 6:
+		launch_command("systemctl reboot || true");
+		break;
+	case 7:
+		launch_command("systemctl poweroff || true");
+		break;
+	case 8:
+		launch_command("xdg-screensaver lock || gnome-screensaver-command -l || true");
+		break;
+	case 9:
 		wl_display_terminate(server->display);
 		break;
 	default:
@@ -791,6 +806,8 @@ static void clear_context_menu(struct tahoe_server *server) {
 	if (server->context_menu_kind != TAHOE_CONTEXT_MENU_NONE) {
 		server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
 		server->context_menu_index = -1;
+		server->context_menu_cursor_x = 0;
+		server->context_menu_cursor_y = 0;
 		server_mark_shell_dirty(server);
 	}
 }
@@ -807,11 +824,28 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 			launch_command(tahoe_shell_dock_command(target));
 			break;
 		case 1:
+			launch_command("xdg-open \"$HOME\" || true");
+			break;
+		case 4:
 			launch_command("build/tahoe-settings tahoe.conf || true");
 			break;
-		case 2:
-			server->config.dock_show_indicators = false;
-			tahoe_config_save(&server->config, server->options->config_path);
+		default:
+			break;
+		}
+	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP_ICON) {
+		switch (item_index) {
+		case 0:
+			if (target >= 0 && target < (int)server->desktop_entry_count) {
+				launch_command(server->desktop_entries[target].exec);
+			}
+			break;
+		case 6:
+			if (target >= 0 && target < (int)server->desktop_entry_count) {
+				launch_command("xdg-open \"$HOME\" || true");
+			}
+			break;
+		case 8:
+			launch_command("gio trash \"$HOME/Desktop\" || true");
 			break;
 		default:
 			break;
@@ -819,19 +853,10 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP) {
 		switch (item_index) {
 		case 0:
-			if (target >= 0 && target < (int)server->desktop_entry_count) {
-				launch_command(server->desktop_entries[target].exec);
-			}
+			launch_command("xdg-open \"$HOME/Desktop\" || true");
 			break;
-		case 1:
-			if (target >= 0 && target < TAHOE_DESKTOP_POSITION_MAX) {
-				server->config.desktop_positions[target].valid = false;
-				tahoe_config_save(&server->config, server->options->config_path);
-			}
-			break;
-		case 2:
-			server->config.desktop_icons_visible = false;
-			tahoe_config_save(&server->config, server->options->config_path);
+		case 6:
+			launch_command("build/tahoe-settings tahoe.conf || true");
 			break;
 		default:
 			break;
@@ -969,6 +994,7 @@ static void handle_shell_click(struct tahoe_server *server, int x, int y) {
 		start_desktop_drag(server, output, &layout, hit.index, local_x, local_y);
 		server_mark_shell_dirty(server);
 		break;
+	case TAHOE_HIT_DESKTOP:
 	case TAHOE_HIT_NONE:
 		clear_context_menu(server);
 		if (server->apple_menu_open) {
@@ -994,12 +1020,17 @@ static void handle_shell_right_click(struct tahoe_server *server, int x, int y) 
 	struct tahoe_shell_hit hit = tahoe_shell_hit_test(&layout, local_x, local_y);
 
 	server->apple_menu_open = false;
+	server->context_menu_cursor_x = local_x;
+	server->context_menu_cursor_y = local_y;
 	if (hit.kind == TAHOE_HIT_DOCK_ITEM) {
 		server->context_menu_kind = TAHOE_CONTEXT_MENU_DOCK;
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == TAHOE_HIT_DESKTOP_ITEM) {
-		server->context_menu_kind = TAHOE_CONTEXT_MENU_DESKTOP;
+		server->context_menu_kind = TAHOE_CONTEXT_MENU_DESKTOP_ICON;
 		server->context_menu_index = hit.index;
+	} else if (hit.kind == TAHOE_HIT_DESKTOP) {
+		server->context_menu_kind = TAHOE_CONTEXT_MENU_DESKTOP;
+		server->context_menu_index = -1;
 	} else {
 		server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
 		server->context_menu_index = -1;
