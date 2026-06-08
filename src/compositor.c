@@ -812,6 +812,31 @@ static void clear_context_menu(struct tahoe_server *server) {
 	}
 }
 
+static void set_widget_size(
+		struct tahoe_server *server,
+		int target,
+		enum tahoe_widget_size size) {
+	if (target == 0) {
+		server->config.calendar_widget_size = size;
+	} else if (target == 1) {
+		server->config.weather_widget_size = size;
+	} else {
+		return;
+	}
+	tahoe_config_save(&server->config, server->options->config_path);
+}
+
+static void remove_widget(struct tahoe_server *server, int target) {
+	if (target == 0) {
+		server->config.calendar_widget_visible = false;
+	} else if (target == 1) {
+		server->config.weather_widget_visible = false;
+	} else {
+		return;
+	}
+	tahoe_config_save(&server->config, server->options->config_path);
+}
+
 static void handle_context_menu_action(struct tahoe_server *server, int item_index) {
 	enum tahoe_context_menu_kind kind = server->context_menu_kind;
 	int target = server->context_menu_index;
@@ -828,6 +853,26 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 			break;
 		case 4:
 			launch_command("build/tahoe-settings tahoe.conf || true");
+			break;
+		default:
+			break;
+		}
+	} else if (kind == TAHOE_CONTEXT_MENU_WIDGET) {
+		switch (item_index) {
+		case 0:
+			launch_command("build/tahoe-settings tahoe.conf || true");
+			break;
+		case 1:
+			set_widget_size(server, target, TAHOE_WIDGET_SIZE_SMALL);
+			break;
+		case 2:
+			set_widget_size(server, target, TAHOE_WIDGET_SIZE_MEDIUM);
+			break;
+		case 3:
+			set_widget_size(server, target, TAHOE_WIDGET_SIZE_LARGE);
+			break;
+		case 4:
+			remove_widget(server, target);
 			break;
 		default:
 			break;
@@ -856,6 +901,9 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 			launch_command("xdg-open \"$HOME/Desktop\" || true");
 			break;
 		case 6:
+			launch_command("build/tahoe-settings tahoe.conf || true");
+			break;
+		case 7:
 			launch_command("build/tahoe-settings tahoe.conf || true");
 			break;
 		default:
@@ -988,6 +1036,11 @@ static void handle_shell_click(struct tahoe_server *server, int x, int y) {
 		launch_command(tahoe_shell_dock_command(hit.index));
 		server_mark_shell_dirty(server);
 		break;
+	case TAHOE_HIT_WIDGET:
+		clear_context_menu(server);
+		server->apple_menu_open = false;
+		server_mark_shell_dirty(server);
+		break;
 	case TAHOE_HIT_DESKTOP_ITEM:
 		clear_context_menu(server);
 		server->apple_menu_open = false;
@@ -1024,6 +1077,9 @@ static void handle_shell_right_click(struct tahoe_server *server, int x, int y) 
 	server->context_menu_cursor_y = local_y;
 	if (hit.kind == TAHOE_HIT_DOCK_ITEM) {
 		server->context_menu_kind = TAHOE_CONTEXT_MENU_DOCK;
+		server->context_menu_index = hit.index;
+	} else if (hit.kind == TAHOE_HIT_WIDGET) {
+		server->context_menu_kind = TAHOE_CONTEXT_MENU_WIDGET;
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == TAHOE_HIT_DESKTOP_ITEM) {
 		server->context_menu_kind = TAHOE_CONTEXT_MENU_DESKTOP_ICON;

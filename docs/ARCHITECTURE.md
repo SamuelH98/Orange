@@ -28,7 +28,8 @@ Responsibilities:
 - apply persistent appearance, desktop, and Dock configuration,
 - load local assets from `./assets/`,
 - place desktop icons from persisted coordinates when the user drags them,
-- draw shell context menus for Dock and desktop items,
+- draw shell context menus for Dock items, widgets, desktop items, and empty
+  desktop background,
 - expose deterministic layout and hit-test math for tests,
 - maintain transient UI state such as the Apple-style menu popover.
 
@@ -41,6 +42,8 @@ Responsibilities:
 
 - compute widget rectangles from output size and config,
 - keep stable widget IDs and types,
+- apply widget visibility and size settings,
+- expose widget hit targets and shortcut-menu actions,
 - draw widgets beneath application windows,
 - expose deterministic layout for tests.
 
@@ -65,7 +68,7 @@ Small line-oriented config model used by both the compositor and Settings app.
 
 Responsibilities:
 
-- read and write `appearance`, desktop icon, and Dock preferences,
+- read and write `appearance`, desktop icon, widget, and Dock preferences,
 - read and write cursor theme/size and dragged desktop icon positions,
 - provide defaults when config is missing,
 - expose one struct consumed by shell layout and rendering.
@@ -80,6 +83,7 @@ Responsibilities:
 
 - appearance toggle,
 - desktop icon settings,
+- widget visibility and size settings,
 - Dock settings,
 - cursor theme and size settings,
 - write config changes without requiring compositor restart.
@@ -136,8 +140,8 @@ Responsibilities:
    `.desktop` entries.
 8. Desktop drag state updates the in-memory config while dragging and saves
    `tahoe.conf` on release.
-9. Right-click hit testing opens a shell context menu above a Dock item or near
-   a desktop item.
+9. Right-click hit testing opens a shell context menu above a Dock item, near a
+   widget, near a desktop item, or at the empty desktop cursor location.
 
 ## Failure Modes
 

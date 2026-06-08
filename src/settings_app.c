@@ -66,6 +66,20 @@ static void on_dock_indicators(GtkSwitch *widget, GParamSpec *pspec, gpointer da
 	save_config(settings);
 }
 
+static void on_calendar_visible(GtkSwitch *widget, GParamSpec *pspec, gpointer data) {
+	(void)pspec;
+	struct settings_app *settings = data;
+	settings->config.calendar_widget_visible = gtk_switch_get_active(widget);
+	save_config(settings);
+}
+
+static void on_weather_visible(GtkSwitch *widget, GParamSpec *pspec, gpointer data) {
+	(void)pspec;
+	struct settings_app *settings = data;
+	settings->config.weather_widget_visible = gtk_switch_get_active(widget);
+	save_config(settings);
+}
+
 static void on_desktop_grid(GtkRange *range, gpointer data) {
 	struct settings_app *settings = data;
 	settings->config.desktop_grid_spacing = (int)gtk_range_get_value(range);
@@ -99,6 +113,20 @@ static void on_dock_icon_scale(GtkRange *range, gpointer data) {
 static void on_dock_mag_scale(GtkRange *range, gpointer data) {
 	struct settings_app *settings = data;
 	settings->config.dock_magnification_scale = gtk_range_get_value(range);
+	save_config(settings);
+}
+
+static void on_calendar_size(GtkRange *range, gpointer data) {
+	struct settings_app *settings = data;
+	settings->config.calendar_widget_size =
+		(enum tahoe_widget_size)(int)gtk_range_get_value(range);
+	save_config(settings);
+}
+
+static void on_weather_size(GtkRange *range, gpointer data) {
+	struct settings_app *settings = data;
+	settings->config.weather_widget_size =
+		(enum tahoe_widget_size)(int)gtk_range_get_value(range);
 	save_config(settings);
 }
 
@@ -170,6 +198,33 @@ static void activate(GtkApplication *app, gpointer data) {
 	g_signal_connect(desktop_scale, "value-changed",
 		G_CALLBACK(on_desktop_scale), settings);
 	gtk_box_append(GTK_BOX(content), row_new("Shortcut Scale", desktop_scale));
+
+	gtk_box_append(GTK_BOX(content), section_label("Widgets"));
+	GtkWidget *calendar_visible = gtk_switch_new();
+	gtk_switch_set_active(GTK_SWITCH(calendar_visible),
+		settings->config.calendar_widget_visible);
+	g_signal_connect(calendar_visible, "notify::active",
+		G_CALLBACK(on_calendar_visible), settings);
+	gtk_box_append(GTK_BOX(content), row_new("Show Calendar", calendar_visible));
+
+	GtkWidget *weather_visible = gtk_switch_new();
+	gtk_switch_set_active(GTK_SWITCH(weather_visible),
+		settings->config.weather_widget_visible);
+	g_signal_connect(weather_visible, "notify::active",
+		G_CALLBACK(on_weather_visible), settings);
+	gtk_box_append(GTK_BOX(content), row_new("Show Weather", weather_visible));
+
+	GtkWidget *calendar_size =
+		scale_new(settings->config.calendar_widget_size, 0, 2, 1);
+	g_signal_connect(calendar_size, "value-changed",
+		G_CALLBACK(on_calendar_size), settings);
+	gtk_box_append(GTK_BOX(content), row_new("Calendar Size", calendar_size));
+
+	GtkWidget *weather_size =
+		scale_new(settings->config.weather_widget_size, 0, 2, 1);
+	g_signal_connect(weather_size, "value-changed",
+		G_CALLBACK(on_weather_size), settings);
+	gtk_box_append(GTK_BOX(content), row_new("Weather Size", weather_size));
 
 	gtk_box_append(GTK_BOX(content), section_label("Dock"));
 	GtkWidget *dock_scale = scale_new(settings->config.dock_scale, 0.60, 1.60, 0.05);

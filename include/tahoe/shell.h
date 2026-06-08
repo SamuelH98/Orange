@@ -27,6 +27,7 @@ enum tahoe_shell_hit_kind {
 	TAHOE_HIT_APPLE_MENU,
 	TAHOE_HIT_APPLE_MENU_ITEM,
 	TAHOE_HIT_DOCK_ITEM,
+	TAHOE_HIT_WIDGET,
 	TAHOE_HIT_DESKTOP_ITEM,
 	TAHOE_HIT_DESKTOP,
 	TAHOE_HIT_CONTEXT_MENU_ITEM,
@@ -52,6 +53,7 @@ struct tahoe_widget {
 enum tahoe_context_menu_kind {
 	TAHOE_CONTEXT_MENU_NONE,
 	TAHOE_CONTEXT_MENU_DOCK,
+	TAHOE_CONTEXT_MENU_WIDGET,
 	TAHOE_CONTEXT_MENU_DESKTOP,
 	TAHOE_CONTEXT_MENU_DESKTOP_ICON,
 };
@@ -102,6 +104,10 @@ struct tahoe_shell_state {
 	int context_menu_cursor_y;
 };
 
+struct tahoe_shell_draw_options {
+	bool draw_wallpaper;
+};
+
 void tahoe_shell_layout_compute(
 	int width,
 	int height,
@@ -127,6 +133,13 @@ void tahoe_shell_draw(
 	int height,
 	int stride,
 	const struct tahoe_shell_state *state);
+void tahoe_shell_draw_with_options(
+	uint32_t *pixels,
+	int width,
+	int height,
+	int stride,
+	const struct tahoe_shell_state *state,
+	const struct tahoe_shell_draw_options *options);
 
 const char *tahoe_shell_dock_label(int index);
 const char *tahoe_shell_dock_command(int index);

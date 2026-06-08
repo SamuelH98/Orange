@@ -6,6 +6,12 @@
 #define TAHOE_CURSOR_THEME_MAX 128
 #define TAHOE_DESKTOP_POSITION_MAX 8
 
+enum tahoe_widget_size {
+	TAHOE_WIDGET_SIZE_SMALL,
+	TAHOE_WIDGET_SIZE_MEDIUM,
+	TAHOE_WIDGET_SIZE_LARGE,
+};
+
 struct tahoe_desktop_icon_position {
 	bool valid;
 	int x;
@@ -31,6 +37,11 @@ struct tahoe_config {
 	bool dock_magnification;
 	double dock_magnification_scale;
 	bool dock_show_indicators;
+
+	bool calendar_widget_visible;
+	bool weather_widget_visible;
+	enum tahoe_widget_size calendar_widget_size;
+	enum tahoe_widget_size weather_widget_size;
 
 	char cursor_theme[TAHOE_CURSOR_THEME_MAX];
 	int cursor_size;

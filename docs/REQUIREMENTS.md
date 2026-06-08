@@ -37,11 +37,13 @@ macOS-style shell prototype.
   - global light/dark appearance,
   - desktop shortcut visibility, grid spacing, text label size, and icon scale,
   - Dock scale, icon scale, magnification, and active indicator visibility,
+  - widget visibility and small/medium/large sizing,
   - cursor theme name and cursor size.
 - Provide a root desktop widget system similar in spirit to GNOME Shell:
   - widgets are defined as typed objects with stable IDs, rectangles, and
     visibility flags,
   - the existing Calendar and Weather cards render through this widget layer,
+  - widgets expose shortcut-menu edit, size, and remove actions,
   - widgets remain pinned below floating application windows.
 - Provide a native GTK Settings application source that controls this
   configuration and uses the bundled GTK theme when GTK development libraries
@@ -55,7 +57,8 @@ macOS-style shell prototype.
   decorations for xdg-decoration and KDE server-decoration protocols.
 - Replace static desktop shortcut placeholders with XDG `.desktop` entries.
 - Allow desktop shortcuts to be dragged to custom persisted positions.
-- Provide right-click context menus for desktop shortcuts and Dock items.
+- Provide right-click context menus for desktop shortcuts, widgets, and Dock
+  items.
 - Fix visible layout bugs:
   - menu bar item spacing,
   - tray glyph replacement with local battery/Wi-Fi/control icons,
@@ -118,4 +121,7 @@ macOS-style shell prototype.
 - `.desktop` parser tests pass.
 - Config parser tests pass.
 - Shell render tests cover both light and dark appearance.
+- The visual test renders the shell foreground at native `2880x1800`, ignoring
+  wallpaper, and measures Dock glass bounds plus Dock icon width/center/spacing
+  against `tahoe-desktop-reference.png`.
 - `PROJECT_STATE.md` documents status, risks, and continuation steps.

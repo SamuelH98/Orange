@@ -7,7 +7,7 @@
 int main(void) {
 	struct tahoe_desktop_entry entry;
 	assert(tahoe_desktop_entry_load("../assets/desktop/pdf-document.desktop", &entry));
-	assert(strcmp(entry.name, "PDF Document") == 0);
+	assert(strcmp(entry.name, "PDF Documents") == 0);
 	assert(strcmp(entry.icon, "notes") == 0);
 	assert(strstr(entry.exec, "Documents") != NULL);
 

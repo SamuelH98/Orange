@@ -25,6 +25,28 @@ static int clamp_int(int value, int min_value, int max_value) {
 	return value;
 }
 
+static enum tahoe_widget_size parse_widget_size(const char *value) {
+	if (value != NULL && strcmp(value, "medium") == 0) {
+		return TAHOE_WIDGET_SIZE_MEDIUM;
+	}
+	if (value != NULL && strcmp(value, "large") == 0) {
+		return TAHOE_WIDGET_SIZE_LARGE;
+	}
+	return TAHOE_WIDGET_SIZE_SMALL;
+}
+
+static const char *widget_size_name(enum tahoe_widget_size size) {
+	switch (size) {
+	case TAHOE_WIDGET_SIZE_MEDIUM:
+		return "medium";
+	case TAHOE_WIDGET_SIZE_LARGE:
+		return "large";
+	case TAHOE_WIDGET_SIZE_SMALL:
+	default:
+		return "small";
+	}
+}
+
 static char *trim(char *value) {
 	while (isspace((unsigned char)*value)) {
 		value++;
@@ -104,6 +126,14 @@ static void apply_pair(struct tahoe_config *config,
 			clamp_double(strtod(value, NULL), 1.00, 2.20);
 	} else if (strcmp(key, "dock_show_indicators") == 0) {
 		config->dock_show_indicators = parse_bool(value);
+	} else if (strcmp(key, "calendar_widget_visible") == 0) {
+		config->calendar_widget_visible = parse_bool(value);
+	} else if (strcmp(key, "weather_widget_visible") == 0) {
+		config->weather_widget_visible = parse_bool(value);
+	} else if (strcmp(key, "calendar_widget_size") == 0) {
+		config->calendar_widget_size = parse_widget_size(value);
+	} else if (strcmp(key, "weather_widget_size") == 0) {
+		config->weather_widget_size = parse_widget_size(value);
 	} else if (strcmp(key, "cursor_theme") == 0) {
 		copy_cursor_theme(config, value);
 	} else if (strcmp(key, "cursor_size") == 0) {
@@ -127,6 +157,10 @@ void tahoe_config_set_defaults(struct tahoe_config *config) {
 	config->dock_magnification = true;
 	config->dock_magnification_scale = 1.28;
 	config->dock_show_indicators = true;
+	config->calendar_widget_visible = true;
+	config->weather_widget_visible = true;
+	config->calendar_widget_size = TAHOE_WIDGET_SIZE_SMALL;
+	config->weather_widget_size = TAHOE_WIDGET_SIZE_SMALL;
 	config->cursor_theme[0] = '\0';
 	config->cursor_size = 28;
 }
@@ -195,6 +229,14 @@ bool tahoe_config_save(const struct tahoe_config *config, const char *path) {
 		config->dock_magnification_scale);
 	fprintf(file, "dock_show_indicators=%s\n",
 		config->dock_show_indicators ? "true" : "false");
+	fprintf(file, "calendar_widget_visible=%s\n",
+		config->calendar_widget_visible ? "true" : "false");
+	fprintf(file, "weather_widget_visible=%s\n",
+		config->weather_widget_visible ? "true" : "false");
+	fprintf(file, "calendar_widget_size=%s\n",
+		widget_size_name(config->calendar_widget_size));
+	fprintf(file, "weather_widget_size=%s\n",
+		widget_size_name(config->weather_widget_size));
 	fprintf(file, "cursor_theme=%s\n", config->cursor_theme);
 	fprintf(file, "cursor_size=%d\n", config->cursor_size);
 

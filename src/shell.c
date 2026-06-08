@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define REFERENCE_WIDTH 2048.0
-#define REFERENCE_HEIGHT 1153.0
+#define REFERENCE_WIDTH 2880.0
+#define REFERENCE_HEIGHT 1800.0
 
 struct launcher {
 	const char *label;
@@ -64,6 +64,16 @@ static const char *dock_context_labels[] = {
 
 static const int dock_context_separator_before[] = {2, 4, -1};
 
+static const char *widget_context_labels[] = {
+	"Edit Widget",
+	"Small",
+	"Medium",
+	"Large",
+	"Remove Widget",
+};
+
+static const int widget_context_separator_before[] = {1, 4, -1};
+
 static const char *desktop_context_labels[] = {
 	"New Folder",
 	"Get Info",
@@ -116,8 +126,33 @@ static int scaled_i(double value, double scale) {
 	return (int)lrint(value * scale);
 }
 
+static struct tahoe_rect widget_rect_for_size(
+		enum tahoe_widget_type type,
+		enum tahoe_widget_size size,
+		int x,
+		int y,
+		double s) {
+	int small_w = type == TAHOE_WIDGET_CALENDAR ? 328 : 326;
+	int small_h = type == TAHOE_WIDGET_CALENDAR ? 329 : 326;
+	int width = small_w;
+	int height = small_h;
+	if (size == TAHOE_WIDGET_SIZE_MEDIUM) {
+		width = 674;
+		height = small_h;
+	} else if (size == TAHOE_WIDGET_SIZE_LARGE) {
+		width = 674;
+		height = 674;
+	}
+	return (struct tahoe_rect){
+		x,
+		y,
+		scaled_i(width, s),
+		scaled_i(height, s),
+	};
+}
+
 static double layout_scale(const struct tahoe_shell_layout *layout) {
-	return clamp((double)layout->menu_bar.height / 32.0, 0.58, 1.60);
+	return clamp((double)layout->menu_bar.height / 48.0, 0.58, 1.60);
 }
 
 static const struct tahoe_config *state_config(
@@ -210,6 +245,90 @@ static void draw_tinted_image_fit(cairo_t *cr, cairo_surface_t *surface,
 
 static void set_source_rgba255(cairo_t *cr, int r, int g, int b, double a) {
 	cairo_set_source_rgba(cr, r / 255.0, g / 255.0, b / 255.0, a);
+}
+
+static void stroke_status_line(cairo_t *cr, double width) {
+	cairo_set_line_width(cr, width);
+	cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+	cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+	cairo_stroke(cr);
+}
+
+static void draw_status_keyboard(cairo_t *cr, struct tahoe_rect r) {
+	rounded_rect(cr, r.x, r.y, r.width, r.height, r.height * 0.18);
+	set_source_rgba255(cr, 255, 255, 255, 0.92);
+	cairo_set_line_width(cr, 2.0);
+	cairo_stroke(cr);
+	for (int row = 0; row < 2; row++) {
+		for (int col = 0; col < 3; col++) {
+			cairo_rectangle(cr,
+				r.x + 5 + col * 8,
+				r.y + 5 + row * 7,
+				4,
+				3);
+			cairo_fill(cr);
+		}
+	}
+}
+
+static void draw_status_battery(cairo_t *cr, struct tahoe_rect r) {
+	rounded_rect(cr, r.x, r.y + 3, r.width - 5, r.height - 6, 4);
+	set_source_rgba255(cr, 255, 255, 255, 0.92);
+	cairo_set_line_width(cr, 2.2);
+	cairo_stroke(cr);
+	rounded_rect(cr, r.x + r.width - 4, r.y + r.height * 0.36,
+		4, r.height * 0.28, 1.5);
+	cairo_fill(cr);
+	cairo_rectangle(cr, r.x + 7, r.y + 8, r.width - 20, r.height - 16);
+	cairo_fill(cr);
+}
+
+static void draw_status_search(cairo_t *cr, struct tahoe_rect r) {
+	set_source_rgba255(cr, 255, 255, 255, 0.92);
+	cairo_arc(cr, r.x + r.width * 0.43, r.y + r.height * 0.40,
+		r.width * 0.27, 0, 2.0 * M_PI);
+	stroke_status_line(cr, 2.8);
+	cairo_move_to(cr, r.x + r.width * 0.62, r.y + r.height * 0.62);
+	cairo_line_to(cr, r.x + r.width * 0.82, r.y + r.height * 0.82);
+	stroke_status_line(cr, 2.8);
+}
+
+static void draw_status_control_center(cairo_t *cr, struct tahoe_rect r) {
+	set_source_rgba255(cr, 255, 255, 255, 0.92);
+	rounded_rect(cr, r.x + 2, r.y + 3, r.width - 4, 8, 4);
+	cairo_set_line_width(cr, 2.4);
+	cairo_stroke(cr);
+	rounded_rect(cr, r.x + 2, r.y + r.height - 11, r.width - 4, 8, 4);
+	cairo_stroke(cr);
+	cairo_arc(cr, r.x + r.width * 0.35, r.y + 7, 3.0, 0, 2.0 * M_PI);
+	cairo_fill(cr);
+	cairo_arc(cr, r.x + r.width * 0.68, r.y + r.height - 7, 3.0, 0, 2.0 * M_PI);
+	cairo_fill(cr);
+}
+
+static void draw_status_location(cairo_t *cr, struct tahoe_rect r) {
+	set_source_rgba255(cr, 255, 255, 255, 0.92);
+	cairo_move_to(cr, r.x + r.width * 0.16, r.y + r.height * 0.20);
+	cairo_line_to(cr, r.x + r.width * 0.86, r.y + r.height * 0.48);
+	cairo_line_to(cr, r.x + r.width * 0.42, r.y + r.height * 0.61);
+	cairo_line_to(cr, r.x + r.width * 0.28, r.y + r.height * 0.86);
+	cairo_close_path(cr);
+	cairo_fill(cr);
+}
+
+static void draw_status_siri(cairo_t *cr, struct tahoe_rect r) {
+	cairo_pattern_t *pattern = cairo_pattern_create_radial(
+		r.x + r.width * 0.35, r.y + r.height * 0.35, 2,
+		r.x + r.width * 0.50, r.y + r.height * 0.50, r.width * 0.58);
+	cairo_pattern_add_color_stop_rgb(pattern, 0.00, 1.00, 0.32, 0.45);
+	cairo_pattern_add_color_stop_rgb(pattern, 0.35, 0.32, 0.65, 1.00);
+	cairo_pattern_add_color_stop_rgb(pattern, 0.70, 1.00, 0.42, 0.74);
+	cairo_pattern_add_color_stop_rgb(pattern, 1.00, 0.95, 0.95, 1.00);
+	cairo_arc(cr, r.x + r.width / 2.0, r.y + r.height / 2.0,
+		fmin(r.width, r.height) * 0.46, 0, 2.0 * M_PI);
+	cairo_set_source(cr, pattern);
+	cairo_fill(cr);
+	cairo_pattern_destroy(pattern);
 }
 
 static void draw_text(cairo_t *cr, const char *text, double x, double y,
@@ -357,43 +476,105 @@ static void draw_liquid_panel(cairo_t *cr, const struct tahoe_rect *rect,
 	cairo_restore(cr);
 }
 
+static void draw_dock_glass(cairo_t *cr, const struct tahoe_rect *rect,
+		double radius, bool dark) {
+	cairo_save(cr);
+	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
+	cairo_clip(cr);
+
+	cairo_pattern_t *shade = cairo_pattern_create_linear(
+		rect->x, rect->y, rect->x, rect->y + rect->height);
+	if (dark) {
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.95, 0.97, 1.0, 0.18);
+		cairo_pattern_add_color_stop_rgba(shade, 0.45, 0.10, 0.13, 0.17, 0.40);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.02, 0.03, 0.04, 0.48);
+	} else {
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 1.0, 1.0, 1.0, 0.44);
+		cairo_pattern_add_color_stop_rgba(shade, 0.48, 0.86, 0.91, 0.87, 0.30);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.38, 0.45, 0.43, 0.20);
+	}
+	cairo_rectangle(cr, rect->x, rect->y, rect->width, rect->height);
+	cairo_set_source(cr, shade);
+	cairo_fill(cr);
+	cairo_pattern_destroy(shade);
+
+	cairo_restore(cr);
+
+	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
+	set_source_rgba255(cr, 255, 255, 255, dark ? 0.24 : 0.42);
+	cairo_set_line_width(cr, 1.1);
+	cairo_stroke(cr);
+	rounded_rect(cr, rect->x + 2.0, rect->y + 2.0,
+		rect->width - 4.0, rect->height - 4.0, radius - 2.0);
+	set_source_rgba255(cr, 255, 255, 255, dark ? 0.07 : 0.16);
+	cairo_stroke(cr);
+}
+
+static void draw_menu_glass(cairo_t *cr, const struct tahoe_rect *rect,
+		double radius) {
+	cairo_save(cr);
+	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
+	cairo_clip(cr);
+
+	cairo_pattern_t *shade = cairo_pattern_create_linear(
+		rect->x, rect->y, rect->x, rect->y + rect->height);
+	cairo_pattern_add_color_stop_rgba(shade, 0.0, 1.0, 1.0, 1.0, 0.78);
+	cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.96, 0.97, 0.98, 0.66);
+	cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.80, 0.84, 0.88, 0.58);
+	cairo_rectangle(cr, rect->x, rect->y, rect->width, rect->height);
+	cairo_set_source(cr, shade);
+	cairo_fill(cr);
+	cairo_pattern_destroy(shade);
+
+	cairo_restore(cr);
+
+	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
+	set_source_rgba255(cr, 255, 255, 255, 0.48);
+	cairo_set_line_width(cr, 1.0);
+	cairo_stroke(cr);
+	rounded_rect(cr, rect->x + 1.5, rect->y + 1.5,
+		rect->width - 3.0, rect->height - 3.0, radius - 1.5);
+	set_source_rgba255(cr, 255, 255, 255, 0.18);
+	cairo_stroke(cr);
+}
+
 static void draw_menu_bar(cairo_t *cr, const struct tahoe_shell_layout *layout,
 		const struct tahoe_shell_state *state,
 		const struct tahoe_config *config) {
 	double s = layout_scale(layout);
-	bool dark = is_dark_config(config);
+	(void)config;
 	int text_r = 255;
 	int text_g = 255;
 	int text_b = 255;
-	int status_r = dark ? 252 : 18;
-	int status_g = dark ? 252 : 24;
-	int status_b = dark ? 252 : 31;
+	int status_r = 252;
+	int status_g = 252;
+	int status_b = 252;
 
 	if (state->assets != NULL && state->assets->apple_menu != NULL) {
 		draw_tinted_image_fit(cr, state->assets->apple_menu,
 			(struct tahoe_rect){
-				scaled_i(23, s),
-				scaled_i(4, s),
-				scaled_i(23, s),
-				scaled_i(23, s),
+				scaled_i(39, s),
+				scaled_i(13, s),
+				scaled_i(31, s),
+				scaled_i(31, s),
 			},
 			0.98,
 			255, 255, 255);
 	} else {
-		draw_text(cr, "T", scaled_i(28, s), scaled_i(22, s),
-			22 * s, 255, 255, 255, 0.98, true);
+		draw_text(cr, "T", scaled_i(44, s), scaled_i(38, s),
+			26 * s, 255, 255, 255, 0.98, true);
 	}
 
 	const char *menus[] = {
 		"Finder", "File", "Edit", "View", "Go", "Window", "Help",
 	};
-	double x = scaled_i(72, s);
+	double x = scaled_i(109, s);
 	for (size_t i = 0; i < sizeof(menus) / sizeof(menus[0]); i++) {
-		draw_text(cr, menus[i], x, scaled_i(22, s), 15 * s,
+		draw_text(cr, menus[i], x, scaled_i(40, s), 28 * s,
 			text_r, text_g, text_b, 0.95, i == 0);
 		cairo_text_extents_t extents;
 		cairo_text_extents(cr, menus[i], &extents);
-		x += extents.x_advance + scaled_i(i == 0 ? 23 : 18, s);
+		x += extents.x_advance + scaled_i(36, s);
 	}
 
 	time_t now = state->now != 0 ? state->now : time(NULL);
@@ -408,37 +589,78 @@ static void draw_menu_bar(cairo_t *cr, const struct tahoe_shell_layout *layout,
 	snprintf(clock_text, sizeof(clock_text), "%s %d  %s",
 		day_month, local.tm_mday, trimmed_time);
 
-	draw_text(cr, clock_text, layout->width - scaled_i(195, s), scaled_i(22, s), 15 * s,
+	draw_text(cr, clock_text, layout->width - scaled_i(289, s),
+		scaled_i(40, s), 28 * s,
 		text_r, text_g, text_b, 0.95, true);
 
 	const struct tahoe_assets *assets = state->assets;
-	int icon_y = scaled_i(7, s);
-	int icon_size = scaled_i(18, s);
-	int x_icon = layout->width - scaled_i(430, s);
-	if (assets != NULL && assets->status_icons[TAHOE_STATUS_ICON_BATTERY] != NULL) {
-		draw_tinted_image_fit(cr, assets->status_icons[TAHOE_STATUS_ICON_BATTERY],
-			(struct tahoe_rect){x_icon, icon_y, scaled_i(26, s), icon_size}, 0.92,
-			status_r, status_g, status_b);
-	}
-	x_icon += scaled_i(34, s);
+	int icon_y = scaled_i(17, s);
+	int icon_size = scaled_i(30, s);
+	draw_status_keyboard(cr, (struct tahoe_rect){
+		layout->width - scaled_i(727, s),
+		scaled_i(17, s),
+		scaled_i(32, s),
+		scaled_i(25, s),
+	});
+	int x_icon = layout->width - scaled_i(654, s);
 	if (assets != NULL && assets->status_icons[TAHOE_STATUS_ICON_WIFI] != NULL) {
 		draw_tinted_image_fit(cr, assets->status_icons[TAHOE_STATUS_ICON_WIFI],
 			(struct tahoe_rect){x_icon, icon_y, icon_size, icon_size}, 0.92,
 			status_r, status_g, status_b);
 	}
-	x_icon += scaled_i(36, s);
+	x_icon = layout->width - scaled_i(581, s);
+	if (assets != NULL && assets->status_icons[TAHOE_STATUS_ICON_BATTERY] != NULL) {
+		draw_tinted_image_fit(cr, assets->status_icons[TAHOE_STATUS_ICON_BATTERY],
+			(struct tahoe_rect){x_icon, scaled_i(18, s), scaled_i(45, s),
+				scaled_i(25, s)}, 0.92,
+			status_r, status_g, status_b);
+	} else {
+		draw_status_battery(cr, (struct tahoe_rect){
+			x_icon,
+			scaled_i(17, s),
+			scaled_i(48, s),
+			scaled_i(28, s),
+		});
+	}
+	x_icon = layout->width - scaled_i(497, s);
 	if (assets != NULL && assets->status_icons[TAHOE_STATUS_ICON_SEARCH] != NULL) {
 		draw_tinted_image_fit(cr, assets->status_icons[TAHOE_STATUS_ICON_SEARCH],
 			(struct tahoe_rect){x_icon, icon_y, icon_size, icon_size}, 0.86,
 			status_r, status_g, status_b);
+	} else {
+		draw_status_search(cr, (struct tahoe_rect){
+			x_icon,
+			icon_y,
+			icon_size,
+			icon_size,
+		});
 	}
-	x_icon += scaled_i(36, s);
+	x_icon = layout->width - scaled_i(432, s);
 	if (assets != NULL &&
 			assets->status_icons[TAHOE_STATUS_ICON_CONTROL_CENTER] != NULL) {
 		draw_tinted_image_fit(cr, assets->status_icons[TAHOE_STATUS_ICON_CONTROL_CENTER],
 			(struct tahoe_rect){x_icon, icon_y, icon_size, icon_size}, 0.86,
 			status_r, status_g, status_b);
+	} else {
+		draw_status_control_center(cr, (struct tahoe_rect){
+			x_icon,
+			icon_y,
+			icon_size,
+			icon_size,
+		});
 	}
+	draw_status_location(cr, (struct tahoe_rect){
+		layout->width - scaled_i(398, s),
+		scaled_i(19, s),
+		scaled_i(25, s),
+		scaled_i(23, s),
+	});
+	draw_status_siri(cr, (struct tahoe_rect){
+		layout->width - scaled_i(351, s),
+		scaled_i(17, s),
+		scaled_i(30, s),
+		scaled_i(30, s),
+	});
 }
 
 static void draw_calendar_widget(cairo_t *cr,
@@ -462,12 +684,12 @@ static void draw_calendar_widget(cairo_t *cr,
 			*p = (char)(*p - 'a' + 'A');
 		}
 	}
-	draw_text(cr, month, r.x + scaled_i(27, s), r.y + scaled_i(44, s),
-		14 * s, 238, 70, 76, 1.0, true);
+	draw_text(cr, month, r.x + scaled_i(36, s), r.y + scaled_i(59, s),
+		22 * s, 238, 70, 76, 1.0, true);
 
 	const char *days = "S   M   T   W   T   F   S";
-	draw_text(cr, days, r.x + scaled_i(28, s), r.y + scaled_i(74, s),
-		13 * s, primary, primary, primary + (dark ? 5 : 12), 0.78, true);
+	draw_text(cr, days, r.x + scaled_i(46, s), r.y + scaled_i(101, s),
+		22 * s, primary, primary, primary + (dark ? 5 : 12), 0.78, true);
 
 	struct tm first = local;
 	first.tm_mday = 1;
@@ -484,9 +706,9 @@ static void draw_calendar_widget(cairo_t *cr,
 		}
 	}
 
-	int cell = scaled_i(27, s);
-	int start_x = r.x + scaled_i(27, s);
-	int start_y = r.y + scaled_i(101, s);
+	int cell = scaled_i(40, s);
+	int start_x = r.x + scaled_i(24, s);
+	int start_y = r.y + scaled_i(126, s);
 	for (int d = 1; d <= days_in_month; d++) {
 		int n = first_wday + d - 1;
 		int col = n % 7;
@@ -498,23 +720,40 @@ static void draw_calendar_widget(cairo_t *cr,
 		cairo_text_extents_t extents;
 		cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
 			CAIRO_FONT_WEIGHT_BOLD);
-		cairo_set_font_size(cr, 14 * s);
+		cairo_set_font_size(cr, 22 * s);
 		cairo_text_extents(cr, day_text, &extents);
 		double text_x = cx - extents.width / 2.0 - extents.x_bearing;
 		double text_y = cy + extents.height / 2.0;
 		if (d == local.tm_mday) {
 			set_source_rgba255(cr, 242, 78, 79, 1.0);
 			cairo_arc(cr, cx, cy,
-				scaled_i(13, s), 0, 2.0 * M_PI);
+				scaled_i(18, s), 0, 2.0 * M_PI);
 			cairo_fill(cr);
 			draw_text(cr, day_text, text_x, text_y,
-				14 * layout_scale(layout), 255, 255, 255, 1.0, true);
+				22 * layout_scale(layout), 255, 255, 255, 1.0, true);
 		} else {
 			draw_text(cr, day_text, text_x, text_y,
-				14 * layout_scale(layout), primary, primary, primary + (dark ? 5 : 12),
+				22 * layout_scale(layout), primary, primary, primary + (dark ? 5 : 12),
 				0.86, true);
 		}
 	}
+}
+
+static void draw_weather_crescent(cairo_t *cr, double cx, double cy, double radius) {
+	set_source_rgba255(cr, 255, 255, 255, 0.96);
+	cairo_arc(cr, cx, cy, radius, 0, 2.0 * M_PI);
+	cairo_fill(cr);
+	set_source_rgba255(cr, 42, 55, 74, 1.0);
+	cairo_arc(cr, cx + radius * 0.42, cy - radius * 0.18,
+		radius * 0.92, 0, 2.0 * M_PI);
+	cairo_fill(cr);
+	set_source_rgba255(cr, 255, 255, 255, 0.96);
+	cairo_arc(cr, cx + radius * 0.94, cy - radius * 0.72,
+		radius * 0.22, 0, 2.0 * M_PI);
+	cairo_fill(cr);
+	cairo_arc(cr, cx + radius * 1.28, cy - radius * 0.25,
+		radius * 0.15, 0, 2.0 * M_PI);
+	cairo_fill(cr);
 }
 
 static void draw_weather_widget(cairo_t *cr,
@@ -534,23 +773,28 @@ static void draw_weather_widget(cairo_t *cr,
 	cairo_fill(cr);
 	cairo_pattern_destroy(shade);
 
-	draw_text(cr, "Memphis", r.x + scaled_i(25, s), r.y + scaled_i(38, s),
-		20 * s, 255, 255, 255, 0.96, true);
-	draw_text(cr, "79°", r.x + scaled_i(25, s), r.y + scaled_i(96, s),
-		58 * s, 255, 255, 255, 0.97, false);
+	draw_text(cr, "Memphis", r.x + scaled_i(47, s), r.y + scaled_i(61, s),
+		32 * s, 255, 255, 255, 0.96, true);
+	draw_text(cr, "79°", r.x + scaled_i(47, s), r.y + scaled_i(151, s),
+		90 * s, 255, 255, 255, 0.97, false);
 	if (state->assets != NULL &&
 			state->assets->status_icons[TAHOE_STATUS_ICON_WEATHER] != NULL) {
 		draw_image_fit(cr, state->assets->status_icons[TAHOE_STATUS_ICON_WEATHER],
 			(struct tahoe_rect){
-				r.x + scaled_i(24, s),
-				r.y + r.height - scaled_i(74, s),
-				scaled_i(28, s),
-				scaled_i(28, s),
+				r.x + scaled_i(50, s),
+				r.y + r.height - scaled_i(86, s),
+				scaled_i(38, s),
+				scaled_i(38, s),
 			},
 			0.95);
+	} else {
+		draw_weather_crescent(cr,
+			r.x + scaled_i(69, s),
+			r.y + r.height - scaled_i(67, s),
+			scaled_i(16, s));
 	}
-	draw_text(cr, "Air quality alert", r.x + scaled_i(25, s),
-		r.y + r.height - scaled_i(27, s), 17 * s,
+	draw_text(cr, "Air quality alert", r.x + scaled_i(47, s),
+		r.y + r.height - scaled_i(34, s), 26 * s,
 		255, 255, 255, 0.88, true);
 	(void)dark;
 }
@@ -563,12 +807,13 @@ static void draw_dock(cairo_t *cr, const struct tahoe_shell_layout *layout,
 	struct tahoe_rect r = layout->dock;
 	set_source_rgba255(cr, 0, 0, 0, 0.18);
 	rounded_rect(cr, r.x + scaled_i(2, s), r.y + scaled_i(7, s),
-		r.width, r.height, 30 * s);
+		r.width, r.height, 34 * s);
 	cairo_fill(cr);
-	draw_liquid_panel(cr, &r, 30 * s, dark ? 0.46 : 0.34, dark);
+	draw_dock_glass(cr, &r, 34 * s, dark);
 
 	for (int i = 0; i < layout->dock_item_count; i++) {
 		struct tahoe_rect item = layout->dock_items[i];
+		bool drew_icon = false;
 		if (i == state->hot_dock_index &&
 				config != NULL &&
 				config->dock_magnification) {
@@ -595,6 +840,7 @@ static void draw_dock(cairo_t *cr, const struct tahoe_shell_layout *layout,
 				icon_surface = state->assets->dock_icons[TAHOE_ASSET_ICON_LIGHT][i];
 			}
 			draw_image_cover(cr, icon_surface, item);
+			drew_icon = true;
 		}
 		if (i == 9) {
 			time_t now = state->now != 0 ? state->now : time(NULL);
@@ -605,14 +851,24 @@ static void draw_dock(cairo_t *cr, const struct tahoe_shell_layout *layout,
 			strftime(weekday, sizeof(weekday), "%a", &local);
 			snprintf(day, sizeof(day), "%d", local.tm_mday);
 			struct tahoe_rect base_item = layout->dock_items[i];
+			if (drew_icon) {
+				rounded_rect(cr,
+					base_item.x + base_item.width * 0.15,
+					base_item.y + base_item.height * 0.11,
+					base_item.width * 0.70,
+					base_item.height * 0.76,
+					base_item.width * 0.11);
+				set_source_rgba255(cr, 248, 248, 246, 0.96);
+				cairo_fill(cr);
+			}
 			draw_text(cr, weekday,
 				base_item.x + base_item.width * 0.31,
 				base_item.y + base_item.height * 0.33,
-				10 * s, 230, 52, 54, 0.96, true);
+				18 * s, 230, 52, 54, 0.96, true);
 			draw_text(cr, day,
-				base_item.x + base_item.width * 0.39,
-				base_item.y + base_item.height * 0.68,
-				24 * s, 42, 43, 48, 0.92, true);
+				base_item.x + base_item.width * 0.37,
+				base_item.y + base_item.height * 0.73,
+				47 * s, 42, 43, 48, 0.92, true);
 		}
 		if ((config == NULL || config->dock_show_indicators) &&
 				i < TAHOE_DOCK_MAX &&
@@ -625,7 +881,7 @@ static void draw_dock(cairo_t *cr, const struct tahoe_shell_layout *layout,
 		}
 		if (i == layout->dock_item_count - 3) {
 			set_source_rgba255(cr, 30, 34, 38, 0.32);
-			cairo_rectangle(cr, item.x + item.width + scaled_i(16, s),
+			cairo_rectangle(cr, item.x + item.width + scaled_i(30, s),
 				r.y + scaled_i(17, s), fmax(1.0, 1.5 * s),
 				r.height - scaled_i(34, s));
 			cairo_fill(cr);
@@ -686,11 +942,12 @@ static void draw_desktop_items(cairo_t *cr,
 			continue;
 		}
 		struct tahoe_rect r = layout->desktop_items[i];
+		int icon_size = scaled_i(116, s);
 		struct tahoe_rect icon_rect = {
-			r.x + (r.width - scaled_i(68, s)) / 2,
+			r.x + (r.width - icon_size) / 2,
 			r.y,
-			scaled_i(68, s),
-			scaled_i(68, s),
+			icon_size,
+			icon_size,
 		};
 		cairo_surface_t *icon = tahoe_assets_desktop_icon(
 			state->assets, variant, entry->icon);
@@ -700,12 +957,12 @@ static void draw_desktop_items(cairo_t *cr,
 
 		struct tahoe_rect label_rect = {
 			r.x - scaled_i(8, s),
-			r.y + scaled_i(76, s),
+			r.y + scaled_i(128, s),
 			r.width + scaled_i(16, s),
-			scaled_i(44, s),
+			scaled_i(76, s),
 		};
 		draw_centered_label(cr, entry->name, label_rect,
-			(config != NULL ? config->desktop_label_size : 15) * s,
+			(config != NULL ? config->desktop_label_size : 20) * 1.65 * s,
 			255, 255, 255);
 	}
 }
@@ -718,7 +975,7 @@ static void draw_apple_menu(cairo_t *cr,
 	}
 
 	struct tahoe_rect panel = layout->apple_menu_panel;
-	draw_liquid_panel(cr, &panel, 14 * s, 0.70, false);
+	draw_menu_glass(cr, &panel, 14 * s);
 	for (int i = 0; i < layout->apple_menu_item_count; i++) {
 		struct tahoe_rect item = layout->apple_menu_items[i];
 		if (i > 0 && layout->apple_menu_separator[i]) {
@@ -730,8 +987,8 @@ static void draw_apple_menu(cairo_t *cr,
 		}
 		draw_text(cr, tahoe_shell_menu_label(i),
 			item.x + scaled_i(14, s),
-			item.y + scaled_i(23, s),
-			14 * s, 23, 26, 30, 0.92, i == 0);
+			item.y + scaled_i(28, s),
+			20 * s, 23, 26, 30, 0.92, i == 0);
 	}
 }
 
@@ -744,7 +1001,7 @@ static void draw_context_menu(cairo_t *cr,
 	}
 
 	struct tahoe_rect panel = layout->context_menu_panel;
-	draw_liquid_panel(cr, &panel, 13 * s, 0.74, false);
+	draw_menu_glass(cr, &panel, 13 * s);
 	for (int i = 0; i < layout->context_menu_item_count; i++) {
 		struct tahoe_rect item = layout->context_menu_items[i];
 		if (i > 0 && layout->context_menu_separator[i]) {
@@ -757,8 +1014,8 @@ static void draw_context_menu(cairo_t *cr,
 		draw_text(cr,
 			tahoe_shell_context_menu_label(layout->context_menu_kind, i),
 			item.x + scaled_i(13, s),
-			item.y + scaled_i(22, s),
-			13 * s,
+			item.y + scaled_i(27, s),
+			19 * s,
 			22, 25, 30, 0.92, false);
 	}
 }
@@ -779,25 +1036,25 @@ void tahoe_shell_layout_compute(
 	double s = ui_scale_for_size(width, height);
 	layout->width = width;
 	layout->height = height;
-	layout->menu_bar = (struct tahoe_rect){0, 0, width, scaled_i(32, s)};
+	layout->menu_bar = (struct tahoe_rect){0, 0, width, scaled_i(48, s)};
 	layout->apple_menu_button = (struct tahoe_rect){
-		scaled_i(18, s), 0, scaled_i(43, s), layout->menu_bar.height};
+		scaled_i(31, s), 0, scaled_i(52, s), layout->menu_bar.height};
 
-	layout->calendar_widget = (struct tahoe_rect){
-		scaled_i(23, s), scaled_i(66, s), scaled_i(233, s), scaled_i(234, s)};
-	layout->weather_widget = (struct tahoe_rect){
-		scaled_i(272, s), scaled_i(66, s), scaled_i(232, s), scaled_i(232, s)};
+	layout->calendar_widget = widget_rect_for_size(TAHOE_WIDGET_CALENDAR,
+		config->calendar_widget_size, scaled_i(32, s), scaled_i(92, s), s);
+	layout->weather_widget = widget_rect_for_size(TAHOE_WIDGET_WEATHER,
+		config->weather_widget_size, scaled_i(383, s), scaled_i(92, s), s);
 	layout->widget_count = 2;
 	layout->widgets[0] = (struct tahoe_widget){
 		.id = 1,
 		.type = TAHOE_WIDGET_CALENDAR,
-		.visible = true,
+		.visible = config->calendar_widget_visible,
 		.rect = layout->calendar_widget,
 	};
 	layout->widgets[1] = (struct tahoe_widget){
 		.id = 2,
 		.type = TAHOE_WIDGET_WEATHER,
-		.visible = true,
+		.visible = config->weather_widget_visible,
 		.rect = layout->weather_widget,
 	};
 
@@ -806,16 +1063,16 @@ void tahoe_shell_layout_compute(
 	if (layout->desktop_item_count > TAHOE_DESKTOP_MAX) {
 		layout->desktop_item_count = TAHOE_DESKTOP_MAX;
 	}
-	int item_x = width - scaled_i(164, s);
-	int item_step = scaled_i(122 + config->desktop_grid_spacing, s);
-	int item_w = scaled_i(138 * config->desktop_icon_scale, s);
-	int item_h = scaled_i(120 * config->desktop_icon_scale, s);
+	int item_x = width - scaled_i(231, s);
+	int item_step = scaled_i(200 + config->desktop_grid_spacing, s);
+	int item_w = scaled_i(194 * config->desktop_icon_scale, s);
+	int item_h = scaled_i(212 * config->desktop_icon_scale, s);
 	layout->desktop_items[0] = (struct tahoe_rect){
-		item_x, scaled_i(74, s), item_w, item_h};
+		item_x, scaled_i(96, s), item_w, item_h};
 	for (int i = 1; i < layout->desktop_item_count; i++) {
 		layout->desktop_items[i] = (struct tahoe_rect){
-			item_x - scaled_i(5, s),
-			scaled_i(74, s) + i * item_step,
+			item_x - scaled_i(7, s),
+			scaled_i(96, s) + i * item_step,
 			item_w,
 			item_h,
 		};
@@ -829,35 +1086,43 @@ void tahoe_shell_layout_compute(
 	}
 
 	double dock_s = s * config->dock_scale;
-	int icon = scaled_i(62, s * config->dock_icon_scale * config->dock_scale);
-	int gap = scaled_i(20, dock_s);
-	int horizontal_pad = scaled_i(20, dock_s);
-	int top_pad = scaled_i(11, dock_s);
-	int bottom_pad = scaled_i(25, dock_s);
+	int icon = scaled_i(106, s * config->dock_icon_scale * config->dock_scale);
+	int gap = scaled_i(18, dock_s);
+	int separator_extra = scaled_i(66, dock_s);
+	int left_pad = scaled_i(34, dock_s);
+	int right_pad = scaled_i(17, dock_s);
+	int top_pad = scaled_i(27, dock_s);
+	int bottom_pad = scaled_i(16, dock_s);
+	int bottom_margin = scaled_i(12, dock_s);
 	int dock_count = (int)(sizeof(dock_launchers) / sizeof(dock_launchers[0]));
 	int dock_width = dock_count * icon + (dock_count - 1) * gap +
-		horizontal_pad * 2;
-	while (dock_width > width - scaled_i(136, s) && icon > scaled_i(40, s)) {
+		separator_extra + left_pad + right_pad;
+	while (dock_width > width - scaled_i(80, s) && icon > scaled_i(40, s)) {
 		icon -= 2;
 		gap = gap > 6 ? gap - 1 : gap;
-		horizontal_pad = horizontal_pad > scaled_i(12, s) ?
-			horizontal_pad - 1 : horizontal_pad;
+		separator_extra = separator_extra > scaled_i(18, s) ?
+			separator_extra - 2 : separator_extra;
+		left_pad = left_pad > scaled_i(8, s) ? left_pad - 1 : left_pad;
+		right_pad = right_pad > scaled_i(4, s) ? right_pad - 1 : right_pad;
 		dock_width = dock_count * icon + (dock_count - 1) * gap +
-			horizontal_pad * 2;
+			separator_extra + left_pad + right_pad;
 	}
 	int dock_height = icon + top_pad + bottom_pad;
 	layout->dock_item_count = dock_count;
 	layout->dock = (struct tahoe_rect){
 		(width - dock_width) / 2,
-		height - dock_height,
+		height - dock_height - bottom_margin,
 		dock_width,
 		dock_height,
 	};
-	int x = layout->dock.x + horizontal_pad;
+	int x = layout->dock.x + left_pad;
 	int y = layout->dock.y + top_pad;
 	for (int i = 0; i < dock_count; i++) {
 		layout->dock_items[i] = (struct tahoe_rect){x, y, icon, icon};
 		x += icon + gap;
+		if (i == dock_count - 3) {
+			x += separator_extra;
+		}
 	}
 
 	if (apple_menu_open) {
@@ -866,7 +1131,7 @@ void tahoe_shell_layout_compute(
 		layout->apple_menu_panel = (struct tahoe_rect){
 			scaled_i(18, s), layout->menu_bar.height + scaled_i(4, s),
 			scaled_i(260, s),
-			scaled_i(18, s) + layout->apple_menu_item_count * scaled_i(34, s)};
+			scaled_i(18, s) + layout->apple_menu_item_count * scaled_i(42, s)};
 		memset(layout->apple_menu_separator, 0,
 			sizeof(layout->apple_menu_separator));
 		for (int si = 0; menu_separator_before[si] >= 0; si++) {
@@ -878,9 +1143,9 @@ void tahoe_shell_layout_compute(
 		for (int i = 0; i < layout->apple_menu_item_count; i++) {
 			layout->apple_menu_items[i] = (struct tahoe_rect){
 				layout->apple_menu_panel.x + scaled_i(8, s),
-				layout->apple_menu_panel.y + scaled_i(9, s) + i * scaled_i(34, s),
+				layout->apple_menu_panel.y + scaled_i(9, s) + i * scaled_i(42, s),
 				layout->apple_menu_panel.width - scaled_i(16, s),
-				scaled_i(32, s),
+				scaled_i(40, s),
 			};
 		}
 	}
@@ -910,6 +1175,13 @@ void tahoe_shell_layout_set_context_menu(
 		item_count = (int)(sizeof(dock_context_labels) /
 			sizeof(dock_context_labels[0]));
 		separator_before = dock_context_separator_before;
+	} else if (kind == TAHOE_CONTEXT_MENU_WIDGET &&
+			index >= 0 && index < layout->widget_count &&
+			layout->widgets[index].visible) {
+		anchor = layout->widgets[index].rect;
+		item_count = (int)(sizeof(widget_context_labels) /
+			sizeof(widget_context_labels[0]));
+		separator_before = widget_context_separator_before;
 	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP_ICON &&
 			index >= 0 && index < layout->desktop_item_count) {
 		anchor = layout->desktop_items[index];
@@ -927,11 +1199,20 @@ void tahoe_shell_layout_set_context_menu(
 		item_count = TAHOE_CONTEXT_MENU_ITEM_MAX;
 	}
 
-	int item_h = scaled_i(31, s);
-	int panel_w = scaled_i(kind == TAHOE_CONTEXT_MENU_DOCK ? 184 : 220, s);
+	int item_h = scaled_i(40, s);
+	int panel_width_base = 220;
+	if (kind == TAHOE_CONTEXT_MENU_DOCK) {
+		panel_width_base = 184;
+	} else if (kind == TAHOE_CONTEXT_MENU_WIDGET) {
+		panel_width_base = 202;
+	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP) {
+		panel_width_base = 336;
+	}
+	int panel_w = scaled_i(panel_width_base, s);
 	int panel_h = scaled_i(12, s) + item_count * item_h;
 	int x, y;
-	if (kind == TAHOE_CONTEXT_MENU_DESKTOP || (
+	if (kind == TAHOE_CONTEXT_MENU_DESKTOP ||
+			kind == TAHOE_CONTEXT_MENU_WIDGET || (
 			kind == TAHOE_CONTEXT_MENU_DESKTOP_ICON && index < 0)) {
 		x = cursor_x - panel_w / 2;
 		y = cursor_y - scaled_i(8, s);
@@ -1010,6 +1291,12 @@ struct tahoe_shell_hit tahoe_shell_hit_test(
 			return (struct tahoe_shell_hit){TAHOE_HIT_DOCK_ITEM, i};
 		}
 	}
+	for (int i = 0; i < layout->widget_count; i++) {
+		if (layout->widgets[i].visible &&
+				rect_contains(&layout->widgets[i].rect, x, y)) {
+			return (struct tahoe_shell_hit){TAHOE_HIT_WIDGET, i};
+		}
+	}
 	for (int i = 0; i < layout->desktop_item_count; i++) {
 		if (rect_contains(&layout->desktop_items[i], x, y)) {
 			return (struct tahoe_shell_hit){TAHOE_HIT_DESKTOP_ITEM, i};
@@ -1046,6 +1333,19 @@ void tahoe_shell_draw(
 		int height,
 		int stride,
 		const struct tahoe_shell_state *state) {
+	const struct tahoe_shell_draw_options options = {
+		.draw_wallpaper = true,
+	};
+	tahoe_shell_draw_with_options(pixels, width, height, stride, state, &options);
+}
+
+void tahoe_shell_draw_with_options(
+		uint32_t *pixels,
+		int width,
+		int height,
+		int stride,
+		const struct tahoe_shell_state *state,
+		const struct tahoe_shell_draw_options *options) {
 	cairo_surface_t *surface = cairo_image_surface_create_for_data(
 		(unsigned char *)pixels,
 		CAIRO_FORMAT_ARGB32,
@@ -1065,7 +1365,9 @@ void tahoe_shell_draw(
 		state->context_menu_cursor_x,
 		state->context_menu_cursor_y);
 
-	draw_wallpaper(cr, width, height, state->assets, config);
+	if (options == NULL || options->draw_wallpaper) {
+		draw_wallpaper(cr, width, height, state->assets, config);
+	}
 	draw_menu_bar(cr, &layout, state, config);
 	draw_widget_layer(cr, &layout, state, config);
 	draw_desktop_items(cr, &layout, state, config);
@@ -1110,6 +1412,13 @@ const char *tahoe_shell_context_menu_label(
 				index < (int)(sizeof(dock_context_labels) /
 					sizeof(dock_context_labels[0]))) {
 			return dock_context_labels[index];
+		}
+		break;
+	case TAHOE_CONTEXT_MENU_WIDGET:
+		if (index >= 0 &&
+				index < (int)(sizeof(widget_context_labels) /
+					sizeof(widget_context_labels[0]))) {
+			return widget_context_labels[index];
 		}
 		break;
 	case TAHOE_CONTEXT_MENU_DESKTOP:

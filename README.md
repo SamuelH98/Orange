@@ -102,12 +102,14 @@ is included and will build as `build/tahoe-settings` when GTK4 development
 headers are installed.
 
 Settings currently covers appearance, desktop icon visibility/scale/labels,
-Dock size/icon/magnification/indicator controls, and cursor theme/size. Cursor
-settings write `cursor_theme=` and `cursor_size=` to `tahoe.conf`.
+widget visibility/size, Dock size/icon/magnification/indicator controls, and
+cursor theme/size. Cursor settings write `cursor_theme=` and `cursor_size=` to
+`tahoe.conf`.
 
 Desktop icons can be dragged; custom positions are persisted in `tahoe.conf` as
 `desktop_icon_N_position=x,y`. Right-click desktop icons or Dock items to open
-their shell context menus.
+their shell context menus. Right-click Calendar or Weather widgets for
+widget-specific edit, size, and remove actions.
 
 Bundled GTK themes live under `themes/TahoeGTK/` and
 `themes/TahoeGTK-dark/`. The compositor exports GTK theme variables for
@@ -126,4 +128,17 @@ To render a reference-size PNG for comparison:
 
 ```sh
 ./build/tahoe-render-shell /tmp/tahoe-reference.png
+```
+
+The render tool defaults to the native `2880x1800` reference size. Use
+foreground-only output to measure shell geometry without wallpaper differences:
+
+```sh
+./build/tahoe-render-shell --foreground-only /tmp/tahoe-foreground.png
+```
+
+Context menus can be rendered directly for glass/text checks:
+
+```sh
+./build/tahoe-render-shell --foreground-only --context-menu desktop --context-x 1440 --context-y 900 /tmp/tahoe-menu.png
 ```

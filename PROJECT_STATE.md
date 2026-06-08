@@ -20,8 +20,8 @@ wlroots compositor, reference-sized Tahoe shell geometry, transparent menu bar,
 compact macOS-style Dock layout, scalable widgets, basic xdg-shell window
 management, Dock launchers, XDG `.desktop` desktop launchers with drag/context
 menus, keyboard shortcuts, cursor customization, local Tahoe asset sourcing,
-GTK theme/icon theme scaffolding, PNG reference export, and headless one-shot
-validation.
+GTK theme/icon theme scaffolding, PNG reference export, foreground-only visual
+measurement, and headless one-shot validation.
 
 ---
 
@@ -71,6 +71,7 @@ Shell layout/hit-test/render smoke unit tests.
 - Persistent `tahoe.conf` model for appearance, desktop icon, and Dock settings.
 - Conditional GTK4 Settings app source for appearance, desktop icon, and Dock
   controls.
+- Persistent widget visibility and small/medium/large widget size settings.
 - Light/dark shell appearance switching and GTK theme environment export.
 - Bundled GTK CSD theme CSS with traffic-light window control styling.
 - Bundled `TahoeIcons` GTK icon theme metadata plus a population script.
@@ -78,12 +79,13 @@ Shell layout/hit-test/render smoke unit tests.
   windows.
 - Deterministic `.desktop` parser and right-side desktop shortcuts from
   `assets/desktop/`.
-- Desktop labels wrap and center, including `PDF Document`.
+- Desktop labels wrap and center, including `PDF Documents`.
 - Dock Calendar icon day/date overlay uses current shell time.
 - Dock indicator dots stay inside the glass container.
 - Top menu bar background fill removed so it is transparent over wallpaper.
-- Reference Dock measurements are unit-tested at 2048x1153:
-  `x=153`, `y=1055`, `w=1742`, `h=98`, 62 px icons, 20 px gaps.
+- Native `2880x1800` foreground visual testing ignores wallpaper differences
+  and measures Dock glass bounds plus Dock icon width/center/spacing against
+  `tahoe-desktop-reference.png`.
 
 ### Cursor, Menus, And Tahoe Assets
 
@@ -100,7 +102,8 @@ Shell layout/hit-test/render smoke unit tests.
 - Compact Dock icon sizing and spacing to better match the latest Dock crop.
 - Dock active indicators now reflect mapped/open client windows only.
 - Desktop shortcut dragging with persisted `desktop_icon_N_position=x,y`.
-- Right-click context menus for desktop shortcuts and Dock items.
+- Right-click context menus for desktop shortcuts, widgets, Dock items, and
+  empty desktop background.
 
 #### Tests Added
 
@@ -116,7 +119,8 @@ Shell layout/hit-test/render smoke unit tests.
 - Shell dark render smoke test.
 - Widget layer existence test.
 - `.desktop`-required desktop icon layout test.
-- Reference Dock measurement test.
+- Native foreground visual Dock metric test.
+- Foreground context-menu glass/translucency and scaling test.
 
 ### macOS Tahoe 26 Context Menus & Apple Menu
 
@@ -132,43 +136,49 @@ Shell layout/hit-test/render smoke unit tests.
 - Desktop background right-click context menu (8 items, 2 separators):
   New Folder, Get Info, Use Stacks, Sort By, Clean Up By,
   Show View Options, Change Desktop Background..., Edit Widgets.
+- Widget right-click context menu (5 items, 2 separators): Edit Widget, Small,
+  Medium, Large, Remove Widget.
 - Desktop icon right-click context menu (9 items, 3 separators):
   Open, Show in Finder, Copy, Get Info, Rename, Duplicate,
   Quick Look, Share, Move to Trash.
+- `TAHOE_CONTEXT_MENU_WIDGET` enum for widget menus.
+- `TAHOE_HIT_WIDGET` hit kind so widgets no longer behave like wallpaper.
 - `TAHOE_CONTEXT_MENU_DESKTOP_ICON` enum for icon vs. background menus.
 - `TAHOE_HIT_DESKTOP` hit kind for empty desktop background detection.
 - Separator line support (`separator_before[]` arrays with flags in layout).
 - Cursor-position-driven desktop background menu placement.
+- Context menus and the Apple menu use the same glass material family as the
+  Dock, with text and item geometry scaled from output resolution.
 
 #### Tests Added
 
-- Reference measurements at 2048×1153 for: menu bar (0,0 2048×32),
-  Apple menu button (18,0 43×32), Apple menu panel (18,36 260×358),
-  10 menu items with 34px spacing, separator flags at indices 3/4/5/8.
-- Reference widget measurements (calendar 23,66 233×234,
-  weather 272,66 232×232).
-- Reference desktop items (item 0: 1884,74 138×120; item 1: 1879,220 138×120).
-- Dock context menu panel at dock item 0 (112,889 184×167, 5 items).
+- Dock context menu hit/layout coverage.
+- Widget hit/menu coverage and hidden-widget hit exclusion.
 - Desktop icon context menu (DESKTOP_ICON, item 0, 9 items, 3 separators).
-- Desktop background context menu at cursor (960,540) → (850,532 220×260, 8 items).
+- Desktop background context menu at cursor.
 - Desktop background hit test (TAHOE_HIT_DESKTOP on empty desktop area).
+- Config load/save coverage for widget visibility and size.
+- Native `2880x1800` foreground visual test for Dock bounds/icon metrics and
+  context-menu glass/scaling.
 
 ## Current Work
 
 ### Active Feature
 
-Context menus, Apple menu, and expanded reference tests complete.
+Native reference matching, widget shortcut menus, context-menu glass, and
+foreground visual tests complete.
 
 ### Progress
 
-Implementation compiles, all 25 unit tests pass, compositor builds clean.
+Implementation compiles, all 4 Meson tests pass, the native visual test passes,
+and headless compositor one-shot validation passes.
 
 ### Remaining Work
 
 Interactive testing under WSLg or a nested Wayland session is still needed.
-Pixel-level 1:1 requires higher-quality final assets. The repo now ships
-tracked Tahoe placeholder icons, while optional private Apple assets can still
-be used with a different `--assets` root.
+Pixel-level 1:1 depends on the ignored private Apple assets. The foreground
+visual test intentionally ignores wallpaper and measures shell geometry/glass
+against the checked-in reference.
 More faithful behavior would require real app/menu integration, richer
 animation, and full desktop services.
 

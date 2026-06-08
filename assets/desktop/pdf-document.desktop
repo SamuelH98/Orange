@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=PDF Document
+Name=PDF Documents
 Icon=notes
 Exec=xdg-open "$HOME/Documents"
 Terminal=false

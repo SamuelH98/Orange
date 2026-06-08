@@ -45,6 +45,28 @@ For this prototype, that is approximated with:
 - softly tinted icon backgrounds,
 - wallpaper-colored transparency.
 
+The same material treatment is used for context menus and the Apple menu
+popover. Apple's current HIG positions Liquid Glass as the system material for
+foreground controls and navigation surfaces, and its menu/action components are
+part of that foreground UI layer. The shell therefore renders dock, Apple menu,
+and context menu panels through glass material helpers instead of opaque menu
+panels.
+
+Apple's Mac widget guide describes desktop widget customization from the
+desktop and widget shortcut menus: the desktop shortcut menu exposes
+`Edit Widgets`, while a widget shortcut menu exposes widget editing, size
+selection, and removal. The shell models that surface with widget hit targets,
+widget context menus, persistent widget visibility, and small/medium/large
+size settings.
+
+The checked-in visual reference is `2880x1800`. Pixel validation should render
+at that native size and ignore wallpaper/background differences. The main
+visual regression test measures the foreground Cairo output for dock glass
+bounds plus dock icon width/center/spacing, and compares icon runs against
+`tahoe-desktop-reference.png`. It also renders a foreground-only desktop
+context menu and verifies that menu geometry scales with resolution and the
+menu panel remains translucent.
+
 ## Risks
 
 - wlroots APIs are explicitly unstable; code targets 0.17.1 as installed.
@@ -62,5 +84,16 @@ For this prototype, that is approximated with:
 
 - Apple newsroom: macOS Tahoe design and Liquid Glass announcement.
 - Apple macOS Tahoe product page for visual layout reference.
+- Apple Human Interface Guidelines: Liquid Glass material guidance and
+  menu/action component guidance.
+- Apple Support, "Add and customize widgets on Mac":
+  https://support.apple.com/guide/mac-help/add-and-customize-widgets-mchl52be5da5/mac
+- Apple Human Interface Guidelines, "Liquid Glass":
+  https://developer.apple.com/design/human-interface-guidelines/liquid-glass
+- Apple Human Interface Guidelines, "Menus":
+  https://developer.apple.com/design/human-interface-guidelines/menus
+- Apple Newsroom, "Apple introduces a delightful and elegant new software
+  design":
+  https://www.apple.com/newsroom/2025/06/apple-introduces-a-delightful-and-elegant-new-software-design/
 - wlroots 0.17 local headers and online renderer documentation.
 - Khronos Vulkan documentation for Vulkan instance/rendering concepts.

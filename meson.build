@@ -114,6 +114,15 @@ test_shell_layout = executable(
 
 test('shell-layout', test_shell_layout)
 
+test_shell_visual = executable(
+  'test-shell-visual',
+  files('tests/test_shell_visual.c'),
+  include_directories: inc,
+  dependencies: [tahoe_core_dep],
+)
+
+test('shell-visual', test_shell_visual)
+
 test_config = executable(
   'test-config',
   files('tests/test_config.c'),

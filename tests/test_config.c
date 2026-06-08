@@ -19,6 +19,10 @@ int main(void) {
 	config.dock_magnification = false;
 	config.dock_magnification_scale = 1.50;
 	config.dock_show_indicators = false;
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = true;
+	config.calendar_widget_size = TAHOE_WIDGET_SIZE_MEDIUM;
+	config.weather_widget_size = TAHOE_WIDGET_SIZE_LARGE;
 	snprintf(config.cursor_theme, sizeof(config.cursor_theme), "%s", "Bibata-Modern-Ice");
 	config.cursor_size = 36;
 
@@ -41,6 +45,10 @@ int main(void) {
 	assert(loaded.dock_magnification_scale > 1.49 &&
 		loaded.dock_magnification_scale < 1.51);
 	assert(!loaded.dock_show_indicators);
+	assert(!loaded.calendar_widget_visible);
+	assert(loaded.weather_widget_visible);
+	assert(loaded.calendar_widget_size == TAHOE_WIDGET_SIZE_MEDIUM);
+	assert(loaded.weather_widget_size == TAHOE_WIDGET_SIZE_LARGE);
 	assert(loaded.cursor_size == 36);
 	assert(strcmp(loaded.cursor_theme, "Bibata-Modern-Ice") == 0);
 
