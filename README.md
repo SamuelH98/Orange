@@ -22,8 +22,9 @@ From a nested Wayland/X11 session:
 WLR_RENDERER=vulkan build/tahoe-wlroots
 ```
 
-`WLR_RENDERER=vulkan` requires a backend with a DRM device. Headless validation
-uses Pixman because wlroots cannot create its Vulkan renderer without DRM.
+`WLR_RENDERER=vulkan` requires a backend that can hand wlroots a DRM render
+node. Headless validation uses Pixman because wlroots cannot create its Vulkan
+renderer without DRM.
 
 On WSLg, run it nested inside the existing WSLg Wayland session:
 
@@ -32,12 +33,10 @@ cd ~/tahoe-wlroots
 WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build/tahoe-wlroots --assets assets --config tahoe.conf --desktop-dir assets/desktop --themes .
 ```
 
-If your WSLg/Mesa stack exposes what wlroots needs for Vulkan, try:
-
-```sh
-cd ~/tahoe-wlroots
-WLR_BACKENDS=wayland WLR_RENDERER=vulkan ./build/tahoe-wlroots --assets assets --config tahoe.conf --desktop-dir assets/desktop --themes .
-```
+Do not force `WLR_RENDERER=vulkan` on WSLg unless `vulkaninfo` works and the
+nested Wayland backend exposes a DRM render node. If wlroots logs `Cannot
+create Vulkan renderer: no DRM FD available`, use Pixman for WSLg. That error
+means renderer setup failed before Tahoe can fall back.
 
 For automated/headless validation:
 
@@ -124,13 +123,13 @@ To populate the GTK icon pack from local assets:
 The generated `themes/TahoeIcons/apps`, `places`, and `status` directories are
 ignored so private icon PNGs do not enter Git history.
 
-To render a reference-size PNG for comparison:
+To render a native-size PNG for manual inspection:
 
 ```sh
-./build/tahoe-render-shell /tmp/tahoe-reference.png
+./build/tahoe-render-shell /tmp/tahoe-shell.png
 ```
 
-The render tool defaults to the native `2880x1800` reference size. Use
+The render tool defaults to the native `2880x1800` shell size. Use
 foreground-only output to measure shell geometry without wallpaper differences:
 
 ```sh

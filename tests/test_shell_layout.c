@@ -183,6 +183,8 @@ static void test_render_smoke(void) {
 	struct tahoe_shell_state state = {
 		.apple_menu_open = true,
 		.hot_dock_index = 0,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
 		.now = 1757641980,
 		.assets = NULL,
 		.config = &config,
@@ -213,6 +215,8 @@ static void test_dark_render_smoke(void) {
 	struct tahoe_shell_state state = {
 		.apple_menu_open = false,
 		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
 		.now = 1757641980,
 		.assets = NULL,
 		.config = &config,

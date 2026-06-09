@@ -59,18 +59,21 @@ selection, and removal. The shell models that surface with widget hit targets,
 widget context menus, persistent widget visibility, and small/medium/large
 size settings.
 
-The checked-in visual reference is `2880x1800`. Pixel validation should render
-at that native size and ignore wallpaper/background differences. The main
-visual regression test measures the foreground Cairo output for dock glass
-bounds plus dock icon width/center/spacing, and compares icon runs against
-`tahoe-desktop-reference.png`. It also renders a foreground-only desktop
-context menu and verifies that menu geometry scales with resolution and the
-menu panel remains translucent.
+Pixel validation renders at the native `2880x1800` shell size and can ignore
+wallpaper/background differences for manual inspection. Automated shell render
+coverage keeps light/dark smoke tests plus a foreground-only desktop context
+menu check for scaled geometry and translucent glass, without comparing against
+a checked-in visual reference image.
 
 ## Risks
 
 - wlroots APIs are explicitly unstable; code targets 0.17.1 as installed.
 - Vulkan renderer availability depends on GPU/driver/runtime environment.
+- wlroots' Vulkan renderer needs a DRM render-node path from the backend. WSLg
+  can expose GPU acceleration to Linux GUI clients without exposing the DRM FD
+  needed by `WLR_BACKENDS=wayland WLR_RENDERER=vulkan`; in that case wlroots
+  fails during renderer creation with `no DRM FD available`, and Pixman is the
+  expected WSLg fallback.
 - Running a real compositor outside headless mode may require a nested Wayland
   or X11 session, or a TTY with seat permissions.
 - Exact Apple assets cannot be redistributed in this repository.

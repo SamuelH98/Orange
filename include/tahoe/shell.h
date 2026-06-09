@@ -9,7 +9,6 @@
 #include "tahoe/config.h"
 #include "tahoe/desktop_entry.h"
 
-#define TAHOE_DOCK_MAX 24
 #define TAHOE_DESKTOP_MAX 8
 #define TAHOE_MENU_ITEM_MAX 20
 #define TAHOE_WIDGET_MAX 16
@@ -98,6 +97,10 @@ struct tahoe_shell_state {
 	const struct tahoe_desktop_entry *desktop_entries;
 	int desktop_entry_count;
 	bool dock_open[TAHOE_DOCK_MAX];
+	int dock_drag_index;
+	int dock_drag_insert_before;
+	int dock_drag_x;
+	int dock_drag_y;
 	enum tahoe_context_menu_kind context_menu_kind;
 	int context_menu_index;
 	int context_menu_cursor_x;
@@ -145,6 +148,9 @@ const char *tahoe_shell_dock_label(int index);
 const char *tahoe_shell_dock_command(int index);
 const char *tahoe_shell_menu_label(int index);
 const char *tahoe_shell_context_menu_label(
+	enum tahoe_context_menu_kind kind,
+	int index);
+const char *tahoe_shell_context_menu_icon_name(
 	enum tahoe_context_menu_kind kind,
 	int index);
 

@@ -174,6 +174,11 @@ struct tahoe_server {
 	int desktop_drag_offset_y;
 	int desktop_drag_start_x;
 	int desktop_drag_start_y;
+	bool dock_drag_active;
+	bool dock_drag_moved;
+	int dock_drag_index;
+	int dock_drag_start_x;
+	int dock_drag_insert_before;
 	bool once_committed;
 	uint32_t seat_caps;
 };
@@ -181,6 +186,10 @@ struct tahoe_server {
 static void server_mark_shell_dirty(struct tahoe_server *server);
 static void server_apply_cursor_config(struct tahoe_server *server);
 static void process_desktop_drag(struct tahoe_server *server);
+static void start_dock_drag(struct tahoe_server *server,
+	const struct tahoe_shell_layout *layout, int index);
+static void process_dock_drag(struct tahoe_server *server);
+static void finish_dock_drag(struct tahoe_server *server);
 
 static void server_apply_theme_env(struct tahoe_server *server) {
 	const char *theme = server->config.appearance == TAHOE_APPEARANCE_DARK ?
@@ -489,6 +498,14 @@ static void output_redraw_shell(struct tahoe_output *output) {
 	struct tahoe_shell_state state = {
 		.apple_menu_open = output->server->apple_menu_open,
 		.hot_dock_index = output->server->hot_dock_index,
+		.dock_drag_index = output->server->dock_drag_active ?
+			output->server->dock_drag_index : -1,
+		.dock_drag_insert_before = output->server->dock_drag_active ?
+			output->server->dock_drag_insert_before : -1,
+		.dock_drag_x = output->server->dock_drag_active ?
+			(int)output->server->cursor->x : 0,
+		.dock_drag_y = output->server->dock_drag_active ?
+			(int)output->server->cursor->y : 0,
 		.now = time(NULL),
 		.assets = &output->server->assets,
 		.config = &output->server->config,
@@ -618,6 +635,11 @@ static void process_cursor_motion(struct tahoe_server *server, uint32_t time_mse
 		view->height = height;
 		wlr_scene_node_set_position(&view->scene_tree->node, x, y);
 		wlr_xdg_toplevel_set_size(view->xdg_surface->toplevel, width, height);
+		return;
+	}
+
+	if (server->dock_drag_active) {
+		process_dock_drag(server);
 		return;
 	}
 
@@ -844,9 +866,11 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 	server->context_menu_index = -1;
 
 	if (kind == TAHOE_CONTEXT_MENU_DOCK) {
+		int launcher_idx = target >= 0 && target < TAHOE_DOCK_MAX ?
+			server->config.dock_order[target] : target;
 		switch (item_index) {
 		case 0:
-			launch_command(tahoe_shell_dock_command(target));
+			launch_command(tahoe_shell_dock_command(launcher_idx));
 			break;
 		case 1:
 			launch_command("xdg-open \"$HOME\" || true");
@@ -1003,6 +1027,97 @@ static void finish_desktop_drag(struct tahoe_server *server) {
 	}
 }
 
+static void start_dock_drag(struct tahoe_server *server,
+		const struct tahoe_shell_layout *layout, int index) {
+	server->dock_drag_active = true;
+	server->dock_drag_moved = false;
+	server->dock_drag_index = index;
+	server->dock_drag_start_x = (int)server->cursor->x;
+	server->dock_drag_insert_before = -1;
+	(void)layout;
+}
+
+static void process_dock_drag(struct tahoe_server *server) {
+	if (!server->dock_drag_active) {
+		return;
+	}
+
+	int dx = (int)server->cursor->x - server->dock_drag_start_x;
+	if (abs(dx) > 4) {
+		server->dock_drag_moved = true;
+	}
+	if (!server->dock_drag_moved) {
+		return;
+	}
+
+	int local_x = 0;
+	int local_y = 0;
+	struct tahoe_output *output = output_at_cursor(server, &local_x, &local_y);
+	if (output == NULL) {
+		return;
+	}
+
+	struct tahoe_shell_layout layout;
+	compute_shell_layout_for_output(server, output, &layout);
+	int dragged = server->dock_drag_index;
+	int insert = layout.dock_item_count;
+	for (int i = 0; i < layout.dock_item_count; i++) {
+		if (i == dragged) {
+			continue;
+		}
+		struct tahoe_rect r = layout.dock_items[i];
+		if (local_x < r.x + r.width / 2) {
+			insert = i;
+			break;
+		}
+	}
+	if (insert > dragged && insert < layout.dock_item_count) {
+		insert--;
+	}
+	if (insert != server->dock_drag_insert_before) {
+		server->dock_drag_insert_before = insert;
+		server_mark_shell_dirty(server);
+	}
+}
+
+static void finish_dock_drag(struct tahoe_server *server) {
+	if (!server->dock_drag_active) {
+		return;
+	}
+	int index = server->dock_drag_index;
+	bool moved = server->dock_drag_moved;
+	int insert = server->dock_drag_insert_before;
+	server->dock_drag_active = false;
+	server->dock_drag_moved = false;
+	server->dock_drag_index = -1;
+	server->dock_drag_insert_before = -1;
+
+	if (moved && index >= 0 && index < TAHOE_DOCK_MAX &&
+			insert >= 0 && insert < TAHOE_DOCK_MAX) {
+		int order[TAHOE_DOCK_MAX];
+		memcpy(order, server->config.dock_order, sizeof(order));
+		int launcher = order[index];
+		if (insert > index) {
+			for (int i = index; i < insert; i++) {
+				order[i] = order[i + 1];
+			}
+			order[insert] = launcher;
+		} else if (insert < index) {
+			for (int i = index; i > insert; i--) {
+				order[i] = order[i - 1];
+			}
+			order[insert] = launcher;
+		}
+		memcpy(server->config.dock_order, order, sizeof(order));
+		tahoe_config_save(&server->config, server->options->config_path);
+		server_mark_shell_dirty(server);
+	} else if (!moved && index >= 0 && index < TAHOE_DOCK_MAX) {
+		int launcher_idx = server->config.dock_order[index];
+		launch_command(tahoe_shell_dock_command(launcher_idx));
+		server_mark_shell_dirty(server);
+	}
+}
+
 static void handle_shell_click(struct tahoe_server *server, int x, int y) {
 	int local_x = 0;
 	int local_y = 0;
@@ -1033,7 +1148,7 @@ static void handle_shell_click(struct tahoe_server *server, int x, int y) {
 	case TAHOE_HIT_DOCK_ITEM:
 		clear_context_menu(server);
 		server->apple_menu_open = false;
-		launch_command(tahoe_shell_dock_command(hit.index));
+		start_dock_drag(server, &layout, hit.index);
 		server_mark_shell_dirty(server);
 		break;
 	case TAHOE_HIT_WIDGET:
@@ -1124,6 +1239,13 @@ static void handle_cursor_button(struct wl_listener *listener, void *data) {
 		server->cursor_mode = TAHOE_CURSOR_PASSTHROUGH;
 		server->grabbed_view = NULL;
 	}
+	if (event->state == WLR_BUTTON_RELEASED &&
+			event->button == BTN_LEFT &&
+			server->dock_drag_active) {
+		finish_dock_drag(server);
+		return;
+	}
+
 	if (event->state == WLR_BUTTON_RELEASED &&
 			event->button == BTN_LEFT &&
 			server->desktop_drag_active) {

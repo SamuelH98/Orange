@@ -121,7 +121,6 @@ macOS-style shell prototype.
 - `.desktop` parser tests pass.
 - Config parser tests pass.
 - Shell render tests cover both light and dark appearance.
-- The visual test renders the shell foreground at native `2880x1800`, ignoring
-  wallpaper, and measures Dock glass bounds plus Dock icon width/center/spacing
-  against `tahoe-desktop-reference.png`.
+- Shell render tests cover light/dark rendering and foreground context-menu
+  glass/scaling without requiring a checked-in visual reference image.
 - `PROJECT_STATE.md` documents status, risks, and continuation steps.

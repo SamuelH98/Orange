@@ -5,6 +5,7 @@
 
 #define TAHOE_CURSOR_THEME_MAX 128
 #define TAHOE_DESKTOP_POSITION_MAX 8
+#define TAHOE_DOCK_MAX 24
 
 enum tahoe_widget_size {
 	TAHOE_WIDGET_SIZE_SMALL,
@@ -37,6 +38,7 @@ struct tahoe_config {
 	bool dock_magnification;
 	double dock_magnification_scale;
 	bool dock_show_indicators;
+	int dock_order[TAHOE_DOCK_MAX];
 
 	bool calendar_widget_visible;
 	bool weather_widget_visible;

@@ -19,11 +19,9 @@ static const char *dock_icon_names[] = {
 	"notes",
 	"tv",
 	"music",
-	"rocket",
 	"app-store",
-	"calculator",
 	"settings",
-	"desktop-preview",
+	"calculator",
 	"trash",
 };
 
@@ -31,6 +29,38 @@ static const char *desktop_icon_names[] = {
 	"desktop-preview",
 	"notes",
 	"finder",
+	"trash",
+};
+
+static const char *context_menu_icon_names[] = {
+	"info.circle",
+	"gear",
+	"bag",
+	"clock",
+	"xmark.octagon",
+	"moon.zzz",
+	"arrow.counterclockwise",
+	"power",
+	"lock",
+	"arrow.right.to.line.alt",
+	"arrow.up.doc",
+	"magnifyingglass",
+	"minus.circle",
+	"person.crop.circle.badge.plus",
+	"square.and.pencil",
+	"rectangle.3.offgrid",
+	"square.grid.2x2",
+	"rectangle.grid.3x2",
+	"folder.badge.plus",
+	"rectangle.stack",
+	"arrow.up.arrow.down",
+	"wand.and.stars",
+	"sidebar.right",
+	"photo",
+	"doc.on.doc",
+	"plus.square.on.square",
+	"eye",
+	"square.and.arrow.up",
 	"trash",
 };
 
@@ -69,6 +99,10 @@ void tahoe_assets_init(struct tahoe_assets *assets) {
 	}
 	for (int i = 0; i < TAHOE_STATUS_ICON_COUNT; i++) {
 		assets->status_icons[i] = NULL;
+	}
+	assets->context_menu_icon_count = 0;
+	for (int i = 0; i < TAHOE_ASSET_CONTEXT_MENU_ICON_MAX; i++) {
+		assets->context_menu_icons[i] = NULL;
 	}
 }
 
@@ -145,6 +179,17 @@ bool tahoe_assets_load(struct tahoe_assets *assets, const char *root) {
 		load_root_png(root, "status/weather.png");
 	loaded = loaded || assets->status_icons[TAHOE_STATUS_ICON_WEATHER] != NULL;
 
+	int ctx_count = (int)(sizeof(context_menu_icon_names) /
+		sizeof(context_menu_icon_names[0]));
+	assets->context_menu_icon_count = ctx_count;
+	for (int i = 0; i < ctx_count && i < TAHOE_ASSET_CONTEXT_MENU_ICON_MAX; i++) {
+		char relative[512];
+		snprintf(relative, sizeof(relative), "context-menu/%s.png",
+			context_menu_icon_names[i]);
+		assets->context_menu_icons[i] = load_root_png(root, relative);
+		loaded = loaded || assets->context_menu_icons[i] != NULL;
+	}
+
 	return loaded;
 }
 
@@ -183,8 +228,15 @@ void tahoe_assets_finish(struct tahoe_assets *assets) {
 			assets->status_icons[i] = NULL;
 		}
 	}
+	for (int i = 0; i < TAHOE_ASSET_CONTEXT_MENU_ICON_MAX; i++) {
+		if (assets->context_menu_icons[i] != NULL) {
+			cairo_surface_destroy(assets->context_menu_icons[i]);
+			assets->context_menu_icons[i] = NULL;
+		}
+	}
 	assets->dock_icon_count = 0;
 	assets->desktop_icon_count = 0;
+	assets->context_menu_icon_count = 0;
 }
 
 cairo_surface_t *tahoe_assets_desktop_icon(
@@ -203,6 +255,22 @@ cairo_surface_t *tahoe_assets_desktop_icon(
 				surface = assets->desktop_icons[TAHOE_ASSET_ICON_LIGHT][i];
 			}
 			return surface;
+		}
+	}
+	return NULL;
+}
+
+cairo_surface_t *tahoe_assets_context_menu_icon(
+		const struct tahoe_assets *assets,
+		const char *name) {
+	if (assets == NULL || name == NULL) {
+		return NULL;
+	}
+	for (int i = 0; i < assets->context_menu_icon_count &&
+			i < (int)(sizeof(context_menu_icon_names) /
+				sizeof(context_menu_icon_names[0])); i++) {
+		if (strcmp(name, context_menu_icon_names[i]) == 0) {
+			return assets->context_menu_icons[i];
 		}
 	}
 	return NULL;

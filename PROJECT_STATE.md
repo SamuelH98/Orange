@@ -20,8 +20,8 @@ wlroots compositor, reference-sized Tahoe shell geometry, transparent menu bar,
 compact macOS-style Dock layout, scalable widgets, basic xdg-shell window
 management, Dock launchers, XDG `.desktop` desktop launchers with drag/context
 menus, keyboard shortcuts, cursor customization, local Tahoe asset sourcing,
-GTK theme/icon theme scaffolding, PNG reference export, foreground-only visual
-measurement, and headless one-shot validation.
+GTK theme/icon theme scaffolding, PNG render export, foreground-only visual
+smoke coverage, and headless one-shot validation.
 
 ---
 
@@ -46,7 +46,7 @@ scaling, and a render smoke test.
 - `meson setup build` passed.
 - `ninja -C build` passed.
 - `meson test -C build --print-errorlogs` passed.
-- `build/tahoe-render-shell /tmp/tahoe-reference.png` passed.
+- `build/tahoe-render-shell /tmp/tahoe-shell.png` passed.
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe-wlroots --headless --once`
   passed and rendered one headless frame.
 
@@ -62,7 +62,7 @@ Shell layout/hit-test/render smoke unit tests.
 
 - `ninja -C build` passed cleanly.
 - `meson test -C build --print-errorlogs` passed.
-- `build/tahoe-render-shell /tmp/tahoe-reference.png` passed.
+- `build/tahoe-render-shell /tmp/tahoe-shell.png` passed.
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe-wlroots --headless --once`
   passed and rendered one headless frame.
 
@@ -83,9 +83,8 @@ Shell layout/hit-test/render smoke unit tests.
 - Dock Calendar icon day/date overlay uses current shell time.
 - Dock indicator dots stay inside the glass container.
 - Top menu bar background fill removed so it is transparent over wallpaper.
-- Native `2880x1800` foreground visual testing ignores wallpaper differences
-  and measures Dock glass bounds plus Dock icon width/center/spacing against
-  `tahoe-desktop-reference.png`.
+- Foreground visual testing checks context-menu glass/translucency and scaling
+  without requiring a checked-in visual reference image.
 
 ### Cursor, Menus, And Tahoe Assets
 
@@ -98,6 +97,8 @@ Shell layout/hit-test/render smoke unit tests.
 - Asset generator script: `tools/generate_tahoe_assets.sh`.
 - Larger white Tahoe menu logo in the transparent menu bar.
 - Appearance-aware status icon tinting; status glyphs render light in dark mode.
+- Status strip icons now pack leftward from measured clock text in fixed visual
+  slots, with tighter generated battery/Wi-Fi/search/control/weather masks.
 - Tighter menu bar spacing.
 - Compact Dock icon sizing and spacing to better match the latest Dock crop.
 - Dock active indicators now reflect mapped/open client windows only.
@@ -119,7 +120,6 @@ Shell layout/hit-test/render smoke unit tests.
 - Shell dark render smoke test.
 - Widget layer existence test.
 - `.desktop`-required desktop icon layout test.
-- Native foreground visual Dock metric test.
 - Foreground context-menu glass/translucency and scaling test.
 
 ### macOS Tahoe 26 Context Menus & Apple Menu
@@ -158,27 +158,29 @@ Shell layout/hit-test/render smoke unit tests.
 - Desktop background context menu at cursor.
 - Desktop background hit test (TAHOE_HIT_DESKTOP on empty desktop area).
 - Config load/save coverage for widget visibility and size.
-- Native `2880x1800` foreground visual test for Dock bounds/icon metrics and
-  context-menu glass/scaling.
+- Foreground visual test for context-menu glass/scaling.
 
 ## Current Work
 
 ### Active Feature
 
-Native reference matching, widget shortcut menus, context-menu glass, and
-foreground visual tests complete.
+Reference-image testing removed. Widget shortcut menus, context-menu glass,
+Dock ordering, status icon refinement, and foreground visual tests complete.
 
 ### Progress
 
-Implementation compiles, all 4 Meson tests pass, the native visual test passes,
-and headless compositor one-shot validation passes.
+Implementation compiles, all 4 Meson tests pass, the non-reference visual test
+passes, rendered status-strip crops were checked with both default and private
+Apple assets, and headless compositor one-shot validation passes.
 
 ### Remaining Work
 
 Interactive testing under WSLg or a nested Wayland session is still needed.
-Pixel-level 1:1 depends on the ignored private Apple assets. The foreground
-visual test intentionally ignores wallpaper and measures shell geometry/glass
-against the checked-in reference.
+WSLg should use `WLR_BACKENDS=wayland WLR_RENDERER=pixman`; forcing wlroots
+Vulkan there can fail with `Cannot create Vulkan renderer: no DRM FD available`
+because the nested backend lacks the DRM render-node FD wlroots expects.
+Pixel-level 1:1 depends on the ignored private Apple assets. Automated visual
+coverage intentionally avoids checked-in reference-image comparison.
 More faithful behavior would require real app/menu integration, richer
 animation, and full desktop services.
 
@@ -187,11 +189,9 @@ animation, and full desktop services.
 ## Next Actions
 
 1. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/tahoe-wlroots`.
-2. If WSLg exposes a suitable DRM/Vulkan path, try
-   `WLR_BACKENDS=wayland WLR_RENDERER=vulkan build/tahoe-wlroots`.
-3. Replace generated Tahoe placeholder PNGs under `assets/icons/` and
+2. Replace generated Tahoe placeholder PNGs under `assets/icons/` and
    `assets/status/` with final repo-safe GitHub-sourced Tahoe assets.
-4. Populate the GTK icon pack with
+3. Populate the GTK icon pack with
    `./tools/populate_icon_theme.sh assets themes/TahoeIcons` after local
    assets are present.
 
@@ -229,6 +229,9 @@ wlroots 0.17 APIs are unstable and may need porting for newer distros. Vulkan
 renderer availability depends on the local GPU/driver and wlroots runtime
 support. In this sandbox, `WLR_BACKENDS=headless WLR_RENDERER=vulkan` fails
 because wlroots has no DRM FD in headless mode.
+The same `no DRM FD available` failure can occur in WSLg with the Wayland
+backend even when the Windows host has a discrete GPU, because WSLg GPU
+acceleration does not guarantee the DRM render-node path wlroots Vulkan needs.
 The committed procedural background fallback and any missing local PNGs are not
 pixel-identical to Apple proprietary assets; exact local visual matching depends
 on ignored asset overrides.

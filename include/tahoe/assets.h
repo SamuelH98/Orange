@@ -5,6 +5,7 @@
 #include <stdbool.h>
 
 #define TAHOE_ASSET_DOCK_ICON_MAX 32
+#define TAHOE_ASSET_CONTEXT_MENU_ICON_MAX 32
 
 enum tahoe_asset_icon_variant {
 	TAHOE_ASSET_ICON_LIGHT,
@@ -29,8 +30,10 @@ struct tahoe_assets {
 	cairo_surface_t *dock_icons[TAHOE_ASSET_ICON_VARIANTS][TAHOE_ASSET_DOCK_ICON_MAX];
 	cairo_surface_t *desktop_icons[TAHOE_ASSET_ICON_VARIANTS][TAHOE_ASSET_DOCK_ICON_MAX];
 	cairo_surface_t *status_icons[TAHOE_STATUS_ICON_COUNT];
+	cairo_surface_t *context_menu_icons[TAHOE_ASSET_CONTEXT_MENU_ICON_MAX];
 	int dock_icon_count;
 	int desktop_icon_count;
+	int context_menu_icon_count;
 };
 
 void tahoe_assets_init(struct tahoe_assets *assets);
@@ -39,6 +42,9 @@ void tahoe_assets_finish(struct tahoe_assets *assets);
 cairo_surface_t *tahoe_assets_desktop_icon(
 	const struct tahoe_assets *assets,
 	enum tahoe_asset_icon_variant variant,
+	const char *name);
+cairo_surface_t *tahoe_assets_context_menu_icon(
+	const struct tahoe_assets *assets,
 	const char *name);
 
 #endif

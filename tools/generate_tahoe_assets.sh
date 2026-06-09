@@ -21,13 +21,64 @@ make_icon() {
 		"$icons/$name.png"
 }
 
-make_status() {
-	name="$1"
-	label="$2"
+make_status_battery() {
+	convert -size 96x54 xc:none \
+		-fill none -stroke white -strokewidth 6 \
+		-draw "roundrectangle 8,11 78,43 8,8" \
+		-fill white -stroke none \
+		-draw "roundrectangle 82,21 90,33 2,2" \
+		-draw "roundrectangle 18,19 68,35 4,4" \
+		"PNG32:$status/battery.100.png"
+}
+
+make_status_wifi() {
+	convert -size 96x72 xc:none \
+		-fill none -stroke white -strokewidth 7 \
+		-draw "arc 9,2 87,80 214,326" \
+		-draw "arc 27,19 69,72 214,326" \
+		-draw "arc 39,34 57,64 214,326" \
+		-fill white -stroke none \
+		-draw "circle 48,62 48,67" \
+		"PNG32:$status/wifi.png"
+}
+
+make_status_search() {
 	convert -size 96x96 xc:none \
-		-fill white -gravity center -font DejaVu-Sans-Bold -pointsize 54 \
-		-annotate +0+5 "$label" \
-		"$status/$name.png"
+		-fill none -stroke white -strokewidth 8 \
+		-draw "circle 42,42 42,21" \
+		-draw "line 58,58 75,75" \
+		"PNG32:$status/magnifyingglass.png"
+}
+
+make_status_control_center() {
+	convert -size 96x96 xc:none \
+		-fill none -stroke white -strokewidth 7 \
+		-draw "roundrectangle 18,25 78,42 8,8" \
+		-draw "roundrectangle 18,56 78,73 8,8" \
+		-fill white -stroke none \
+		-draw "circle 39,33 39,39" \
+		-draw "circle 61,65 61,71" \
+		"PNG32:$status/control-center.png"
+}
+
+make_status_weather() {
+	convert -size 96x96 xc:none \
+		-fill white -stroke none \
+		-draw "circle 61,33 61,16" \
+		-fill none -stroke white -strokewidth 6 \
+		-draw "line 61,7 61,16" \
+		-draw "line 61,50 61,59" \
+		-draw "line 34,33 43,33" \
+		-draw "line 79,33 88,33" \
+		-draw "line 42,14 48,20" \
+		-draw "line 74,46 80,52" \
+		-draw "line 42,52 48,46" \
+		-draw "line 74,20 80,14" \
+		-fill white -stroke none \
+		-draw "circle 39,61 39,42" \
+		-draw "circle 57,61 57,46" \
+		-draw "rectangle 25,58 72,75" \
+		"PNG32:$status/weather.png"
 }
 
 make_icon tahoe-menu T "#f7fbff" "#d7e8ff"
@@ -65,10 +116,10 @@ for file in "$icons"/*.png; do
 	convert "$file" -modulate 78,90,100 "$icons/$base-dark.png"
 done
 
-make_status battery.100 B
-make_status wifi W
-make_status magnifyingglass S
-make_status control-center C
-make_status weather S
+make_status_battery
+make_status_wifi
+make_status_search
+make_status_control_center
+make_status_weather
 
 printf 'Generated Tahoe placeholder assets in %s\n' "$out"

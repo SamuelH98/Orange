@@ -122,6 +122,8 @@ int main(int argc, char **argv) {
 	struct tahoe_shell_state state = {
 		.apple_menu_open = false,
 		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
 		.now = now,
 		.assets = &assets,
 		.config = &config,
