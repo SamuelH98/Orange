@@ -4,7 +4,7 @@
 
 ### Project Name
 
-Tahoe wlroots
+Tahoe
 
 ### Goal
 
@@ -21,7 +21,8 @@ compact macOS-style Dock layout, scalable widgets, basic xdg-shell window
 management, Dock launchers, XDG `.desktop` desktop launchers with drag/context
 menus, keyboard shortcuts, cursor customization, local Tahoe asset sourcing,
 GTK theme/icon theme scaffolding, PNG render export, foreground-only visual
-smoke coverage, and headless one-shot validation.
+smoke coverage, bundled installed MacTahoe GTK themes plus upstream source, and
+headless one-shot validation.
 
 ---
 
@@ -47,7 +48,7 @@ scaling, and a render smoke test.
 - `ninja -C build` passed.
 - `meson test -C build --print-errorlogs` passed.
 - `build/tahoe-render-shell /tmp/tahoe-shell.png` passed.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe-wlroots --headless --once`
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once`
   passed and rendered one headless frame.
 
 #### Tests Added
@@ -63,7 +64,7 @@ Shell layout/hit-test/render smoke unit tests.
 - `ninja -C build` passed cleanly.
 - `meson test -C build --print-errorlogs` passed.
 - `build/tahoe-render-shell /tmp/tahoe-shell.png` passed.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe-wlroots --headless --once`
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once`
   passed and rendered one headless frame.
 
 #### Implemented
@@ -71,8 +72,16 @@ Shell layout/hit-test/render smoke unit tests.
 - Persistent `tahoe.conf` model for appearance, desktop icon, and Dock settings.
 - Conditional GTK4 Settings app source for appearance, desktop icon, and Dock
   controls.
+- Conditional GTK4 About This Mac app source launched from Apple menu >
+  About Tahoe, with Tahoe version/build, model, chip, memory, serial, graphics,
+  and kernel rows.
+- Bundled installed MacTahoe release themes as `themes/MacTahoe-Light` and
+  `themes/MacTahoe-Dark`.
+- Bundled upstream MacTahoe GTK theme source as `themes/MacTahoe-gtk-theme`
+  submodule, preserving upstream MIT-style license and update path.
 - Persistent widget visibility and small/medium/large widget size settings.
-- Light/dark shell appearance switching and GTK theme environment export.
+- Light/dark shell appearance switching and MacTahoe GTK theme environment
+  export.
 - Bundled GTK CSD theme CSS with traffic-light window control styling.
 - Bundled `TahoeIcons` GTK icon theme metadata plus a population script.
 - Widget registry layer with Calendar and Weather widgets pinned under client
@@ -127,7 +136,7 @@ Shell layout/hit-test/render smoke unit tests.
 #### Implemented
 
 - Full macOS Tahoe Apple menu (10 items) with separator lines between groups:
-  About Tahoe wlroots, System Settings..., App Store..., Recent Items,
+  About Tahoe, System Settings..., App Store..., Recent Items,
   Force Quit..., Sleep, Restart..., Shut Down..., Lock Screen, Log Out.
 - System actions: `systemctl suspend/reboot/poweroff`,
   `xdg-screensaver lock` for Lock Screen, `wl_display_terminate` for Log Out.
@@ -164,21 +173,26 @@ Shell layout/hit-test/render smoke unit tests.
 
 ### Active Feature
 
-Reference-image testing removed. Widget shortcut menus, context-menu glass,
-Dock ordering, status icon refinement, and foreground visual tests complete.
+Project renamed to Tahoe. Reference-image testing removed. Widget shortcut
+menus, context-menu glass, Dock ordering, status icon refinement, bundled
+installed MacTahoe themes and source, GTK About app source, and foreground
+visual tests complete.
 
 ### Progress
 
 Implementation compiles, all 4 Meson tests pass, the non-reference visual test
 passes, rendered status-strip crops were checked with both default and private
-Apple assets, and headless compositor one-shot validation passes.
+Apple assets, bundled MacTahoe GTK4 CSS exists, and headless compositor one-shot
+validation passes.
 
 ### Remaining Work
 
 Interactive testing under WSLg or a nested Wayland session is still needed.
 WSLg should use `WLR_BACKENDS=wayland WLR_RENDERER=pixman`; forcing wlroots
 Vulkan there can fail with `Cannot create Vulkan renderer: no DRM FD available`
-because the nested backend lacks the DRM render-node FD wlroots expects.
+because the nested backend lacks the DRM render-node FD wlroots expects. GTK
+utility launch commands set `GSK_RENDERER=cairo` to avoid GTK's WSLg EGL/Zink
+path.
 Pixel-level 1:1 depends on the ignored private Apple assets. Automated visual
 coverage intentionally avoids checked-in reference-image comparison.
 More faithful behavior would require real app/menu integration, richer
@@ -188,7 +202,7 @@ animation, and full desktop services.
 
 ## Next Actions
 
-1. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/tahoe-wlroots`.
+1. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/tahoe`.
 2. Replace generated Tahoe placeholder PNGs under `assets/icons/` and
    `assets/status/` with final repo-safe GitHub-sourced Tahoe assets.
 3. Populate the GTK icon pack with
@@ -205,9 +219,9 @@ None blocking for the prototype.
 
 ### Known Issues
 
-Apple proprietary assets are not included. GTK4 development headers are not
-installed in this environment, so `tahoe-settings` is skipped here but will
-build where `gtk4` is available.
+Apple proprietary assets are not included. GTK4 development headers are
+installed in this environment now, and both `tahoe-settings` and `tahoe-about`
+build here. They remain conditional for systems without GTK4 development files.
 
 ### Fixed
 
@@ -222,6 +236,10 @@ build where `gtk4` is available.
   `wlr_cursor_set_xcursor()` a no-op. The cursor theme now gets applied:
   (1) after backend start so all initial outputs receive it, and
   (2) in `handle_new_output()` so hotplugged outputs also get the theme.
+- **xdg-shell capability assertion fixed**: GTK4 clients can bind xdg-shell v3,
+  while `wlr_xdg_toplevel_set_wm_capabilities()` requires the toplevel
+  capability protocol version. Tahoe now creates xdg-shell v5 and only advertises
+  window-manager capabilities when the client resource version supports them.
 
 ### Technical Concerns
 
@@ -243,5 +261,5 @@ on ignored asset overrides.
 Continue from the committed implementation. Target wlroots 0.17.1, keep Apple
 assets and populated GTK icon PNGs ignored, validate with
 `meson test -C build --print-errorlogs` and
-`WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe-wlroots --headless --once`,
+`WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once`,
 then test interactively under WSLg or nested Wayland.

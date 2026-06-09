@@ -1,5 +1,5 @@
 project(
-  'tahoe-wlroots',
+  'tahoe',
   'c',
   version: '0.1.0',
   default_options: [
@@ -64,7 +64,7 @@ tahoe_core_dep = declare_dependency(
 )
 
 executable(
-  'tahoe-wlroots',
+  'tahoe',
   files(
     'src/buffer.c',
     'src/compositor.c',
@@ -94,15 +94,27 @@ executable(
 )
 
 if gtk4_dep.found()
+  gtk_app_c_args = ['-Wno-pedantic']
   executable(
     'tahoe-settings',
     files('src/settings_app.c'),
     include_directories: inc,
     dependencies: [tahoe_core_dep, gtk4_dep],
+    c_args: gtk_app_c_args,
+    install: false,
+  )
+  executable(
+    'tahoe-about',
+    files('src/about_app.c'),
+    include_directories: inc,
+    dependencies: [gtk4_dep],
+    c_args: gtk_app_c_args + [
+      '-DTAHOE_PROJECT_VERSION="@0@"'.format(meson.project_version()),
+    ],
     install: false,
   )
 else
-  message('gtk4 development files not found; skipping tahoe-settings target')
+  message('gtk4 development files not found; skipping tahoe-settings and tahoe-about targets')
 endif
 
 test_shell_layout = executable(

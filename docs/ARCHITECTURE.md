@@ -73,26 +73,27 @@ Responsibilities:
 - provide defaults when config is missing,
 - expose one struct consumed by shell layout and rendering.
 
-### Settings App
+### GTK Utility Apps
 
-GTK application source that edits the configuration store. It is conditionally
-built when GTK development libraries are present, and it loads the bundled GTK
-theme CSS.
+GTK application sources that are conditionally built when GTK development
+libraries are present.
 
-Responsibilities:
+Settings app responsibilities include appearance, desktop icon, widget, Dock,
+cursor theme, and cursor size controls, writing config changes without a
+compositor restart.
 
-- appearance toggle,
-- desktop icon settings,
-- widget visibility and size settings,
-- Dock settings,
-- cursor theme and size settings,
-- write config changes without requiring compositor restart.
+About app responsibilities include showing the Tahoe/macOS version and build
+affordance, model, chip, memory, serial, graphics, and kernel details, launched
+from the Apple-style menu.
 
 ### Bundled GTK Theme
 
-CSS files under `themes/TahoeGTK/` define light and dark macOS-style GTK CSD,
-including left-aligned traffic-light window controls where supported by GTK
-clients. The compositor exports GTK environment variables for launched clients.
+Expanded upstream release themes under `themes/MacTahoe-Light/` and
+`themes/MacTahoe-Dark/` provide the installed GTK theme payload used by launched
+GTK clients. CSS files under `themes/TahoeGTK/` remain as lightweight fallback
+themes. The `themes/MacTahoe-gtk-theme` submodule bundles the upstream MacTahoe
+source for provenance and updates. The compositor exports GTK environment
+variables for launched clients.
 
 ### GTK Icon Theme
 

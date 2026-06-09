@@ -13,7 +13,7 @@ mkdir -p "$OUT_DIR" "$OUT_DIR_WHITE" "$OUT_DIR_APPLE"
 ALL_SYMBOLS=""
 
 # Apple Menu
-ALL_SYMBOLS="$ALL_SYMBOLS info.circle"           # About Tahoe wlroots
+ALL_SYMBOLS="$ALL_SYMBOLS info.circle"           # About Tahoe
 ALL_SYMBOLS="$ALL_SYMBOLS gear"                   # System Settings...
 ALL_SYMBOLS="$ALL_SYMBOLS bag"                    # App Store...
 ALL_SYMBOLS="$ALL_SYMBOLS clock"                  # Recent Items

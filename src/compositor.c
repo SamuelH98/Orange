@@ -193,7 +193,7 @@ static void finish_dock_drag(struct tahoe_server *server);
 
 static void server_apply_theme_env(struct tahoe_server *server) {
 	const char *theme = server->config.appearance == TAHOE_APPEARANCE_DARK ?
-		"TahoeGTK-dark" : "TahoeGTK";
+		"MacTahoe-Dark" : "MacTahoe-Light";
 	setenv("GTK_THEME", theme, true);
 	setenv("GTK_ICON_THEME", "TahoeIcons", true);
 	setenv("GTK_CSD", "1", true);
@@ -793,8 +793,11 @@ static void apply_fullscreen(struct tahoe_view *view, bool fullscreen) {
 
 static void handle_shell_menu_action(struct tahoe_server *server, int index) {
 	switch (index) {
+	case 0:
+		launch_command("GSK_RENDERER=cairo build/tahoe-about || true");
+		break;
 	case 1:
-		launch_command("build/tahoe-settings tahoe.conf || true");
+		launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
 		break;
 	case 2:
 		launch_app_picker();
@@ -876,7 +879,7 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 			launch_command("xdg-open \"$HOME\" || true");
 			break;
 		case 4:
-			launch_command("build/tahoe-settings tahoe.conf || true");
+			launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
 			break;
 		default:
 			break;
@@ -884,7 +887,7 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 	} else if (kind == TAHOE_CONTEXT_MENU_WIDGET) {
 		switch (item_index) {
 		case 0:
-			launch_command("build/tahoe-settings tahoe.conf || true");
+			launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
 			break;
 		case 1:
 			set_widget_size(server, target, TAHOE_WIDGET_SIZE_SMALL);
@@ -925,10 +928,10 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 			launch_command("xdg-open \"$HOME/Desktop\" || true");
 			break;
 		case 6:
-			launch_command("build/tahoe-settings tahoe.conf || true");
+			launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
 			break;
 		case 7:
-			launch_command("build/tahoe-settings tahoe.conf || true");
+			launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
 			break;
 		default:
 			break;
@@ -1637,10 +1640,13 @@ static void handle_new_xdg_surface(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_surface->toplevel->events.request_fullscreen,
 		&view->request_fullscreen);
 
-	wlr_xdg_toplevel_set_wm_capabilities(xdg_surface->toplevel,
-		WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE |
-		WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN |
-		WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE);
+	if (wl_resource_get_version(xdg_surface->toplevel->resource) >=
+			XDG_TOPLEVEL_WM_CAPABILITIES_SINCE_VERSION) {
+		wlr_xdg_toplevel_set_wm_capabilities(xdg_surface->toplevel,
+			WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE |
+			WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN |
+			WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE);
+	}
 	wlr_xdg_toplevel_set_size(xdg_surface->toplevel, 900, 620);
 	wl_list_insert(&server->views, &view->link);
 }
@@ -1809,7 +1815,7 @@ static bool ensure_runtime_dir(void) {
 	}
 
 	char fallback[256];
-	snprintf(fallback, sizeof(fallback), "/tmp/tahoe-wlroots-runtime-%ld",
+	snprintf(fallback, sizeof(fallback), "/tmp/tahoe-runtime-%ld",
 		(long)getuid());
 	if (mkdir(fallback, 0700) < 0 && access(fallback, W_OK | X_OK) != 0) {
 		wlr_log(WLR_ERROR, "failed to create runtime dir %s", fallback);
@@ -1910,7 +1916,7 @@ static bool server_init(struct tahoe_server *server,
 	wl_signal_add(&xdg_decoration_manager->events.new_toplevel_decoration,
 		&server->new_xdg_decoration);
 
-	server->xdg_shell = wlr_xdg_shell_create(server->display, 3);
+	server->xdg_shell = wlr_xdg_shell_create(server->display, 5);
 	server->new_xdg_surface.notify = handle_new_xdg_surface;
 	wl_signal_add(&server->xdg_shell->events.new_surface,
 		&server->new_xdg_surface);

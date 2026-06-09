@@ -48,8 +48,14 @@ macOS-style shell prototype.
 - Provide a native GTK Settings application source that controls this
   configuration and uses the bundled GTK theme when GTK development libraries
   are available at build time.
-- Bundle macOS-style GTK CSD theme variants and configure GTK clients launched
-  from the shell to use them.
+- Provide a native GTK About This Mac application source that opens from the
+  Apple-style About Tahoe menu item when GTK development libraries are available
+  at build time. It should present a compact Tahoe-style model/version summary
+  with chip, memory, serial, graphics, and kernel details.
+- Bundle installed macOS-style MacTahoe GTK theme variants and configure GTK
+  clients launched from the shell to use them.
+- Bundle the upstream MacTahoe GTK theme source while preserving upstream
+  licensing and update path.
 - Provide a bundled GTK icon theme (`TahoeIcons`) that maps the local dock and
   shortcut icon names into standard GTK icon-theme lookup paths when populated
   from `./assets/`.
@@ -113,7 +119,7 @@ macOS-style shell prototype.
 - `meson setup build` succeeds.
 - `ninja -C build` succeeds.
 - Unit tests pass.
-- `WLR_BACKENDS=headless build/tahoe-wlroots --headless --once` renders and
+- `WLR_BACKENDS=headless build/tahoe --headless --once` renders and
   exits successfully.
 - Runtime logs include selected renderer type information.
 - A user can launch configured apps from the Dock/desktop and interact with

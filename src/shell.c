@@ -30,13 +30,13 @@ static const struct launcher dock_launchers[] = {
 	{"TV", "xdg-open \"https://tv.apple.com\""},
 	{"Music", "xdg-open \"$HOME/Music\""},
 	{"App Store", "gnome-software || plasma-discover || true"},
-	{"Settings", "build/tahoe-settings tahoe.conf || true"},
+	{"Settings", "GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true"},
 	{"Calculator", "gnome-calculator || kcalc || xcalc || true"},
 	{"Trash", "gio open trash:// || xdg-open trash:// || true"},
 };
 
 static const char *menu_labels[] = {
-	"About Tahoe wlroots",
+	"About Tahoe",
 	"System Settings...",
 	"App Store...",
 	"Recent Items",

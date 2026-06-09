@@ -1,4 +1,4 @@
-# Tahoe wlroots
+# Tahoe
 
 A small wlroots compositor prototype that recreates the supplied macOS Tahoe 26
 desktop reference on Linux with C rendering code.
@@ -19,7 +19,7 @@ ninja -C build
 From a nested Wayland/X11 session:
 
 ```sh
-WLR_RENDERER=vulkan build/tahoe-wlroots
+WLR_RENDERER=vulkan build/tahoe
 ```
 
 `WLR_RENDERER=vulkan` requires a backend that can hand wlroots a DRM render
@@ -29,8 +29,8 @@ renderer without DRM.
 On WSLg, run it nested inside the existing WSLg Wayland session:
 
 ```sh
-cd ~/tahoe-wlroots
-WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build/tahoe-wlroots --assets assets --config tahoe.conf --desktop-dir assets/desktop --themes .
+cd ~/tahoe
+WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build/tahoe --assets assets --config tahoe.conf --desktop-dir assets/desktop --themes .
 ```
 
 Do not force `WLR_RENDERER=vulkan` on WSLg unless `vulkaninfo` works and the
@@ -41,7 +41,7 @@ means renderer setup failed before Tahoe can fall back.
 For automated/headless validation:
 
 ```sh
-WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe-wlroots --headless --once
+WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once
 ```
 
 ## Assets
@@ -100,6 +100,11 @@ The compositor reloads `tahoe.conf` once per second. The GTK Settings app source
 is included and will build as `build/tahoe-settings` when GTK4 development
 headers are installed.
 
+The GTK About This Mac app source is included and will build as
+`build/tahoe-about` when GTK4 development headers are installed. It opens from
+Apple menu > About Tahoe and shows model, chip, memory, serial, kernel, and
+Tahoe version/build details.
+
 Settings currently covers appearance, desktop icon visibility/scale/labels,
 widget visibility/size, Dock size/icon/magnification/indicator controls, and
 cursor theme/size. Cursor settings write `cursor_theme=` and `cursor_size=` to
@@ -110,9 +115,19 @@ Desktop icons can be dragged; custom positions are persisted in `tahoe.conf` as
 their shell context menus. Right-click Calendar or Weather widgets for
 widget-specific edit, size, and remove actions.
 
-Bundled GTK themes live under `themes/TahoeGTK/` and
-`themes/TahoeGTK-dark/`. The compositor exports GTK theme variables for
-launched GTK clients and requests client-side decorations.
+Bundled installed MacTahoe GTK themes live under `themes/MacTahoe-Light/` and
+`themes/MacTahoe-Dark/` and are the compositor defaults for launched GTK
+clients. Lightweight fallback themes remain under `themes/TahoeGTK/` and
+`themes/TahoeGTK-dark/`. The upstream MacTahoe source is also bundled as the
+`themes/MacTahoe-gtk-theme` submodule, pinned to the upstream MIT-licensed
+project for provenance and updates. The compositor exports GTK theme variables
+and requests client-side decorations.
+
+To initialize the bundled MacTahoe theme source after cloning:
+
+```sh
+git submodule update --init --recursive
+```
 
 To populate the GTK icon pack from local assets:
 

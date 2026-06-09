@@ -10,7 +10,7 @@
 - `meson`: 1.3.2
 - `ninja`: 1.11.1
 - `gcc`: 13.3.0
-- `gtk4`: not installed in this environment
+- `gtk4`: 4.14.5
 - `gtk+-3.0`: not installed in this environment
 - `convert` / ImageMagick: installed and used to generate repo-safe Tahoe
   placeholder PNG assets
@@ -65,6 +65,22 @@ coverage keeps light/dark smoke tests plus a foreground-only desktop context
 menu check for scaled geometry and translucent glass, without comparing against
 a checked-in visual reference image.
 
+Apple documents About This Mac as an Apple-menu window that always includes the
+macOS name and version, with build details revealed from the version text. The
+Mac user guide says the Mac model appears at the top, hardware details such as
+chip and serial number sit immediately below, and macOS version information
+appears below that. Apple's June 3, 2026 Tahoe update notes list macOS Tahoe
+`26.5.1`, so the bundled Tahoe About app uses that version string and toggles
+to the local Tahoe build string.
+
+The upstream `vinceliuice/MacTahoe-gtk-theme` project describes itself as a
+macOS Tahoe-like GTK theme for Linux desktops, based on WhiteSur. Its README
+documents source installation and customization flags, and its COPYING file is
+MIT-style. The project bundles the upstream source as a Git submodule for
+license, commit history, and updates, and expands the upstream `MacTahoe-Light`
+and `MacTahoe-Dark` release archives under `themes/` so an installed theme
+payload is available without running the installer.
+
 ## Risks
 
 - wlroots APIs are explicitly unstable; code targets 0.17.1 as installed.
@@ -77,8 +93,8 @@ a checked-in visual reference image.
 - Running a real compositor outside headless mode may require a nested Wayland
   or X11 session, or a TTY with seat permissions.
 - Exact Apple assets cannot be redistributed in this repository.
-- The native GTK Settings app is implemented conditionally because GTK
-  development headers are not installed in this environment.
+- The native GTK Settings and About apps are implemented conditionally so the
+  compositor can still build on systems without GTK development headers.
 - Client-side traffic-light controls depend on GTK client support for CSD and
   theme CSS. The compositor can force client-side preference, but non-GTK
   clients may not honor GTK CSS.
@@ -91,6 +107,14 @@ a checked-in visual reference image.
   menu/action component guidance.
 - Apple Support, "Add and customize widgets on Mac":
   https://support.apple.com/guide/mac-help/add-and-customize-widgets-mchl52be5da5/mac
+- Apple Support, "Find out which macOS your Mac is using":
+  https://support.apple.com/109033
+- Apple Support, "What's new in the updates for macOS Tahoe 26":
+  https://support.apple.com/en-au/122868
+- Apple Support, "Find the Getting Started guide for your Mac":
+  https://support.apple.com/guide/mac-help/mchl30bc42cb/mac
+- MacTahoe GTK Theme:
+  https://github.com/vinceliuice/MacTahoe-gtk-theme
 - Apple Human Interface Guidelines, "Liquid Glass":
   https://developer.apple.com/design/human-interface-guidelines/liquid-glass
 - Apple Human Interface Guidelines, "Menus":
