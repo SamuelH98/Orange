@@ -71,10 +71,14 @@ Shell layout/hit-test/render smoke unit tests.
 
 - Persistent `tahoe.conf` model for appearance, desktop icon, and Dock settings.
 - Conditional GTK4 Settings app source for appearance, desktop icon, and Dock
-  controls.
+  controls, with GTK headerbar controls requested on the left and default size
+  clamped to monitor geometry.
 - Conditional GTK4 About This Mac app source launched from Apple menu >
-  About Tahoe, with Tahoe version/build, model, chip, memory, serial, graphics,
-  and kernel rows.
+  About Tahoe, using a compact macOS Tahoe-style reference layout with custom
+  macOS traffic-light window controls (close/minimize/maximize), no GTK title
+  bar, top area draggable via gesture-initiated surface move, laptop
+  illustration, centered model/year, compact hardware rows, More Info action,
+  and regulatory footer. Scales up to 2x on higher-resolution displays.
 - Bundled installed MacTahoe release themes as `themes/MacTahoe-Light` and
   `themes/MacTahoe-Dark`.
 - Bundled upstream MacTahoe GTK theme source as `themes/MacTahoe-gtk-theme`
@@ -175,15 +179,16 @@ Shell layout/hit-test/render smoke unit tests.
 
 Project renamed to Tahoe. Reference-image testing removed. Widget shortcut
 menus, context-menu glass, Dock ordering, status icon refinement, bundled
-installed MacTahoe themes and source, GTK About app source, and foreground
-visual tests complete.
+installed MacTahoe themes and source, resolution-scaled screenshot-matched GTK
+About app source, left-side GTK4 utility controls, and foreground visual tests
+complete.
 
 ### Progress
 
-Implementation compiles, all 4 Meson tests pass, the non-reference visual test
-passes, rendered status-strip crops were checked with both default and private
-Apple assets, bundled MacTahoe GTK4 CSS exists, and headless compositor one-shot
-validation passes.
+Implementation compiles, both GTK utility app help paths run, all 4 Meson tests
+pass, the non-reference visual test passes, rendered status-strip crops were
+checked with both default and private Apple assets, bundled MacTahoe GTK4 CSS
+exists, and headless compositor one-shot validation passes.
 
 ### Remaining Work
 
@@ -240,6 +245,15 @@ build here. They remain conditional for systems without GTK4 development files.
   while `wlr_xdg_toplevel_set_wm_capabilities()` requires the toplevel
   capability protocol version. Tahoe now creates xdg-shell v5 and only advertises
   window-manager capabilities when the client resource version supports them.
+- **GTK utility controls moved left**: Tahoe's GTK4 utility apps request
+  `close,minimize,maximize:` through GTK decoration layout; the Settings app
+  uses a GTK headerbar with left-aligned decoration layout, while the About app
+  uses custom macOS-style traffic-light buttons (no GTK title bar) with
+  gesture-driven window move for a more native appearance.
+- **GTK utility sizing made monitor-aware**: The About app scales its compact
+  reference layout to the current monitor (up to 2x on high-resolution displays)
+  instead of opening too tall on small WSLg sessions, and Settings clamps its
+  default size to the monitor bounds.
 
 ### Technical Concerns
 

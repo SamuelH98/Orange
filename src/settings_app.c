@@ -3,11 +3,58 @@
 #include <gtk/gtk.h>
 #include <stdio.h>
 
+#define LEFT_DECORATION_LAYOUT "close,minimize,maximize:"
+
 struct settings_app {
 	GtkApplication *app;
 	struct tahoe_config config;
 	const char *config_path;
 };
+
+static void get_monitor_geometry(GdkRectangle *geometry) {
+	*geometry = (GdkRectangle) {
+		.x = 0,
+		.y = 0,
+		.width = 1280,
+		.height = 720,
+	};
+
+	GdkDisplay *display = gdk_display_get_default();
+	if (display == NULL) {
+		return;
+	}
+
+	GListModel *monitors = gdk_display_get_monitors(display);
+	if (monitors == NULL || g_list_model_get_n_items(monitors) == 0) {
+		return;
+	}
+
+	GdkMonitor *monitor = g_list_model_get_item(monitors, 0);
+	if (monitor == NULL) {
+		return;
+	}
+	gdk_monitor_get_geometry(monitor, geometry);
+	g_object_unref(monitor);
+}
+
+static int fit_window_dimension(int preferred, int monitor_size, int margin) {
+	int available = monitor_size > margin ? monitor_size - margin : monitor_size;
+	return available > 0 && available < preferred ? available : preferred;
+}
+
+static void set_left_decoration_layout(void) {
+	GtkSettings *settings = gtk_settings_get_default();
+	if (settings == NULL) {
+		return;
+	}
+	if (g_object_class_find_property(G_OBJECT_GET_CLASS(settings),
+			"gtk-decoration-layout") != NULL) {
+		g_object_set(settings,
+			"gtk-decoration-layout",
+			LEFT_DECORATION_LAYOUT,
+			NULL);
+	}
+}
 
 static void save_config(struct settings_app *settings) {
 	tahoe_config_save(&settings->config, settings->config_path);
@@ -158,12 +205,20 @@ static GtkWidget *section_label(const char *title) {
 
 static void activate(GtkApplication *app, gpointer data) {
 	struct settings_app *settings = data;
+	set_left_decoration_layout();
+	GdkRectangle geometry;
+	get_monitor_geometry(&geometry);
+
 	GtkWidget *window = gtk_application_window_new(app);
 	gtk_window_set_title(GTK_WINDOW(window), "System Settings");
-	gtk_window_set_default_size(GTK_WINDOW(window), 680, 560);
+	gtk_window_set_default_size(GTK_WINDOW(window),
+		fit_window_dimension(680, geometry.width, 80),
+		fit_window_dimension(560, geometry.height, 80));
 
 	GtkWidget *header = gtk_header_bar_new();
 	gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(header), true);
+	gtk_header_bar_set_decoration_layout(GTK_HEADER_BAR(header),
+		LEFT_DECORATION_LAYOUT);
 	gtk_window_set_titlebar(GTK_WINDOW(window), header);
 
 	GtkWidget *scroller = gtk_scrolled_window_new();
