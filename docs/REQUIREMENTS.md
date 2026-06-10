@@ -51,7 +51,7 @@ macOS-style shell prototype.
 - Provide a native GTK About This Mac application source that opens from the
   Apple-style About Tahoe menu item when GTK development libraries are available
   at build time. It should present a compact Tahoe-style model/version summary
-  with chip, memory, serial, graphics, and kernel details.
+  with real chip and memory values and no serial number row.
 - Bundle installed macOS-style MacTahoe GTK theme variants and configure GTK
   clients launched from the shell to use them.
 - Bundle the upstream MacTahoe GTK theme source while preserving upstream

@@ -1,15 +1,16 @@
 #include <cairo/cairo.h>
 #include <gtk/gtk.h>
+#include <stdbool.h>
+#include <sys/sysinfo.h>
 
 #define ABOUT_DESIGN_WIDTH 560
-#define ABOUT_DESIGN_HEIGHT 580
-#define ABOUT_MAX_SCALE 1.0
-#define TRAFFIC_LIGHT_DESIGN_SIZE 12
-#define TRAFFIC_LIGHT_DESIGN_Y 14
-#define TRAFFIC_LIGHT_1_X 16
-#define TRAFFIC_LIGHT_2_X 44
-#define TRAFFIC_LIGHT_3_X 72
-#define DRAG_AREA_DESIGN_HEIGHT 52
+#define ABOUT_DESIGN_HEIGHT 974
+#define ABOUT_MAX_SCALE 0.72
+#define TRAFFIC_LIGHT_DESIGN_SIZE 16
+#define TRAFFIC_LIGHT_DESIGN_Y 18
+#define TRAFFIC_LIGHT_1_X 18
+#define TRAFFIC_LIGHT_2_X 46
+#define TRAFFIC_LIGHT_3_X 74
 
 struct about_app {
 	GtkApplication *app;
@@ -30,8 +31,8 @@ static void get_monitor_geometry(GdkRectangle *geometry) {
 	*geometry = (GdkRectangle) {
 		.x = 0,
 		.y = 0,
-		.width = 1280,
-		.height = 720,
+		.width = 1920,
+		.height = 1080,
 	};
 
 	GdkDisplay *display = gdk_display_get_default();
@@ -80,7 +81,7 @@ static void apply_css(double scale) {
 		".about-root {"
 		"  background: #fbfbfb;"
 		"  color: #252527;"
-		"  border-radius: 12px;"
+		"  border-radius: 22px;"
 		"  overflow: hidden;"
 		"}"
 		".model-title {"
@@ -126,16 +127,11 @@ static void apply_css(double scale) {
 		"  min-height: %dpx;"
 		"  padding: 0;"
 		"  border: 0;"
-		"  border-radius: 50%%;"
+		"  border-radius: 999px;"
 		"  background-image: none;"
+		"  background: transparent;"
 		"  box-shadow: none;"
 		"}"
-		".traffic-light.close { background: #ff5f57; }"
-		".traffic-light.close:hover { background: #e0403a; }"
-		".traffic-light.minimize { background: #b8b8ba; }"
-		".traffic-light.minimize:hover { background: #9a9a9c; }"
-		".traffic-light.maximize { background: #b8b8ba; }"
-		".traffic-light.maximize:hover { background: #9a9a9c; }"
 		".regulatory {"
 		"  color: #b8b8ba;"
 		"  font-size: %dpx;"
@@ -152,14 +148,14 @@ static void apply_css(double scale) {
 		scaled_px(scale, 21),
 		scaled_px(scale, 21),
 		scaled_px(scale, 21),
-		scaled_px(scale, 170),
-		scaled_px(scale, 44),
+		scaled_px(scale, 184),
+		scaled_px(scale, 48),
 		scaled_px(scale, 10),
 		scaled_px(scale, 24),
-		scaled_px(scale, 19),
-		scaled_px(scale, 19),
-		scaled_px(scale, TRAFFIC_LIGHT_DESIGN_SIZE),
-		scaled_px(scale, TRAFFIC_LIGHT_DESIGN_SIZE));
+		TRAFFIC_LIGHT_DESIGN_SIZE,
+		TRAFFIC_LIGHT_DESIGN_SIZE,
+		scaled_px(scale, 12),
+		scaled_px(scale, 12));
 	gtk_css_provider_load_from_string(provider, css);
 	gtk_style_context_add_provider_for_display(gdk_display_get_default(),
 		GTK_STYLE_PROVIDER(provider),
@@ -309,6 +305,73 @@ static GtkWidget *fixed_label(
 	return label;
 }
 
+static char *normalize_cpu_label(const char *value) {
+	GString *normalized = g_string_new(NULL);
+	bool previous_space = false;
+	for (const char *p = value; *p != '\0'; p++) {
+		if (g_ascii_isspace((guchar)*p)) {
+			if (!previous_space && normalized->len > 0) {
+				g_string_append_c(normalized, ' ');
+			}
+			previous_space = true;
+		} else {
+			g_string_append_c(normalized, *p);
+			previous_space = false;
+		}
+	}
+	return g_string_free(normalized, false);
+}
+
+static char *read_cpu_label(void) {
+	char *contents = NULL;
+	if (!g_file_get_contents("/proc/cpuinfo", &contents, NULL, NULL)) {
+		return g_strdup("Unknown CPU");
+	}
+
+	const char *keys[] = {
+		"model name",
+		"Hardware",
+		"Processor",
+		"cpu model",
+	};
+	char *result = NULL;
+	char **lines = g_strsplit(contents, "\n", -1);
+	for (int key = 0; key < (int)(sizeof(keys) / sizeof(keys[0])) && result == NULL;
+			key++) {
+		for (char **line = lines; *line != NULL; line++) {
+			char *colon = strchr(*line, ':');
+			if (colon == NULL) {
+				continue;
+			}
+			*colon = '\0';
+			char *name = g_strstrip(*line);
+			char *value = g_strstrip(colon + 1);
+			if (g_ascii_strcasecmp(name, keys[key]) == 0 && value[0] != '\0') {
+				result = normalize_cpu_label(value);
+				break;
+			}
+		}
+	}
+	g_strfreev(lines);
+	g_free(contents);
+	return result != NULL ? result : g_strdup("Unknown CPU");
+}
+
+static char *read_memory_label(void) {
+	struct sysinfo info;
+	if (sysinfo(&info) != 0 || info.totalram == 0) {
+		return g_strdup("Unknown");
+	}
+
+	long double bytes = (long double)info.totalram *
+		(long double)(info.mem_unit == 0 ? 1 : info.mem_unit);
+	long double gib = bytes / (1024.0L * 1024.0L * 1024.0L);
+	if (gib >= 10.0L) {
+		return g_strdup_printf("%.0Lf GB", gib);
+	}
+	return g_strdup_printf("%.1Lf GB", gib);
+}
+
 static void add_spec_row(
 		GtkWidget *fixed,
 		double scale,
@@ -316,7 +379,10 @@ static void add_spec_row(
 		const char *key,
 		const char *value) {
 	fixed_label(fixed, key, "spec-key", scale, 88, y, 155, 30, 1.0f);
-	fixed_label(fixed, value, "spec-value", scale, 266, y, 220, 30, 0.0f);
+	GtkWidget *value_label = fixed_label(fixed, value, "spec-value", scale,
+		266, y, 232, 30, 0.0f);
+	gtk_label_set_ellipsize(GTK_LABEL(value_label), PANGO_ELLIPSIZE_END);
+	gtk_label_set_single_line_mode(GTK_LABEL(value_label), TRUE);
 }
 
 static void on_more_info(GtkButton *button, gpointer data) {
@@ -331,6 +397,36 @@ static void on_more_info(GtkButton *button, gpointer data) {
 static void on_close(GtkButton *button, gpointer data) {
 	(void)button;
 	gtk_window_destroy(GTK_WINDOW(data));
+}
+
+struct drag_data {
+	GtkWindow *window;
+	int threshold;
+};
+
+static void on_drag_begin(GtkGestureDrag *gesture, double x, double y,
+		gpointer user_data) {
+	struct drag_data *dd = user_data;
+	if (y > dd->threshold) {
+		return;
+	}
+	GtkWidget *widget = gtk_event_controller_get_widget(
+		GTK_EVENT_CONTROLLER(gesture));
+	GdkDevice *device = gtk_gesture_get_device(GTK_GESTURE(gesture));
+	GdkSurface *surface = gtk_native_get_surface(
+		gtk_widget_get_native(widget));
+	if (surface == NULL) {
+		return;
+	}
+	GdkToplevel *toplevel = GDK_TOPLEVEL(surface);
+	GdkEvent *event = gtk_gesture_get_last_event(GTK_GESTURE(gesture), NULL);
+	guint32 timestamp = gdk_event_get_time(event);
+	gdk_toplevel_begin_move(toplevel, device, 1, x, y, timestamp);
+}
+
+static void free_drag_data(gpointer data, GClosure *closure) {
+	(void)closure;
+	g_free(data);
 }
 
 static void on_minimize(GtkButton *button, gpointer data) {
@@ -348,54 +444,183 @@ static void on_maximize(GtkButton *button, gpointer data) {
 	}
 }
 
+enum traffic_light_kind {
+	TRAFFIC_LIGHT_CLOSE,
+	TRAFFIC_LIGHT_MINIMIZE,
+	TRAFFIC_LIGHT_MAXIMIZE,
+};
+
+struct traffic_light_data {
+	GtkWidget *button;
+	GtkWidget *face;
+	GtkWindow *window;
+	enum traffic_light_kind kind;
+	gulong active_handler;
+	bool hover;
+};
+
+static void traffic_light_queue(struct traffic_light_data *td) {
+	if (td->face != NULL) {
+		gtk_widget_queue_draw(td->face);
+	}
+}
+
+static void set_source_hex(cairo_t *cr, unsigned int rgb, double alpha) {
+	cairo_set_source_rgba(cr,
+		((rgb >> 16) & 0xff) / 255.0,
+		((rgb >> 8) & 0xff) / 255.0,
+		(rgb & 0xff) / 255.0,
+		alpha);
+}
+
+static void draw_traffic_glyph(cairo_t *cr, enum traffic_light_kind kind) {
+	set_source_hex(cr, 0x000000, 0.50);
+	cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+	cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+	switch (kind) {
+	case TRAFFIC_LIGHT_CLOSE:
+		cairo_set_line_width(cr, 1.45);
+		cairo_move_to(cr, 5.35, 5.35);
+		cairo_line_to(cr, 10.65, 10.65);
+		cairo_move_to(cr, 10.65, 5.35);
+		cairo_line_to(cr, 5.35, 10.65);
+		cairo_stroke(cr);
+		break;
+	case TRAFFIC_LIGHT_MINIMIZE:
+		rounded_rectangle(cr, 4.0, 7.0, 8.0, 2.0, 1.0);
+		cairo_fill(cr);
+		break;
+	case TRAFFIC_LIGHT_MAXIMIZE:
+		cairo_move_to(cr, 6.35, 5.0);
+		cairo_line_to(cr, 11.0, 9.65);
+		cairo_line_to(cr, 11.0, 6.05);
+		cairo_curve_to(cr, 11.0, 5.45, 10.55, 5.0, 9.95, 5.0);
+		cairo_close_path(cr);
+		cairo_move_to(cr, 5.0, 6.35);
+		cairo_line_to(cr, 5.0, 9.95);
+		cairo_curve_to(cr, 5.0, 10.55, 5.45, 11.0, 6.05, 11.0);
+		cairo_line_to(cr, 9.65, 11.0);
+		cairo_close_path(cr);
+		cairo_fill(cr);
+		break;
+	}
+}
+
+static void draw_traffic_light(GtkDrawingArea *area, cairo_t *cr,
+		int width, int height, gpointer data) {
+	(void)area;
+	struct traffic_light_data *td = data;
+	bool active_window = td->window == NULL || gtk_window_is_active(td->window);
+	GtkStateFlags flags = td->button != NULL ?
+		gtk_widget_get_state_flags(td->button) : GTK_STATE_FLAG_NORMAL;
+	bool pressed = (flags & GTK_STATE_FLAG_ACTIVE) != 0;
+	bool show_glyph = (td->hover || pressed) && td->kind == TRAFFIC_LIGHT_CLOSE;
+	double scale = MIN((double)width / 16.0, (double)height / 16.0);
+	cairo_translate(cr, ((double)width - 16.0 * scale) / 2.0,
+		((double)height - 16.0 * scale) / 2.0);
+	cairo_scale(cr, scale, scale);
+	cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
+
+	unsigned int outer = 0xbababa;
+	unsigned int inner = 0xcecece;
+	switch (td->kind) {
+	case TRAFFIC_LIGHT_CLOSE:
+		if (active_window) {
+			outer = 0xcb4e43;
+			inner = 0xfe6254;
+		}
+		break;
+	case TRAFFIC_LIGHT_MINIMIZE:
+	case TRAFFIC_LIGHT_MAXIMIZE:
+		outer = 0xbababa;
+		inner = 0xcecece;
+		break;
+	}
+
+	cairo_arc(cr, 8.0, 8.0, 7.0, 0.0, 2.0 * G_PI);
+	set_source_hex(cr, outer, 1.0);
+	cairo_fill(cr);
+	if (!pressed) {
+		cairo_arc(cr, 8.0, 8.0, 6.5, 0.0, 2.0 * G_PI);
+		set_source_hex(cr, inner, 1.0);
+		cairo_fill(cr);
+	}
+	if (show_glyph) {
+		draw_traffic_glyph(cr, td->kind);
+	}
+}
+
+static void traffic_light_enter(GtkEventControllerMotion *controller,
+		double x, double y, gpointer data) {
+	(void)controller;
+	(void)x;
+	(void)y;
+	struct traffic_light_data *td = data;
+	td->hover = true;
+	traffic_light_queue(td);
+}
+
+static void traffic_light_leave(GtkEventControllerMotion *controller,
+		gpointer data) {
+	(void)controller;
+	struct traffic_light_data *td = data;
+	td->hover = false;
+	traffic_light_queue(td);
+}
+
+static void traffic_light_window_active_changed(GObject *object,
+		GParamSpec *pspec, gpointer data) {
+	(void)object;
+	(void)pspec;
+	traffic_light_queue(data);
+}
+
+static void free_traffic_light_data(gpointer data, GObject *object) {
+	(void)object;
+	struct traffic_light_data *td = data;
+	if (td->window != NULL && td->active_handler != 0) {
+		g_signal_handler_disconnect(td->window, td->active_handler);
+	}
+	g_free(td);
+}
+
 static GtkWidget *traffic_light_new(
 		const char *color,
-		double scale,
+		enum traffic_light_kind kind,
+		GtkWindow *window,
 		GCallback callback,
 		gpointer data) {
 	GtkWidget *button = gtk_button_new();
 	gtk_widget_add_css_class(button, "traffic-light");
 	gtk_widget_add_css_class(button, color);
 	gtk_widget_set_size_request(button,
-		scaled_px(scale, TRAFFIC_LIGHT_DESIGN_SIZE),
-		scaled_px(scale, TRAFFIC_LIGHT_DESIGN_SIZE));
+		TRAFFIC_LIGHT_DESIGN_SIZE,
+		TRAFFIC_LIGHT_DESIGN_SIZE);
+	gtk_button_set_has_frame(GTK_BUTTON(button), FALSE);
+
+	struct traffic_light_data *td = g_new0(struct traffic_light_data, 1);
+	td->button = button;
+	td->window = window;
+	td->kind = kind;
+	GtkWidget *face = gtk_drawing_area_new();
+	td->face = face;
+	gtk_widget_set_size_request(face,
+		TRAFFIC_LIGHT_DESIGN_SIZE,
+		TRAFFIC_LIGHT_DESIGN_SIZE);
+	gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(face),
+		draw_traffic_light, td, NULL);
+	gtk_button_set_child(GTK_BUTTON(button), face);
+	g_object_weak_ref(G_OBJECT(button), free_traffic_light_data, td);
+
+	GtkEventController *motion = gtk_event_controller_motion_new();
+	g_signal_connect(motion, "enter", G_CALLBACK(traffic_light_enter), td);
+	g_signal_connect(motion, "leave", G_CALLBACK(traffic_light_leave), td);
+	gtk_widget_add_controller(button, motion);
+
+	td->active_handler = g_signal_connect(window, "notify::is-active",
+		G_CALLBACK(traffic_light_window_active_changed), td);
 	g_signal_connect(button, "clicked", callback, data);
 	return button;
-}
-
-struct window_drag_data {
-	GtkWindow *window;
-	double scale;
-};
-
-static gboolean is_traffic_light(double x, double y, double scale) {
-	int s = scaled_px(scale, TRAFFIC_LIGHT_DESIGN_SIZE);
-	int ty = scaled_px(scale, TRAFFIC_LIGHT_DESIGN_Y);
-	int positions[] = {
-		TRAFFIC_LIGHT_1_X,
-		TRAFFIC_LIGHT_2_X,
-		TRAFFIC_LIGHT_3_X,
-	};
-	for (int i = 0; i < 3; i++) {
-		int tx = scaled_px(scale, positions[i]);
-		if (x >= tx && x < tx + s && y >= ty && y < ty + s) {
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
-
-static void on_drag_begin(GtkGestureClick *gesture, int n_press, double x, double y, gpointer data) {
-	(void)n_press;
-	struct window_drag_data *drag = data;
-	if (y < scaled_px(drag->scale, DRAG_AREA_DESIGN_HEIGHT) && !is_traffic_light(x, y, drag->scale)) {
-		guint button = gtk_gesture_single_get_current_button(GTK_GESTURE_SINGLE(gesture));
-		GdkEvent *event = gtk_gesture_get_last_event(GTK_GESTURE(gesture), NULL);
-		guint32 time = gdk_event_get_time(event);
-		GdkDevice *device = gdk_event_get_device(event);
-		GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(drag->window));
-		gdk_toplevel_begin_move(GDK_TOPLEVEL(surface), device, button, x, y, time);
-	}
 }
 
 static void activate(GtkApplication *app, gpointer data) {
@@ -408,39 +633,40 @@ static void activate(GtkApplication *app, gpointer data) {
 	gtk_window_set_default_size(GTK_WINDOW(window), metrics.width, metrics.height);
 	gtk_window_set_resizable(GTK_WINDOW(window), false);
 
-	GtkWidget *empty_titlebar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-	gtk_widget_set_size_request(empty_titlebar, -1, 0);
-	gtk_window_set_titlebar(GTK_WINDOW(window), empty_titlebar);
-
 	GtkWidget *root = gtk_fixed_new();
 	gtk_widget_add_css_class(root, "about-root");
 	gtk_widget_set_size_request(root, metrics.width, metrics.height);
 	gtk_widget_set_overflow(root, GTK_OVERFLOW_HIDDEN);
+	gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
 	gtk_window_set_child(GTK_WINDOW(window), root);
 
-	GtkWidget *close_btn = traffic_light_new("close", metrics.scale,
+	struct drag_data *dd = g_new(struct drag_data, 1);
+	dd->window = GTK_WINDOW(window);
+	dd->threshold = metrics.height / 2;
+	GtkGesture *drag = gtk_gesture_drag_new();
+	gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(drag), GDK_BUTTON_PRIMARY);
+	g_signal_connect_data(drag, "drag-begin", G_CALLBACK(on_drag_begin), dd,
+		free_drag_data, 0);
+	gtk_widget_add_controller(root, GTK_EVENT_CONTROLLER(drag));
+
+	GtkWidget *close_btn = traffic_light_new("close", TRAFFIC_LIGHT_CLOSE,
+		GTK_WINDOW(window),
 		G_CALLBACK(on_close), window);
 	gtk_fixed_put(GTK_FIXED(root), close_btn,
-		scaled_px(metrics.scale, TRAFFIC_LIGHT_1_X),
-		scaled_px(metrics.scale, TRAFFIC_LIGHT_DESIGN_Y));
-	GtkWidget *minimize_btn = traffic_light_new("minimize", metrics.scale,
+		TRAFFIC_LIGHT_1_X,
+		TRAFFIC_LIGHT_DESIGN_Y);
+	GtkWidget *minimize_btn = traffic_light_new("minimize",
+		TRAFFIC_LIGHT_MINIMIZE, GTK_WINDOW(window),
 		G_CALLBACK(on_minimize), window);
 	gtk_fixed_put(GTK_FIXED(root), minimize_btn,
-		scaled_px(metrics.scale, TRAFFIC_LIGHT_2_X),
-		scaled_px(metrics.scale, TRAFFIC_LIGHT_DESIGN_Y));
-	GtkWidget *maximize_btn = traffic_light_new("maximize", metrics.scale,
+		TRAFFIC_LIGHT_2_X,
+		TRAFFIC_LIGHT_DESIGN_Y);
+	GtkWidget *maximize_btn = traffic_light_new("maximize",
+		TRAFFIC_LIGHT_MAXIMIZE, GTK_WINDOW(window),
 		G_CALLBACK(on_maximize), window);
 	gtk_fixed_put(GTK_FIXED(root), maximize_btn,
-		scaled_px(metrics.scale, TRAFFIC_LIGHT_3_X),
-		scaled_px(metrics.scale, TRAFFIC_LIGHT_DESIGN_Y));
-
-	struct window_drag_data *drag_data = g_new(struct window_drag_data, 1);
-	drag_data->window = GTK_WINDOW(window);
-	drag_data->scale = metrics.scale;
-	GtkGesture *drag = gtk_gesture_click_new();
-	gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(drag), GDK_BUTTON_PRIMARY);
-	g_signal_connect(drag, "pressed", G_CALLBACK(on_drag_begin), drag_data);
-	gtk_widget_add_controller(root, GTK_EVENT_CONTROLLER(drag));
+		TRAFFIC_LIGHT_3_X,
+		TRAFFIC_LIGHT_DESIGN_Y);
 
 	GtkWidget *laptop = gtk_drawing_area_new();
 	gtk_widget_set_size_request(laptop,
@@ -449,14 +675,14 @@ static void activate(GtkApplication *app, gpointer data) {
 	gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(laptop), draw_laptop, NULL, NULL);
 	gtk_fixed_put(GTK_FIXED(root), laptop,
 		scaled_px(metrics.scale, 100),
-		scaled_px(metrics.scale, 36));
+		scaled_px(metrics.scale, 156));
 
 	fixed_label(root,
 		"MacBook Pro",
 		"model-title",
 		metrics.scale,
 		0,
-		256,
+		470,
 		ABOUT_DESIGN_WIDTH,
 		50,
 		0.5f);
@@ -465,32 +691,35 @@ static void activate(GtkApplication *app, gpointer data) {
 		"model-year",
 		metrics.scale,
 		0,
-		304,
+		528,
 		ABOUT_DESIGN_WIDTH,
 		28,
 		0.5f);
 
-	add_spec_row(root, metrics.scale, 346, "Chip", "Apple M1 Pro");
-	add_spec_row(root, metrics.scale, 374, "Memory", "16 GB");
-	add_spec_row(root, metrics.scale, 402, "Serial number", "XXXXXXXXXX");
-	add_spec_row(root, metrics.scale, 430, "macOS", "Tahoe 26.0");
+	char *chip = read_cpu_label();
+	char *memory = read_memory_label();
+	add_spec_row(root, metrics.scale, 592, "Chip", chip);
+	add_spec_row(root, metrics.scale, 624, "Memory", memory);
+	add_spec_row(root, metrics.scale, 656, "macOS", "Tahoe 26.0");
+	g_free(chip);
+	g_free(memory);
 
 	GtkWidget *more_info = gtk_button_new_with_label("More Info...");
 	gtk_widget_add_css_class(more_info, "more-info");
 	gtk_widget_set_size_request(more_info,
-		scaled_px(metrics.scale, 170),
-		scaled_px(metrics.scale, 44));
+		scaled_px(metrics.scale, 184),
+		scaled_px(metrics.scale, 48));
 	g_signal_connect(more_info, "clicked", G_CALLBACK(on_more_info), NULL);
 	gtk_fixed_put(GTK_FIXED(root), more_info,
-		scaled_px(metrics.scale, 195),
-		scaled_px(metrics.scale, 474));
+		scaled_px(metrics.scale, 188),
+		scaled_px(metrics.scale, 752));
 
 	GtkWidget *regulatory = fixed_label(root,
 		NULL,
 		"regulatory",
 		metrics.scale,
 		0,
-		528,
+		834,
 		ABOUT_DESIGN_WIDTH,
 		24,
 		0.5f);
@@ -501,7 +730,7 @@ static void activate(GtkApplication *app, gpointer data) {
 		"copyright",
 		metrics.scale,
 		0,
-		550,
+		864,
 		ABOUT_DESIGN_WIDTH,
 		30,
 		0.5f);

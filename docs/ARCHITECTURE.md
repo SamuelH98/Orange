@@ -83,8 +83,8 @@ cursor theme, and cursor size controls, writing config changes without a
 compositor restart.
 
 About app responsibilities include showing the Tahoe/macOS version and build
-affordance, model, chip, memory, serial, graphics, and kernel details, launched
-from the Apple-style menu.
+affordance, model, real chip and memory values, and theme-style window
+controls, launched from the Apple-style menu.
 
 ### Bundled GTK Theme
 

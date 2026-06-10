@@ -112,7 +112,7 @@ headers are installed.
 
 The GTK About This Mac app source is included and will build as
 `build/tahoe-about` when GTK4 development headers are installed. It opens from
-Apple menu > About Tahoe and shows model, chip, memory, serial, kernel, and
+Apple menu > About Tahoe and shows model, real chip and memory values, and
 Tahoe version/build details.
 
 Settings currently covers appearance, desktop icon visibility/scale/labels,

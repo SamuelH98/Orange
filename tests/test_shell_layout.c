@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void assert_roughly_double(int large, int small) {
+	assert(abs(large - small * 2) <= 2);
+}
+
 static void test_dock_hit(void) {
 	struct tahoe_config config;
 	tahoe_config_set_defaults(&config);
@@ -87,6 +91,22 @@ static void test_small_width_dock_fits(void) {
 	}
 }
 
+static void test_invalid_visible_dock_order_has_no_blank_slot(void) {
+	struct tahoe_config config;
+	tahoe_config_set_defaults(&config);
+	int dock_count = tahoe_shell_dock_count();
+	assert(dock_count > 1);
+	config.dock_order[dock_count - 1] = dock_count;
+
+	struct tahoe_shell_layout layout;
+	tahoe_shell_layout_compute(1440, 900, false, &config, 2, &layout);
+	assert(layout.dock_item_count == dock_count);
+	for (int i = 0; i < layout.dock_item_count; i++) {
+		assert(layout.dock_items[i].width > 0);
+		assert(layout.dock_items[i].height > 0);
+	}
+}
+
 static void test_resolution_scaling(void) {
 	struct tahoe_config config;
 	tahoe_config_set_defaults(&config);
@@ -100,6 +120,43 @@ static void test_resolution_scaling(void) {
 	assert(large.weather_widget.height > base.weather_widget.height);
 	assert(large.dock_items[0].width > base.dock_items[0].width);
 	assert(large.dock.x + large.dock.width <= large.width);
+}
+
+static void test_major_surfaces_scale_by_resolution(void) {
+	struct tahoe_config config;
+	tahoe_config_set_defaults(&config);
+
+	struct tahoe_shell_layout small;
+	struct tahoe_shell_layout large;
+	tahoe_shell_layout_compute(1440, 900, true, &config, 2, &small);
+	tahoe_shell_layout_compute(2880, 1800, true, &config, 2, &large);
+
+	assert_roughly_double(large.menu_bar.height, small.menu_bar.height);
+	assert_roughly_double(large.apple_menu_button.width,
+		small.apple_menu_button.width);
+	assert_roughly_double(large.apple_menu_panel.width,
+		small.apple_menu_panel.width);
+	assert_roughly_double(large.apple_menu_items[0].height,
+		small.apple_menu_items[0].height);
+	assert_roughly_double(large.desktop_items[0].width,
+		small.desktop_items[0].width);
+	assert_roughly_double(large.desktop_items[0].height,
+		small.desktop_items[0].height);
+	assert_roughly_double(large.dock.width, small.dock.width);
+	assert_roughly_double(large.dock.height, small.dock.height);
+	assert_roughly_double(large.dock_items[0].width,
+		small.dock_items[0].width);
+
+	tahoe_shell_layout_set_context_menu(&small,
+		TAHOE_CONTEXT_MENU_DESKTOP, -1, 720, 450);
+	tahoe_shell_layout_set_context_menu(&large,
+		TAHOE_CONTEXT_MENU_DESKTOP, -1, 1440, 900);
+	assert_roughly_double(large.context_menu_panel.width,
+		small.context_menu_panel.width);
+	assert_roughly_double(large.context_menu_panel.height,
+		small.context_menu_panel.height);
+	assert_roughly_double(large.context_menu_items[0].height,
+		small.context_menu_items[0].height);
 }
 
 static void test_desktop_background_hit(void) {
@@ -120,6 +177,8 @@ static void test_context_menu_hit(void) {
 	tahoe_shell_layout_compute(1920, 1080, false, &config, 2, &layout);
 	tahoe_shell_layout_set_context_menu(&layout, TAHOE_CONTEXT_MENU_DOCK, 0, 0, 0);
 	assert(layout.context_menu_item_count == 5);
+	assert(layout.context_menu_panel.y + layout.context_menu_panel.height <=
+		layout.dock.y);
 	/* index 1 is "Show in Finder" (first non-separator item after index 0) */
 	struct tahoe_rect item = layout.context_menu_items[1];
 	struct tahoe_shell_hit hit = tahoe_shell_hit_test(
@@ -129,6 +188,14 @@ static void test_context_menu_hit(void) {
 	assert(hit.kind == TAHOE_HIT_CONTEXT_MENU_ITEM);
 	assert(hit.index == 1);
 	assert(tahoe_shell_context_menu_label(TAHOE_CONTEXT_MENU_DOCK, hit.index) != NULL);
+
+	tahoe_shell_layout_set_context_menu(&layout, TAHOE_CONTEXT_MENU_DOCK,
+		layout.dock_item_count - 1, layout.width, layout.height);
+	assert(layout.context_menu_panel.x >= 0);
+	assert(layout.context_menu_panel.x + layout.context_menu_panel.width <=
+		layout.width);
+	assert(layout.context_menu_panel.y + layout.context_menu_panel.height <=
+		layout.dock.y);
 }
 
 static void test_widget_hit_and_context_menu(void) {
@@ -252,7 +319,9 @@ int main(void) {
 	test_desktop_custom_position();
 	test_apple_menu_hit();
 	test_small_width_dock_fits();
+	test_invalid_visible_dock_order_has_no_blank_slot();
 	test_resolution_scaling();
+	test_major_surfaces_scale_by_resolution();
 	test_context_menu_hit();
 	test_widget_hit_and_context_menu();
 	test_hidden_widget_not_hit();

@@ -79,11 +79,12 @@ Meson startup smoke test for custom headless compositor arguments.
   controls, with GTK headerbar controls requested on the left and default size
   clamped to monitor geometry.
 - Conditional GTK4 About This Mac app source launched from Apple menu >
-  About Tahoe, using a compact macOS Tahoe-style reference layout with custom
+  About Tahoe, using a portrait macOS Tahoe-style reference layout with custom
   macOS traffic-light window controls (close/minimize/maximize), no GTK title
   bar, top area draggable via gesture-initiated surface move, laptop
-  illustration, centered model/year, compact hardware rows, More Info action,
-  and regulatory footer. Scales up to 2x on higher-resolution displays.
+  illustration, centered model/year, compact local chip/memory rows, More Info
+  action, and regulatory footer. It caps at 72% of the reference design size
+  and still scales down to monitor height on smaller displays.
 - Bundled installed MacTahoe release themes as `themes/MacTahoe-Light` and
   `themes/MacTahoe-Dark`.
 - Bundled upstream MacTahoe GTK theme source as `themes/MacTahoe-gtk-theme`
@@ -199,6 +200,23 @@ Current validation also passes all 5 Meson tests, including
 `headless-custom-startup`, and a manual 1440x900 custom-size headless one-shot
 run exits cleanly.
 
+The About app now uses the tall portrait reference proportions, shows real
+local chip and memory values without a serial-number row, and uses 16px
+custom-drawn MacTahoe-style traffic-light controls with wider spacing. The
+normal state is red/gray/gray; gray buttons stay blank on hover, while the red
+close control shows its glyph on hover/press. The portrait window is capped at
+72% design scale so it stays skinny without dominating a 1440x900 desktop.
+
+Major shell UI surfaces now share the 0.50-1.60 resolution scale used by the
+menu bar, Dock, desktop icons, Apple menu dropdowns, and context menus. Dock
+hover feedback now uses magnification plus a label bubble instead of a circular
+halo, Dock drag order normalizes invalid visible entries to avoid blank slots,
+and Dock context menus anchor above the Dock glass instead of overlapping it.
+
+Output rendering now throttles scene commits while a previous output commit is
+pending presentation, which prevents repeated wlroots swapchain-buffer
+exhaustion under high-frequency shell redraws.
+
 ### Remaining Work
 
 Interactive testing under WSLg or a nested Wayland session is still needed.
@@ -271,6 +289,28 @@ build here. They remain conditional for systems without GTK4 development files.
   and explicit asset/config/desktop/theme arguments. Output initialization uses
   wlroots' expected render-init-before-commit order and falls back to fixed
   output modes when a backend rejects the requested custom size.
+- **About app portrait layout matched**: The About This Mac window now uses the
+  tall portrait reference proportions, with the laptop, title, local hardware
+  rows, More Info button, and footer spaced vertically like the supplied
+  screenshot. Its custom traffic-light buttons use the bundled MacTahoe 16px
+  titlebutton geometry, wider spacing, red/gray/gray normal colors, a close
+  glyph only on the red hover/pressed state, and gray inactive/backdrop state.
+- **About hardware rows made local**: The About app reads the local CPU label
+  from `/proc/cpuinfo`, memory from `sysinfo(2)`, ellipsizes long chip names,
+  and removes the serial-number row.
+- **Resolution-scaled shell surfaces tightened**: Menu bar, Dock, desktop
+  icons, Apple menu dropdowns, and context menus are covered by layout tests
+  comparing 1440x900 and 2880x1800 geometry.
+- **Dock drag blank slot fixed**: Visible Dock order entries are normalized to
+  the launcher count, drag insert targets are clamped to visible items, and the
+  layout no longer creates zero-size invisible Dock slots.
+- **Dock hover and context menu behavior matched closer to macOS**: Hover uses
+  icon magnification plus a label bubble instead of a circular halo, and Dock
+  context menus are placed above the Dock container so the Dock glass no longer
+  cuts off the menu.
+- **Output swapchain pressure reduced**: Output frames are not committed while
+  a previous commit is still pending presentation; dirty shell updates schedule
+  the next frame once the backend presents.
 
 ### Technical Concerns
 

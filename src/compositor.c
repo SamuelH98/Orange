@@ -66,10 +66,12 @@ struct tahoe_output {
 	struct wlr_scene_buffer *shell_scene_buffer;
 	struct tahoe_buffer *shell_buffer;
 	struct wl_listener frame;
+	struct wl_listener present;
 	struct wl_listener destroy;
 	int width;
 	int height;
 	bool shell_dirty;
+	bool commit_pending;
 };
 
 struct tahoe_view {
@@ -430,7 +432,9 @@ static void server_mark_shell_dirty(struct tahoe_server *server) {
 	struct tahoe_output *output;
 	wl_list_for_each(output, &server->outputs, link) {
 		output->shell_dirty = true;
-		wlr_output_schedule_frame(output->wlr_output);
+		if (!output->commit_pending && !output->wlr_output->frame_pending) {
+			wlr_output_schedule_frame(output->wlr_output);
+		}
 	}
 }
 
@@ -1078,6 +1082,9 @@ static void process_dock_drag(struct tahoe_server *server) {
 	if (insert > dragged && insert < layout.dock_item_count) {
 		insert--;
 	}
+	if (insert >= layout.dock_item_count) {
+		insert = layout.dock_item_count - 1;
+	}
 	if (insert != server->dock_drag_insert_before) {
 		server->dock_drag_insert_before = insert;
 		server_mark_shell_dirty(server);
@@ -1096,10 +1103,16 @@ static void finish_dock_drag(struct tahoe_server *server) {
 	server->dock_drag_index = -1;
 	server->dock_drag_insert_before = -1;
 
-	if (moved && index >= 0 && index < TAHOE_DOCK_MAX &&
-			insert >= 0 && insert < TAHOE_DOCK_MAX) {
+	int dock_count = tahoe_shell_dock_count();
+	if (moved && index >= 0 && index < dock_count &&
+			insert >= 0 && insert < dock_count) {
 		int order[TAHOE_DOCK_MAX];
 		memcpy(order, server->config.dock_order, sizeof(order));
+		for (int i = 0; i < dock_count; i++) {
+			if (order[i] < 0 || order[i] >= dock_count) {
+				order[i] = i;
+			}
+		}
 		int launcher = order[index];
 		if (insert > index) {
 			for (int i = index; i < insert; i++) {
@@ -1115,7 +1128,7 @@ static void finish_dock_drag(struct tahoe_server *server) {
 		memcpy(server->config.dock_order, order, sizeof(order));
 		tahoe_config_save(&server->config, server->options->config_path);
 		server_mark_shell_dirty(server);
-	} else if (!moved && index >= 0 && index < TAHOE_DOCK_MAX) {
+	} else if (!moved && index >= 0 && index < dock_count) {
 		int launcher_idx = server->config.dock_order[index];
 		launch_command(tahoe_shell_dock_command(launcher_idx));
 		server_mark_shell_dirty(server);
@@ -1696,18 +1709,34 @@ static void handle_output_frame(struct wl_listener *listener, void *data) {
 	struct tahoe_output *output = wl_container_of(listener, output, frame);
 	(void)data;
 
+	if (output->commit_pending || output->wlr_output->frame_pending) {
+		return;
+	}
 	output_redraw_shell(output);
+	if (!output->wlr_output->needs_frame && !output->server->options->once) {
+		return;
+	}
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	if (!wlr_scene_output_commit(output->scene_output, NULL)) {
 		wlr_log(WLR_ERROR, "failed to commit scene output");
 		return;
 	}
+	output->commit_pending = true;
 	wlr_scene_output_send_frame_done(output->scene_output, &now);
 
 	if (output->server->options->once && !output->server->once_committed) {
 		output->server->once_committed = true;
 		wl_display_terminate(output->server->display);
+	}
+}
+
+static void handle_output_present(struct wl_listener *listener, void *data) {
+	struct tahoe_output *output = wl_container_of(listener, output, present);
+	(void)data;
+	output->commit_pending = false;
+	if (output->shell_dirty || output->wlr_output->needs_frame) {
+		wlr_output_schedule_frame(output->wlr_output);
 	}
 }
 
@@ -1717,6 +1746,7 @@ static void handle_output_destroy(struct wl_listener *listener, void *data) {
 	(void)data;
 	wl_list_remove(&output->link);
 	wl_list_remove(&output->frame.link);
+	wl_list_remove(&output->present.link);
 	wl_list_remove(&output->destroy.link);
 	if (output->shell_scene_buffer != NULL) {
 		wlr_scene_node_destroy(&output->shell_scene_buffer->node);
@@ -1829,6 +1859,8 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 
 	output->frame.notify = handle_output_frame;
 	wl_signal_add(&wlr_output->events.frame, &output->frame);
+	output->present.notify = handle_output_present;
+	wl_signal_add(&wlr_output->events.present, &output->present);
 	output->destroy.notify = handle_output_destroy;
 	wl_signal_add(&wlr_output->events.destroy, &output->destroy);
 	wl_list_insert(&server->outputs, &output->link);

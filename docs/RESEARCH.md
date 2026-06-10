@@ -81,6 +81,25 @@ license, commit history, and updates, and expands the upstream `MacTahoe-Light`
 and `MacTahoe-Dark` release archives under `themes/` so an installed theme
 payload is available without running the installer.
 
+The compact TahoeGTK GTK4 shim styles GTK `windowcontrols` with 12px minimum
+controls and 4px side margins, while the bundled MacTahoe metacity titlebutton
+assets are 16x16 SVGs with a 14px colored circle, hover glyphs, pressed
+variants, and gray backdrop variants. Tahoe's custom About app controls use the
+16px asset geometry and draw the hover/backdrop states directly so they match
+the theme behavior without depending on loading external SVG assets at runtime.
+The Tahoe About reference image keeps only the close control red in the normal
+state, with the minimize and maximize controls gray, so the custom controls use
+that red/gray/gray palette. The gray controls stay blank on hover, while the
+red close control reveals its close glyph on hover or press.
+
+Apple's Desktop & Dock settings documentation describes Dock size as
+slider-controlled, Dock magnification as icon magnification when the pointer
+moves over icons, and open applications as indicated by a small dot below the
+app icon. Dock behavior references also describe dynamic resizing to fit and
+labels appearing on pointer hover. The shell Dock therefore avoids a circular
+hover halo, keeps the small running indicator dot, and uses icon magnification
+plus a compact label bubble for hover feedback.
+
 ## Risks
 
 - wlroots APIs are explicitly unstable; code targets 0.17.1 as installed.
@@ -115,6 +134,10 @@ payload is available without running the installer.
   https://support.apple.com/guide/mac-help/mchl30bc42cb/mac
 - MacTahoe GTK Theme:
   https://github.com/vinceliuice/MacTahoe-gtk-theme
+- Apple Support, "Change Desktop & Dock settings on Mac":
+  https://support.apple.com/guide/mac-help/change-desktop-dock-settings-mchlp1119/mac
+- Dock (macOS) behavior reference:
+  https://en.wikipedia.org/wiki/Dock_(macOS)
 - Apple Human Interface Guidelines, "Liquid Glass":
   https://developer.apple.com/design/human-interface-guidelines/liquid-glass
 - Apple Human Interface Guidelines, "Menus":

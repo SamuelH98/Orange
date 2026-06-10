@@ -146,6 +146,7 @@ void tahoe_shell_draw_with_options(
 
 const char *tahoe_shell_dock_label(int index);
 const char *tahoe_shell_dock_command(int index);
+int tahoe_shell_dock_count(void);
 const char *tahoe_shell_menu_label(int index);
 const char *tahoe_shell_context_menu_label(
 	enum tahoe_context_menu_kind kind,
