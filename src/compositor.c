@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <linux/input-event-codes.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -1729,6 +1730,75 @@ static void handle_output_destroy(struct wl_listener *listener, void *data) {
 	free(output);
 }
 
+static struct wlr_output_mode *find_closest_output_mode(
+		struct wlr_output *output,
+		int target_width,
+		int target_height) {
+	struct wlr_output_mode *best_mode = NULL;
+	long long best_score = LLONG_MAX;
+	long long target_area = (long long)target_width * target_height;
+	struct wlr_output_mode *mode;
+
+	wl_list_for_each(mode, &output->modes, link) {
+		long long area = (long long)mode->width * mode->height;
+		long long area_diff = llabs(area - target_area);
+		long long width_diff = llabs((long long)mode->width - target_width);
+		long long height_diff = llabs((long long)mode->height - target_height);
+		long long score = area_diff + width_diff + height_diff;
+
+		if (score < best_score) {
+			best_score = score;
+			best_mode = mode;
+		}
+	}
+
+	return best_mode;
+}
+
+static bool commit_initial_output_state(
+		struct tahoe_server *server,
+		struct wlr_output *wlr_output) {
+	struct wlr_output_state state;
+	wlr_output_state_init(&state);
+	wlr_output_state_set_enabled(&state, true);
+	wlr_output_state_set_custom_mode(&state,
+		server->options->width, server->options->height, 0);
+
+	if (wlr_output_commit_state(wlr_output, &state)) {
+		wlr_output_state_finish(&state);
+		return true;
+	}
+	wlr_output_state_finish(&state);
+
+	wlr_log(WLR_INFO, "custom mode %dx%d not supported, trying fixed modes",
+		server->options->width, server->options->height);
+
+	struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
+	if (mode == NULL && !wl_list_empty(&wlr_output->modes)) {
+		mode = find_closest_output_mode(wlr_output,
+			server->options->width,
+			server->options->height);
+	}
+
+	wlr_output_state_init(&state);
+	wlr_output_state_set_enabled(&state, true);
+	if (mode != NULL) {
+		wlr_log(WLR_INFO, "using output mode %dx%d",
+			mode->width, mode->height);
+		wlr_output_state_set_mode(&state, mode);
+	} else {
+		wlr_log(WLR_INFO, "enabling output at current size %dx%d",
+			wlr_output->width, wlr_output->height);
+	}
+
+	bool ok = wlr_output_commit_state(wlr_output, &state);
+	wlr_output_state_finish(&state);
+	if (!ok) {
+		wlr_log(WLR_ERROR, "failed to commit initial output state");
+	}
+	return ok;
+}
+
 static void handle_new_output(struct wl_listener *listener, void *data) {
 	struct tahoe_server *server =
 		wl_container_of(listener, server, new_output);
@@ -1739,19 +1809,7 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 		return;
 	}
 
-	struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
-	wlr_output_enable(wlr_output, true);
-	if (mode != NULL) {
-		wlr_output_set_mode(wlr_output, mode);
-	} else if (wlr_output->width == 0 || wlr_output->height == 0) {
-		wlr_output_set_custom_mode(wlr_output,
-			server->options->width,
-			server->options->height,
-			60000);
-	}
-
-	if (!wlr_output_commit(wlr_output)) {
-		wlr_log(WLR_ERROR, "failed to commit output state");
+	if (!commit_initial_output_state(server, wlr_output)) {
 		return;
 	}
 

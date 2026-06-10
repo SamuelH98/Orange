@@ -33,6 +33,10 @@ cd ~/tahoe
 WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build/tahoe --assets assets --config tahoe.conf --desktop-dir assets/desktop --themes .
 ```
 
+When this command logs `running on Wayland display wayland-N`, startup
+succeeded. The compositor is then serving that nested display and keeps running
+until you stop it.
+
 Do not force `WLR_RENDERER=vulkan` on WSLg unless `vulkaninfo` works and the
 nested Wayland backend exposes a DRM render node. If wlroots logs `Cannot
 create Vulkan renderer: no DRM FD available`, use Pixman for WSLg. That error
@@ -42,6 +46,12 @@ For automated/headless validation:
 
 ```sh
 WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once
+```
+
+For a custom-size startup smoke test that exits on its own:
+
+```sh
+WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once --width 1440 --height 900 --assets assets --config /tmp/tahoe-custom.conf --desktop-dir assets/desktop --themes .
 ```
 
 ## Assets

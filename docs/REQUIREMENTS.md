@@ -121,6 +121,9 @@ macOS-style shell prototype.
 - Unit tests pass.
 - `WLR_BACKENDS=headless build/tahoe --headless --once` renders and
   exits successfully.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once
+  --width 1440 --height 900 --assets assets --config /tmp/tahoe-custom.conf
+  --desktop-dir assets/desktop --themes .` renders and exits successfully.
 - Runtime logs include selected renderer type information.
 - A user can launch configured apps from the Dock/desktop and interact with
   ordinary Wayland windows.

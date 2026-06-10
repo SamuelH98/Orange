@@ -22,7 +22,7 @@ management, Dock launchers, XDG `.desktop` desktop launchers with drag/context
 menus, keyboard shortcuts, cursor customization, local Tahoe asset sourcing,
 GTK theme/icon theme scaffolding, PNG render export, foreground-only visual
 smoke coverage, bundled installed MacTahoe GTK themes plus upstream source, and
-headless one-shot validation.
+headless one-shot validation including custom startup arguments.
 
 ---
 
@@ -50,10 +50,15 @@ scaling, and a render smoke test.
 - `build/tahoe-render-shell /tmp/tahoe-shell.png` passed.
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once`
   passed and rendered one headless frame.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once
+  --width 1440 --height 900 --assets assets --config /tmp/tahoe-custom.conf
+  --desktop-dir assets/desktop --themes .` passed and rendered one headless
+  custom-size frame.
 
 #### Tests Added
 
 Shell layout/hit-test/render smoke unit tests.
+Meson startup smoke test for custom headless compositor arguments.
 
 ---
 
@@ -181,14 +186,18 @@ Project renamed to Tahoe. Reference-image testing removed. Widget shortcut
 menus, context-menu glass, Dock ordering, status icon refinement, bundled
 installed MacTahoe themes and source, resolution-scaled screenshot-matched GTK
 About app source, left-side GTK4 utility controls, and foreground visual tests
-complete.
+complete. Custom-argument compositor startup validation is now covered by Meson.
 
 ### Progress
 
-Implementation compiles, both GTK utility app help paths run, all 4 Meson tests
-pass, the non-reference visual test passes, rendered status-strip crops were
-checked with both default and private Apple assets, bundled MacTahoe GTK4 CSS
-exists, and headless compositor one-shot validation passes.
+Implementation compiles, both GTK utility app help paths run, the original
+4 Meson tests pass, the non-reference visual test passes, rendered status-strip
+crops were checked with both default and private Apple assets, bundled MacTahoe
+GTK4 CSS exists, and headless compositor one-shot validation passes.
+
+Current validation also passes all 5 Meson tests, including
+`headless-custom-startup`, and a manual 1440x900 custom-size headless one-shot
+run exits cleanly.
 
 ### Remaining Work
 
@@ -198,6 +207,9 @@ Vulkan there can fail with `Cannot create Vulkan renderer: no DRM FD available`
 because the nested backend lacks the DRM render-node FD wlroots expects. GTK
 utility launch commands set `GSK_RENDERER=cairo` to avoid GTK's WSLg EGL/Zink
 path.
+Interactive nested Wayland runs are expected to keep running after logging
+`running on Wayland display wayland-N`; use `--headless --once` for startup
+tests that should exit by themselves.
 Pixel-level 1:1 depends on the ignored private Apple assets. Automated visual
 coverage intentionally avoids checked-in reference-image comparison.
 More faithful behavior would require real app/menu integration, richer
@@ -254,6 +266,11 @@ build here. They remain conditional for systems without GTK4 development files.
   reference layout to the current monitor (up to 2x on high-resolution displays)
   instead of opening too tall on small WSLg sessions, and Settings clamps its
   default size to the monitor bounds.
+- **Custom-argument startup validation added**: Meson now runs
+  `headless-custom-startup` with `--headless --once --width 1440 --height 900`
+  and explicit asset/config/desktop/theme arguments. Output initialization uses
+  wlroots' expected render-init-before-commit order and falls back to fixed
+  output modes when a backend rejects the requested custom size.
 
 ### Technical Concerns
 
@@ -276,4 +293,5 @@ Continue from the committed implementation. Target wlroots 0.17.1, keep Apple
 assets and populated GTK icon PNGs ignored, validate with
 `meson test -C build --print-errorlogs` and
 `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once`,
-then test interactively under WSLg or nested Wayland.
+plus the custom-size one-shot command documented in README, then test
+interactively under WSLg or nested Wayland.

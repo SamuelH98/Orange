@@ -63,7 +63,7 @@ tahoe_core_dep = declare_dependency(
   dependencies: [cairo_dep, drm_dep, math_dep],
 )
 
-executable(
+tahoe_exe = executable(
   'tahoe',
   files(
     'src/buffer.c',
@@ -83,6 +83,26 @@ executable(
     vulkan_dep,
   ],
   install: false,
+)
+
+headless_startup_env = environment()
+headless_startup_env.set('WLR_BACKENDS', 'headless')
+headless_startup_env.set('WLR_RENDERER', 'pixman')
+test(
+  'headless-custom-startup',
+  tahoe_exe,
+  args: [
+    '--headless',
+    '--once',
+    '--width', '1440',
+    '--height', '900',
+    '--assets', meson.current_source_dir() / 'assets',
+    '--config', meson.current_build_dir() / 'headless-custom-startup.conf',
+    '--desktop-dir', meson.current_source_dir() / 'assets/desktop',
+    '--themes', meson.current_source_dir(),
+  ],
+  env: headless_startup_env,
+  timeout: 15,
 )
 
 executable(
