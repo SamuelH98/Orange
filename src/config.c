@@ -1,4 +1,4 @@
-#include "tahoe/config.h"
+#include "orange/config.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -25,23 +25,23 @@ static int clamp_int(int value, int min_value, int max_value) {
 	return value;
 }
 
-static enum tahoe_widget_size parse_widget_size(const char *value) {
+static enum orange_widget_size parse_widget_size(const char *value) {
 	if (value != NULL && strcmp(value, "medium") == 0) {
-		return TAHOE_WIDGET_SIZE_MEDIUM;
+		return ORANGE_WIDGET_SIZE_MEDIUM;
 	}
 	if (value != NULL && strcmp(value, "large") == 0) {
-		return TAHOE_WIDGET_SIZE_LARGE;
+		return ORANGE_WIDGET_SIZE_LARGE;
 	}
-	return TAHOE_WIDGET_SIZE_SMALL;
+	return ORANGE_WIDGET_SIZE_SMALL;
 }
 
-static const char *widget_size_name(enum tahoe_widget_size size) {
+static const char *widget_size_name(enum orange_widget_size size) {
 	switch (size) {
-	case TAHOE_WIDGET_SIZE_MEDIUM:
+	case ORANGE_WIDGET_SIZE_MEDIUM:
 		return "medium";
-	case TAHOE_WIDGET_SIZE_LARGE:
+	case ORANGE_WIDGET_SIZE_LARGE:
 		return "large";
-	case TAHOE_WIDGET_SIZE_SMALL:
+	case ORANGE_WIDGET_SIZE_SMALL:
 	default:
 		return "small";
 	}
@@ -78,14 +78,14 @@ static bool parse_desktop_position_key(const char *key, int *index) {
 	char *end = NULL;
 	long parsed = strtol(key + prefix_len, &end, 10);
 	if (end == key + prefix_len || strcmp(end, "_position") != 0 ||
-			parsed < 0 || parsed >= TAHOE_DESKTOP_POSITION_MAX) {
+			parsed < 0 || parsed >= ORANGE_DESKTOP_POSITION_MAX) {
 		return false;
 	}
 	*index = (int)parsed;
 	return true;
 }
 
-static void copy_cursor_theme(struct tahoe_config *config, const char *value) {
+static void copy_cursor_theme(struct orange_config *config, const char *value) {
 	if (value == NULL || value[0] == '\0') {
 		config->cursor_theme[0] = '\0';
 		return;
@@ -93,12 +93,12 @@ static void copy_cursor_theme(struct tahoe_config *config, const char *value) {
 	snprintf(config->cursor_theme, sizeof(config->cursor_theme), "%s", value);
 }
 
-static void apply_pair(struct tahoe_config *config,
+static void apply_pair(struct orange_config *config,
 		const char *key,
 		const char *value) {
 	int desktop_index = -1;
 	if (strcmp(key, "appearance") == 0) {
-		config->appearance = tahoe_config_parse_appearance(value);
+		config->appearance = orange_config_parse_appearance(value);
 	} else if (strcmp(key, "desktop_icons_visible") == 0) {
 		config->desktop_icons_visible = parse_bool(value);
 	} else if (strcmp(key, "desktop_grid_spacing") == 0) {
@@ -129,13 +129,13 @@ static void apply_pair(struct tahoe_config *config,
 	} else if (strcmp(key, "dock_order") == 0) {
 		const char *p = value;
 		int idx = 0;
-		while (*p != '\0' && idx < TAHOE_DOCK_MAX) {
+		while (*p != '\0' && idx < ORANGE_DOCK_MAX) {
 			char *end = NULL;
 			long n = strtol(p, &end, 10);
 			if (end == p) {
 				break;
 			}
-			if (n >= 0 && n < TAHOE_DOCK_MAX) {
+			if (n >= 0 && n < ORANGE_DOCK_MAX) {
 				config->dock_order[idx++] = (int)n;
 			}
 			p = end;
@@ -143,7 +143,7 @@ static void apply_pair(struct tahoe_config *config,
 				p++;
 			}
 		}
-		while (idx < TAHOE_DOCK_MAX) {
+		while (idx < ORANGE_DOCK_MAX) {
 			config->dock_order[idx] = idx;
 			idx++;
 		}
@@ -162,35 +162,35 @@ static void apply_pair(struct tahoe_config *config,
 	}
 }
 
-void tahoe_config_set_defaults(struct tahoe_config *config) {
+void orange_config_set_defaults(struct orange_config *config) {
 	memset(config, 0, sizeof(*config));
-	config->appearance = TAHOE_APPEARANCE_LIGHT;
+	config->appearance = ORANGE_APPEARANCE_LIGHT;
 	config->desktop_icons_visible = true;
 	config->desktop_grid_spacing = 24;
 	config->desktop_label_size = 15;
 	config->desktop_icon_scale = 1.0;
-	for (int i = 0; i < TAHOE_DESKTOP_POSITION_MAX; i++) {
+	for (int i = 0; i < ORANGE_DESKTOP_POSITION_MAX; i++) {
 		config->desktop_positions[i] =
-			(struct tahoe_desktop_icon_position){false, 0, 0};
+			(struct orange_desktop_icon_position){false, 0, 0};
 	}
 	config->dock_scale = 1.0;
 	config->dock_icon_scale = 1.0;
 	config->dock_magnification = true;
 	config->dock_magnification_scale = 1.28;
 	config->dock_show_indicators = true;
-	for (int i = 0; i < TAHOE_DOCK_MAX; i++) {
+	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
 		config->dock_order[i] = i;
 	}
 	config->calendar_widget_visible = true;
 	config->weather_widget_visible = true;
-	config->calendar_widget_size = TAHOE_WIDGET_SIZE_SMALL;
-	config->weather_widget_size = TAHOE_WIDGET_SIZE_SMALL;
+	config->calendar_widget_size = ORANGE_WIDGET_SIZE_SMALL;
+	config->weather_widget_size = ORANGE_WIDGET_SIZE_SMALL;
 	config->cursor_theme[0] = '\0';
 	config->cursor_size = 28;
 }
 
-bool tahoe_config_load(struct tahoe_config *config, const char *path) {
-	tahoe_config_set_defaults(config);
+bool orange_config_load(struct orange_config *config, const char *path) {
+	orange_config_set_defaults(config);
 	if (path == NULL || path[0] == '\0') {
 		return false;
 	}
@@ -220,7 +220,7 @@ bool tahoe_config_load(struct tahoe_config *config, const char *path) {
 	return true;
 }
 
-bool tahoe_config_save(const struct tahoe_config *config, const char *path) {
+bool orange_config_save(const struct orange_config *config, const char *path) {
 	if (path == NULL || path[0] == '\0') {
 		return false;
 	}
@@ -231,13 +231,13 @@ bool tahoe_config_save(const struct tahoe_config *config, const char *path) {
 	}
 
 	fprintf(file, "appearance=%s\n",
-		tahoe_config_appearance_name(config->appearance));
+		orange_config_appearance_name(config->appearance));
 	fprintf(file, "desktop_icons_visible=%s\n",
 		config->desktop_icons_visible ? "true" : "false");
 	fprintf(file, "desktop_grid_spacing=%d\n", config->desktop_grid_spacing);
 	fprintf(file, "desktop_label_size=%d\n", config->desktop_label_size);
 	fprintf(file, "desktop_icon_scale=%.2f\n", config->desktop_icon_scale);
-	for (int i = 0; i < TAHOE_DESKTOP_POSITION_MAX; i++) {
+	for (int i = 0; i < ORANGE_DESKTOP_POSITION_MAX; i++) {
 		if (config->desktop_positions[i].valid) {
 			fprintf(file, "desktop_icon_%d_position=%d,%d\n",
 				i,
@@ -254,7 +254,7 @@ bool tahoe_config_save(const struct tahoe_config *config, const char *path) {
 	fprintf(file, "dock_show_indicators=%s\n",
 		config->dock_show_indicators ? "true" : "false");
 	fprintf(file, "dock_order=");
-	for (int i = 0; i < TAHOE_DOCK_MAX; i++) {
+	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
 		if (i > 0) {
 			fprintf(file, ",");
 		}
@@ -276,19 +276,19 @@ bool tahoe_config_save(const struct tahoe_config *config, const char *path) {
 	return true;
 }
 
-const char *tahoe_config_appearance_name(enum tahoe_appearance appearance) {
+const char *orange_config_appearance_name(enum orange_appearance appearance) {
 	switch (appearance) {
-	case TAHOE_APPEARANCE_DARK:
+	case ORANGE_APPEARANCE_DARK:
 		return "dark";
-	case TAHOE_APPEARANCE_LIGHT:
+	case ORANGE_APPEARANCE_LIGHT:
 	default:
 		return "light";
 	}
 }
 
-enum tahoe_appearance tahoe_config_parse_appearance(const char *value) {
+enum orange_appearance orange_config_parse_appearance(const char *value) {
 	if (value != NULL && strcmp(value, "dark") == 0) {
-		return TAHOE_APPEARANCE_DARK;
+		return ORANGE_APPEARANCE_DARK;
 	}
-	return TAHOE_APPEARANCE_LIGHT;
+	return ORANGE_APPEARANCE_LIGHT;
 }

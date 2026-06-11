@@ -1,8 +1,8 @@
-#include "tahoe/buffer.h"
-#include "tahoe/compositor.h"
-#include "tahoe/config.h"
-#include "tahoe/desktop_entry.h"
-#include "tahoe/shell.h"
+#include "orange/buffer.h"
+#include "orange/compositor.h"
+#include "orange/config.h"
+#include "orange/desktop_entry.h"
+#include "orange/shell.h"
 
 #include <assert.h>
 #include <linux/input-event-codes.h>
@@ -23,7 +23,7 @@
 #include <wlr/backend/headless.h>
 #include <wlr/config.h>
 #include <wlr/render/allocator.h>
-#ifdef TAHOE_HAVE_VULKAN
+#ifdef ORANGE_HAVE_VULKAN
 #include <wlr/render/vulkan.h>
 #endif
 #include <wlr/render/wlr_renderer.h>
@@ -49,22 +49,22 @@
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
-enum tahoe_cursor_mode {
-	TAHOE_CURSOR_PASSTHROUGH,
-	TAHOE_CURSOR_MOVE,
-	TAHOE_CURSOR_RESIZE,
+enum orange_cursor_mode {
+	ORANGE_CURSOR_PASSTHROUGH,
+	ORANGE_CURSOR_MOVE,
+	ORANGE_CURSOR_RESIZE,
 };
 
-struct tahoe_server;
+struct orange_server;
 
-struct tahoe_output {
+struct orange_output {
 	struct wl_list link;
-	struct tahoe_server *server;
+	struct orange_server *server;
 	struct wlr_output *wlr_output;
 	struct wlr_output_layout_output *layout_output;
 	struct wlr_scene_output *scene_output;
 	struct wlr_scene_buffer *shell_scene_buffer;
-	struct tahoe_buffer *shell_buffer;
+	struct orange_buffer *shell_buffer;
 	struct wl_listener frame;
 	struct wl_listener present;
 	struct wl_listener destroy;
@@ -74,9 +74,9 @@ struct tahoe_output {
 	bool commit_pending;
 };
 
-struct tahoe_view {
+struct orange_view {
 	struct wl_list link;
-	struct tahoe_server *server;
+	struct orange_server *server;
 	struct wlr_xdg_surface *xdg_surface;
 	struct wlr_scene_tree *scene_tree;
 	struct wl_listener map;
@@ -96,23 +96,23 @@ struct tahoe_view {
 	bool fullscreen;
 };
 
-struct tahoe_keyboard {
+struct orange_keyboard {
 	struct wl_list link;
-	struct tahoe_server *server;
+	struct orange_server *server;
 	struct wlr_keyboard *keyboard;
 	struct wl_listener key;
 	struct wl_listener modifiers;
 	struct wl_listener destroy;
 };
 
-struct tahoe_decoration {
+struct orange_decoration {
 	struct wl_listener request_mode;
 	struct wl_listener destroy;
 	struct wlr_xdg_toplevel_decoration_v1 *decoration;
 };
 
-struct tahoe_server {
-	const struct tahoe_options *options;
+struct orange_server {
+	const struct orange_options *options;
 	struct wl_display *display;
 	struct wlr_backend *backend;
 	struct wlr_renderer *renderer;
@@ -127,9 +127,9 @@ struct tahoe_server {
 	struct wlr_seat *seat;
 	struct wlr_cursor *cursor;
 	struct wlr_xcursor_manager *xcursor_manager;
-	struct tahoe_assets assets;
-	struct tahoe_config config;
-	struct tahoe_desktop_entry desktop_entries[TAHOE_DESKTOP_MAX];
+	struct orange_assets assets;
+	struct orange_config config;
+	struct orange_desktop_entry desktop_entries[ORANGE_DESKTOP_MAX];
 	size_t desktop_entry_count;
 
 	struct wl_list outputs;
@@ -152,9 +152,9 @@ struct tahoe_server {
 
 	struct wl_event_source *clock_timer;
 
-	struct tahoe_view *focused_view;
-	enum tahoe_cursor_mode cursor_mode;
-	struct tahoe_view *grabbed_view;
+	struct orange_view *focused_view;
+	enum orange_cursor_mode cursor_mode;
+	struct orange_view *grabbed_view;
 	double grab_cursor_x;
 	double grab_cursor_y;
 	int grab_view_x;
@@ -163,10 +163,10 @@ struct tahoe_server {
 	int grab_view_height;
 	uint32_t resize_edges;
 
-	bool apple_menu_open;
+	bool system_menu_open;
 	int hot_dock_index;
-	bool dock_open[TAHOE_DOCK_MAX];
-	enum tahoe_context_menu_kind context_menu_kind;
+	bool dock_open[ORANGE_DOCK_MAX];
+	enum orange_context_menu_kind context_menu_kind;
 	int context_menu_index;
 	int context_menu_cursor_x;
 	int context_menu_cursor_y;
@@ -186,19 +186,19 @@ struct tahoe_server {
 	uint32_t seat_caps;
 };
 
-static void server_mark_shell_dirty(struct tahoe_server *server);
-static void server_apply_cursor_config(struct tahoe_server *server);
-static void process_desktop_drag(struct tahoe_server *server);
-static void start_dock_drag(struct tahoe_server *server,
-	const struct tahoe_shell_layout *layout, int index);
-static void process_dock_drag(struct tahoe_server *server);
-static void finish_dock_drag(struct tahoe_server *server);
+static void server_mark_shell_dirty(struct orange_server *server);
+static void server_apply_cursor_config(struct orange_server *server);
+static void process_desktop_drag(struct orange_server *server);
+static void start_dock_drag(struct orange_server *server,
+	const struct orange_shell_layout *layout, int index);
+static void process_dock_drag(struct orange_server *server);
+static void finish_dock_drag(struct orange_server *server);
 
-static void server_apply_theme_env(struct tahoe_server *server) {
-	const char *theme = server->config.appearance == TAHOE_APPEARANCE_DARK ?
+static void server_apply_theme_env(struct orange_server *server) {
+	const char *theme = server->config.appearance == ORANGE_APPEARANCE_DARK ?
 		"MacTahoe-Dark" : "MacTahoe-Light";
 	setenv("GTK_THEME", theme, true);
-	setenv("GTK_ICON_THEME", "TahoeIcons", true);
+	setenv("GTK_ICON_THEME", "OrangeIcons", true);
 	setenv("GTK_CSD", "1", true);
 	if (server->options->theme_root != NULL) {
 		const char *old_dirs = getenv("XDG_DATA_DIRS");
@@ -214,7 +214,7 @@ static void server_apply_theme_env(struct tahoe_server *server) {
 	}
 }
 
-static void server_apply_cursor_config(struct tahoe_server *server) {
+static void server_apply_cursor_config(struct orange_server *server) {
 	if (server->cursor == NULL) {
 		return;
 	}
@@ -243,9 +243,9 @@ static void server_apply_cursor_config(struct tahoe_server *server) {
 	wlr_cursor_set_xcursor(server->cursor, server->xcursor_manager, "default");
 }
 
-static void server_load_config(struct tahoe_server *server, bool force_dirty) {
-	struct tahoe_config next;
-	tahoe_config_load(&next, server->options->config_path);
+static void server_load_config(struct orange_server *server, bool force_dirty) {
+	struct orange_config next;
+	orange_config_load(&next, server->options->config_path);
 	bool changed = memcmp(&server->config, &next, sizeof(next)) != 0;
 	bool cursor_changed =
 		strcmp(server->config.cursor_theme, next.cursor_theme) != 0 ||
@@ -288,7 +288,7 @@ static void launch_command(const char *command) {
 }
 
 static void launch_terminal(void) {
-	const char *terminal = getenv("TAHOE_TERMINAL");
+	const char *terminal = getenv("ORANGE_TERMINAL");
 	if (terminal != NULL && terminal[0] != '\0') {
 		launch_command(terminal);
 		return;
@@ -297,7 +297,7 @@ static void launch_terminal(void) {
 }
 
 static void launch_app_picker(void) {
-	const char *picker = getenv("TAHOE_APP_PICKER");
+	const char *picker = getenv("ORANGE_APP_PICKER");
 	if (picker != NULL && picker[0] != '\0') {
 		launch_command(picker);
 		return;
@@ -309,18 +309,18 @@ static bool contains_case(const char *haystack, const char *needle) {
 	return haystack != NULL && needle != NULL && strcasestr(haystack, needle) != NULL;
 }
 
-static int dock_index_for_view(struct tahoe_view *view) {
+static int dock_index_for_view(struct orange_view *view) {
 	if (view == NULL || view->xdg_surface == NULL ||
 			view->xdg_surface->toplevel == NULL) {
 		return -1;
 	}
 	const char *app_id = view->xdg_surface->toplevel->app_id;
 	const char *title = view->xdg_surface->toplevel->title;
-	if (contains_case(app_id, "finder") || contains_case(app_id, "files") ||
+	if (contains_case(app_id, "files") ||
 			contains_case(app_id, "nautilus") || contains_case(title, "files")) {
 		return 0;
 	}
-	if (contains_case(app_id, "safari") || contains_case(app_id, "browser") ||
+	if (contains_case(app_id, "browser") ||
 			contains_case(app_id, "firefox") || contains_case(app_id, "chrom") ||
 			contains_case(title, "browser")) {
 		return 2;
@@ -366,24 +366,24 @@ static int dock_index_for_view(struct tahoe_view *view) {
 	return -1;
 }
 
-static void server_update_dock_open(struct tahoe_server *server) {
+static void server_update_dock_open(struct orange_server *server) {
 	memset(server->dock_open, 0, sizeof(server->dock_open));
-	struct tahoe_view *view;
+	struct orange_view *view;
 	wl_list_for_each(view, &server->views, link) {
 		if (!view->mapped) {
 			continue;
 		}
 		int index = dock_index_for_view(view);
-		if (index >= 0 && index < TAHOE_DOCK_MAX) {
+		if (index >= 0 && index < ORANGE_DOCK_MAX) {
 			server->dock_open[index] = true;
 		}
 	}
 }
 
-static struct tahoe_output *output_from_wlr_output(
-		struct tahoe_server *server,
+static struct orange_output *output_from_wlr_output(
+		struct orange_server *server,
 		struct wlr_output *wlr_output) {
-	struct tahoe_output *output;
+	struct orange_output *output;
 	wl_list_for_each(output, &server->outputs, link) {
 		if (output->wlr_output == wlr_output) {
 			return output;
@@ -392,8 +392,8 @@ static struct tahoe_output *output_from_wlr_output(
 	return NULL;
 }
 
-static struct tahoe_output *output_at_cursor(
-		struct tahoe_server *server,
+static struct orange_output *output_at_cursor(
+		struct orange_server *server,
 		int *local_x,
 		int *local_y) {
 	struct wlr_output *wlr_output = wlr_output_layout_output_at(
@@ -413,23 +413,64 @@ static struct tahoe_output *output_at_cursor(
 }
 
 static void compute_shell_layout_for_output(
-		struct tahoe_server *server,
-		struct tahoe_output *output,
-		struct tahoe_shell_layout *layout) {
-	tahoe_shell_layout_compute(output->width, output->height,
-		server->apple_menu_open,
+		struct orange_server *server,
+		struct orange_output *output,
+		struct orange_shell_layout *layout) {
+	orange_shell_layout_compute(output->width, output->height,
+		server->system_menu_open,
 		&server->config,
 		(int)server->desktop_entry_count,
 		layout);
-	tahoe_shell_layout_set_context_menu(layout,
+	orange_shell_layout_set_context_menu(layout,
 		server->context_menu_kind,
 		server->context_menu_index,
 		server->context_menu_cursor_x,
 		server->context_menu_cursor_y);
 }
 
-static void server_mark_shell_dirty(struct tahoe_server *server) {
-	struct tahoe_output *output;
+static int dock_hover_index_for_pointer(
+		const struct orange_shell_layout *layout,
+		const struct orange_config *config,
+		int x,
+		int y) {
+	if (layout->dock_item_count <= 0 || config == NULL ||
+			!config->dock_magnification) {
+		return -1;
+	}
+
+	struct orange_rect first = layout->dock_items[0];
+	struct orange_rect last = layout->dock_items[layout->dock_item_count - 1];
+	double max_scale = config->dock_magnification_scale;
+	if (max_scale < 1.0) {
+		max_scale = 1.0;
+	} else if (max_scale > 2.20) {
+		max_scale = 2.20;
+	}
+	int icon = first.height;
+	int hover_top = first.y - (int)(icon * (max_scale - 1.0) + 0.5);
+	int hover_bottom = layout->dock.y + layout->dock.height;
+	int hover_left = first.x - icon / 2;
+	int hover_right = last.x + last.width + icon / 2;
+	if (x < hover_left || x > hover_right ||
+			y < hover_top || y > hover_bottom) {
+		return -1;
+	}
+
+	int best = -1;
+	int best_distance = INT_MAX;
+	for (int i = 0; i < layout->dock_item_count; i++) {
+		int center = layout->dock_items[i].x + layout->dock_items[i].width / 2;
+		int distance = abs(x - center);
+		if (distance < best_distance) {
+			best_distance = distance;
+			best = i;
+		}
+	}
+	return best;
+}
+
+static void server_mark_shell_dirty(struct orange_server *server) {
+	struct orange_output *output;
 	wl_list_for_each(output, &server->outputs, link) {
 		output->shell_dirty = true;
 		if (!output->commit_pending && !output->wlr_output->frame_pending) {
@@ -438,7 +479,7 @@ static void server_mark_shell_dirty(struct tahoe_server *server) {
 	}
 }
 
-static bool output_ensure_shell_buffer(struct tahoe_output *output) {
+static bool output_ensure_shell_buffer(struct orange_output *output) {
 	int width = 0;
 	int height = 0;
 	wlr_output_effective_resolution(output->wlr_output, &width, &height);
@@ -462,7 +503,7 @@ static bool output_ensure_shell_buffer(struct tahoe_output *output) {
 		output->shell_buffer = NULL;
 	}
 
-	output->shell_buffer = tahoe_buffer_create(width, height);
+	output->shell_buffer = orange_buffer_create(width, height);
 	if (output->shell_buffer == NULL) {
 		wlr_log(WLR_ERROR, "failed to allocate shell buffer");
 		return false;
@@ -491,7 +532,7 @@ static bool output_ensure_shell_buffer(struct tahoe_output *output) {
 	return true;
 }
 
-static void output_redraw_shell(struct tahoe_output *output) {
+static void output_redraw_shell(struct orange_output *output) {
 	if (!output_ensure_shell_buffer(output)) {
 		return;
 	}
@@ -499,18 +540,25 @@ static void output_redraw_shell(struct tahoe_output *output) {
 		return;
 	}
 
+	double cursor_x = output->server->cursor->x;
+	double cursor_y = output->server->cursor->y;
+	wlr_output_layout_output_coords(output->server->output_layout,
+		output->wlr_output, &cursor_x, &cursor_y);
+
 	server_update_dock_open(output->server);
-	struct tahoe_shell_state state = {
-		.apple_menu_open = output->server->apple_menu_open,
+	struct orange_shell_state state = {
+		.system_menu_open = output->server->system_menu_open,
 		.hot_dock_index = output->server->hot_dock_index,
+		.dock_pointer_x = (int)cursor_x,
+		.dock_pointer_y = (int)cursor_y,
 		.dock_drag_index = output->server->dock_drag_active ?
 			output->server->dock_drag_index : -1,
 		.dock_drag_insert_before = output->server->dock_drag_active ?
 			output->server->dock_drag_insert_before : -1,
 		.dock_drag_x = output->server->dock_drag_active ?
-			(int)output->server->cursor->x : 0,
+			(int)cursor_x : 0,
 		.dock_drag_y = output->server->dock_drag_active ?
-			(int)output->server->cursor->y : 0,
+			(int)cursor_y : 0,
 		.now = time(NULL),
 		.assets = &output->server->assets,
 		.config = &output->server->config,
@@ -522,7 +570,7 @@ static void output_redraw_shell(struct tahoe_output *output) {
 		.context_menu_cursor_y = output->server->context_menu_cursor_y,
 	};
 	memcpy(state.dock_open, output->server->dock_open, sizeof(state.dock_open));
-	tahoe_shell_draw(output->shell_buffer->pixels,
+	orange_shell_draw(output->shell_buffer->pixels,
 		output->width,
 		output->height,
 		output->shell_buffer->stride,
@@ -537,12 +585,12 @@ static void output_redraw_shell(struct tahoe_output *output) {
 	output->shell_dirty = false;
 }
 
-static void focus_view(struct tahoe_view *view, struct wlr_surface *surface) {
+static void focus_view(struct orange_view *view, struct wlr_surface *surface) {
 	if (view == NULL || surface == NULL || !view->mapped) {
 		return;
 	}
 
-	struct tahoe_server *server = view->server;
+	struct orange_server *server = view->server;
 	if (server->focused_view != NULL && server->focused_view != view) {
 		wlr_xdg_toplevel_set_activated(
 			server->focused_view->xdg_surface->toplevel,
@@ -564,12 +612,12 @@ static void focus_view(struct tahoe_view *view, struct wlr_surface *surface) {
 }
 
 static struct wlr_surface *surface_at(
-		struct tahoe_server *server,
+		struct orange_server *server,
 		double lx,
 		double ly,
 		double *sx,
 		double *sy,
-		struct tahoe_view **view) {
+		struct orange_view **view) {
 	struct wlr_scene_node *node = wlr_scene_node_at(
 		&server->window_tree->node,
 		lx,
@@ -595,17 +643,17 @@ static struct wlr_surface *surface_at(
 	return surface;
 }
 
-static void process_cursor_motion(struct tahoe_server *server, uint32_t time_msec) {
-	if (server->cursor_mode == TAHOE_CURSOR_MOVE && server->grabbed_view != NULL) {
-		struct tahoe_view *view = server->grabbed_view;
+static void process_cursor_motion(struct orange_server *server, uint32_t time_msec) {
+	if (server->cursor_mode == ORANGE_CURSOR_MOVE && server->grabbed_view != NULL) {
+		struct orange_view *view = server->grabbed_view;
 		view->x = (int)(server->cursor->x - server->grab_cursor_x);
 		view->y = (int)(server->cursor->y - server->grab_cursor_y);
 		wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
 		return;
 	}
 
-	if (server->cursor_mode == TAHOE_CURSOR_RESIZE && server->grabbed_view != NULL) {
-		struct tahoe_view *view = server->grabbed_view;
+	if (server->cursor_mode == ORANGE_CURSOR_RESIZE && server->grabbed_view != NULL) {
+		struct orange_view *view = server->grabbed_view;
 		double dx = server->cursor->x - server->grab_cursor_x;
 		double dy = server->cursor->y - server->grab_cursor_y;
 		int x = server->grab_view_x;
@@ -655,7 +703,7 @@ static void process_cursor_motion(struct tahoe_server *server, uint32_t time_mse
 
 	double sx = 0.0;
 	double sy = 0.0;
-	struct tahoe_view *view = NULL;
+	struct orange_view *view = NULL;
 	struct wlr_surface *surface = surface_at(server,
 		server->cursor->x,
 		server->cursor->y,
@@ -673,33 +721,38 @@ static void process_cursor_motion(struct tahoe_server *server, uint32_t time_mse
 
 	int local_x = 0;
 	int local_y = 0;
-	struct tahoe_output *output = output_at_cursor(server, &local_x, &local_y);
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
 	int new_hot = -1;
 	if (output != NULL) {
-		struct tahoe_shell_layout layout;
+		struct orange_shell_layout layout;
 		compute_shell_layout_for_output(server, output, &layout);
-		struct tahoe_shell_hit hit =
-			tahoe_shell_hit_test(&layout, local_x, local_y);
-		if (hit.kind == TAHOE_HIT_DOCK_ITEM) {
+		struct orange_shell_hit hit =
+			orange_shell_hit_test(&layout, local_x, local_y);
+		if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
 			new_hot = hit.index;
+		} else {
+			new_hot = dock_hover_index_for_pointer(&layout,
+				&server->config, local_x, local_y);
 		}
 	}
 	if (new_hot != server->hot_dock_index) {
 		server->hot_dock_index = new_hot;
 		server_mark_shell_dirty(server);
+	} else if (new_hot >= 0 && server->config.dock_magnification) {
+		server_mark_shell_dirty(server);
 	}
 }
 
 static void begin_interactive(
-		struct tahoe_view *view,
-		enum tahoe_cursor_mode mode,
+		struct orange_view *view,
+		enum orange_cursor_mode mode,
 		uint32_t edges) {
-	struct tahoe_server *server = view->server;
+	struct orange_server *server = view->server;
 	server->cursor_mode = mode;
 	server->grabbed_view = view;
 	server->grab_cursor_x = server->cursor->x;
 	server->grab_cursor_y = server->cursor->y;
-	if (mode == TAHOE_CURSOR_MOVE) {
+	if (mode == ORANGE_CURSOR_MOVE) {
 		server->grab_cursor_x = server->cursor->x - view->x;
 		server->grab_cursor_y = server->cursor->y - view->y;
 	}
@@ -710,22 +763,22 @@ static void begin_interactive(
 	server->resize_edges = edges;
 }
 
-static void close_focused_view(struct tahoe_server *server) {
+static void close_focused_view(struct orange_server *server) {
 	if (server->focused_view != NULL && server->focused_view->mapped) {
 		wlr_xdg_toplevel_send_close(server->focused_view->xdg_surface->toplevel);
 	}
 }
 
-static void cycle_focus(struct tahoe_server *server) {
+static void cycle_focus(struct orange_server *server) {
 	if (wl_list_empty(&server->views)) {
 		return;
 	}
 
-	struct tahoe_view *first_mapped = NULL;
-	struct tahoe_view *candidate = NULL;
+	struct orange_view *first_mapped = NULL;
+	struct orange_view *candidate = NULL;
 	bool seen_focused = server->focused_view == NULL;
 
-	struct tahoe_view *view;
+	struct orange_view *view;
 	wl_list_for_each(view, &server->views, link) {
 		if (!view->mapped) {
 			continue;
@@ -750,8 +803,8 @@ static void cycle_focus(struct tahoe_server *server) {
 	}
 }
 
-static void apply_maximize(struct tahoe_view *view, bool maximized) {
-	struct tahoe_server *server = view->server;
+static void apply_maximize(struct orange_view *view, bool maximized) {
+	struct orange_server *server = view->server;
 	view->maximized = maximized;
 	wlr_xdg_toplevel_set_maximized(view->xdg_surface->toplevel, maximized);
 	if (!maximized) {
@@ -773,8 +826,8 @@ static void apply_maximize(struct tahoe_view *view, bool maximized) {
 		view->height);
 }
 
-static void apply_fullscreen(struct tahoe_view *view, bool fullscreen) {
-	struct tahoe_server *server = view->server;
+static void apply_fullscreen(struct orange_view *view, bool fullscreen) {
+	struct orange_server *server = view->server;
 	view->fullscreen = fullscreen;
 	wlr_xdg_toplevel_set_fullscreen(view->xdg_surface->toplevel, fullscreen);
 	if (!fullscreen) {
@@ -796,13 +849,13 @@ static void apply_fullscreen(struct tahoe_view *view, bool fullscreen) {
 		view->height);
 }
 
-static void handle_shell_menu_action(struct tahoe_server *server, int index) {
+static void handle_shell_menu_action(struct orange_server *server, int index) {
 	switch (index) {
 	case 0:
-		launch_command("GSK_RENDERER=cairo build/tahoe-about || true");
+		launch_command("GSK_RENDERER=cairo build/orange-about || true");
 		break;
 	case 1:
-		launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
+		launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
 		break;
 	case 2:
 		launch_app_picker();
@@ -828,13 +881,13 @@ static void handle_shell_menu_action(struct tahoe_server *server, int index) {
 	default:
 		break;
 	}
-	server->apple_menu_open = false;
+	server->system_menu_open = false;
 	server_mark_shell_dirty(server);
 }
 
-static void clear_context_menu(struct tahoe_server *server) {
-	if (server->context_menu_kind != TAHOE_CONTEXT_MENU_NONE) {
-		server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
+static void clear_context_menu(struct orange_server *server) {
+	if (server->context_menu_kind != ORANGE_CONTEXT_MENU_NONE) {
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 		server->context_menu_index = -1;
 		server->context_menu_cursor_x = 0;
 		server->context_menu_cursor_y = 0;
@@ -843,9 +896,9 @@ static void clear_context_menu(struct tahoe_server *server) {
 }
 
 static void set_widget_size(
-		struct tahoe_server *server,
+		struct orange_server *server,
 		int target,
-		enum tahoe_widget_size size) {
+		enum orange_widget_size size) {
 	if (target == 0) {
 		server->config.calendar_widget_size = size;
 	} else if (target == 1) {
@@ -853,10 +906,10 @@ static void set_widget_size(
 	} else {
 		return;
 	}
-	tahoe_config_save(&server->config, server->options->config_path);
+	orange_config_save(&server->config, server->options->config_path);
 }
 
-static void remove_widget(struct tahoe_server *server, int target) {
+static void remove_widget(struct orange_server *server, int target) {
 	if (target == 0) {
 		server->config.calendar_widget_visible = false;
 	} else if (target == 1) {
@@ -864,44 +917,44 @@ static void remove_widget(struct tahoe_server *server, int target) {
 	} else {
 		return;
 	}
-	tahoe_config_save(&server->config, server->options->config_path);
+	orange_config_save(&server->config, server->options->config_path);
 }
 
-static void handle_context_menu_action(struct tahoe_server *server, int item_index) {
-	enum tahoe_context_menu_kind kind = server->context_menu_kind;
+static void handle_context_menu_action(struct orange_server *server, int item_index) {
+	enum orange_context_menu_kind kind = server->context_menu_kind;
 	int target = server->context_menu_index;
-	server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
+	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 	server->context_menu_index = -1;
 
-	if (kind == TAHOE_CONTEXT_MENU_DOCK) {
-		int launcher_idx = target >= 0 && target < TAHOE_DOCK_MAX ?
+	if (kind == ORANGE_CONTEXT_MENU_DOCK) {
+		int launcher_idx = target >= 0 && target < ORANGE_DOCK_MAX ?
 			server->config.dock_order[target] : target;
 		switch (item_index) {
 		case 0:
-			launch_command(tahoe_shell_dock_command(launcher_idx));
+			launch_command(orange_shell_dock_command(launcher_idx));
 			break;
 		case 1:
 			launch_command("xdg-open \"$HOME\" || true");
 			break;
 		case 4:
-			launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
+			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
 			break;
 		default:
 			break;
 		}
-	} else if (kind == TAHOE_CONTEXT_MENU_WIDGET) {
+	} else if (kind == ORANGE_CONTEXT_MENU_WIDGET) {
 		switch (item_index) {
 		case 0:
-			launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
+			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
 			break;
 		case 1:
-			set_widget_size(server, target, TAHOE_WIDGET_SIZE_SMALL);
+			set_widget_size(server, target, ORANGE_WIDGET_SIZE_SMALL);
 			break;
 		case 2:
-			set_widget_size(server, target, TAHOE_WIDGET_SIZE_MEDIUM);
+			set_widget_size(server, target, ORANGE_WIDGET_SIZE_MEDIUM);
 			break;
 		case 3:
-			set_widget_size(server, target, TAHOE_WIDGET_SIZE_LARGE);
+			set_widget_size(server, target, ORANGE_WIDGET_SIZE_LARGE);
 			break;
 		case 4:
 			remove_widget(server, target);
@@ -909,7 +962,7 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 		default:
 			break;
 		}
-	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP_ICON) {
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_ICON) {
 		switch (item_index) {
 		case 0:
 			if (target >= 0 && target < (int)server->desktop_entry_count) {
@@ -927,16 +980,16 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 		default:
 			break;
 		}
-	} else if (kind == TAHOE_CONTEXT_MENU_DESKTOP) {
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP) {
 		switch (item_index) {
 		case 0:
 			launch_command("xdg-open \"$HOME/Desktop\" || true");
 			break;
 		case 6:
-			launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
+			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
 			break;
 		case 7:
-			launch_command("GSK_RENDERER=cairo build/tahoe-settings tahoe.conf || true");
+			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
 			break;
 		default:
 			break;
@@ -945,17 +998,17 @@ static void handle_context_menu_action(struct tahoe_server *server, int item_ind
 	server_mark_shell_dirty(server);
 }
 
-static void start_desktop_drag(struct tahoe_server *server,
-		struct tahoe_output *output,
-		const struct tahoe_shell_layout *layout,
+static void start_desktop_drag(struct orange_server *server,
+		struct orange_output *output,
+		const struct orange_shell_layout *layout,
 		int index,
 		int local_x,
 		int local_y) {
 	if (index < 0 || index >= layout->desktop_item_count ||
-			index >= TAHOE_DESKTOP_POSITION_MAX) {
+			index >= ORANGE_DESKTOP_POSITION_MAX) {
 		return;
 	}
-	struct tahoe_rect item = layout->desktop_items[index];
+	struct orange_rect item = layout->desktop_items[index];
 	(void)output;
 	server->desktop_drag_active = true;
 	server->desktop_drag_moved = false;
@@ -967,23 +1020,23 @@ static void start_desktop_drag(struct tahoe_server *server,
 	clear_context_menu(server);
 }
 
-static void process_desktop_drag(struct tahoe_server *server) {
+static void process_desktop_drag(struct orange_server *server) {
 	if (!server->desktop_drag_active) {
 		return;
 	}
 
 	int local_x = 0;
 	int local_y = 0;
-	struct tahoe_output *output = output_at_cursor(server, &local_x, &local_y);
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
 	if (output == NULL) {
 		return;
 	}
 
-	struct tahoe_shell_layout layout;
+	struct orange_shell_layout layout;
 	compute_shell_layout_for_output(server, output, &layout);
 	int index = server->desktop_drag_index;
 	if (index < 0 || index >= layout.desktop_item_count ||
-			index >= TAHOE_DESKTOP_POSITION_MAX) {
+			index >= ORANGE_DESKTOP_POSITION_MAX) {
 		return;
 	}
 
@@ -996,7 +1049,7 @@ static void process_desktop_drag(struct tahoe_server *server) {
 		return;
 	}
 
-	struct tahoe_rect item = layout.desktop_items[index];
+	struct orange_rect item = layout.desktop_items[index];
 	int next_x = local_x - server->desktop_drag_offset_x;
 	int next_y = local_y - server->desktop_drag_offset_y;
 	if (next_x < 0) {
@@ -1017,7 +1070,7 @@ static void process_desktop_drag(struct tahoe_server *server) {
 	server_mark_shell_dirty(server);
 }
 
-static void finish_desktop_drag(struct tahoe_server *server) {
+static void finish_desktop_drag(struct orange_server *server) {
 	if (!server->desktop_drag_active) {
 		return;
 	}
@@ -1028,15 +1081,15 @@ static void finish_desktop_drag(struct tahoe_server *server) {
 	server->desktop_drag_index = -1;
 
 	if (moved) {
-		tahoe_config_save(&server->config, server->options->config_path);
+		orange_config_save(&server->config, server->options->config_path);
 		server_mark_shell_dirty(server);
 	} else if (index >= 0 && index < (int)server->desktop_entry_count) {
 		launch_command(server->desktop_entries[index].exec);
 	}
 }
 
-static void start_dock_drag(struct tahoe_server *server,
-		const struct tahoe_shell_layout *layout, int index) {
+static void start_dock_drag(struct orange_server *server,
+		const struct orange_shell_layout *layout, int index) {
 	server->dock_drag_active = true;
 	server->dock_drag_moved = false;
 	server->dock_drag_index = index;
@@ -1045,7 +1098,7 @@ static void start_dock_drag(struct tahoe_server *server,
 	(void)layout;
 }
 
-static void process_dock_drag(struct tahoe_server *server) {
+static void process_dock_drag(struct orange_server *server) {
 	if (!server->dock_drag_active) {
 		return;
 	}
@@ -1060,12 +1113,12 @@ static void process_dock_drag(struct tahoe_server *server) {
 
 	int local_x = 0;
 	int local_y = 0;
-	struct tahoe_output *output = output_at_cursor(server, &local_x, &local_y);
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
 	if (output == NULL) {
 		return;
 	}
 
-	struct tahoe_shell_layout layout;
+	struct orange_shell_layout layout;
 	compute_shell_layout_for_output(server, output, &layout);
 	int dragged = server->dock_drag_index;
 	int insert = layout.dock_item_count;
@@ -1073,7 +1126,7 @@ static void process_dock_drag(struct tahoe_server *server) {
 		if (i == dragged) {
 			continue;
 		}
-		struct tahoe_rect r = layout.dock_items[i];
+		struct orange_rect r = layout.dock_items[i];
 		if (local_x < r.x + r.width / 2) {
 			insert = i;
 			break;
@@ -1091,7 +1144,7 @@ static void process_dock_drag(struct tahoe_server *server) {
 	}
 }
 
-static void finish_dock_drag(struct tahoe_server *server) {
+static void finish_dock_drag(struct orange_server *server) {
 	if (!server->dock_drag_active) {
 		return;
 	}
@@ -1103,10 +1156,10 @@ static void finish_dock_drag(struct tahoe_server *server) {
 	server->dock_drag_index = -1;
 	server->dock_drag_insert_before = -1;
 
-	int dock_count = tahoe_shell_dock_count();
+	int dock_count = orange_shell_dock_count();
 	if (moved && index >= 0 && index < dock_count &&
 			insert >= 0 && insert < dock_count) {
-		int order[TAHOE_DOCK_MAX];
+		int order[ORANGE_DOCK_MAX];
 		memcpy(order, server->config.dock_order, sizeof(order));
 		for (int i = 0; i < dock_count; i++) {
 			if (order[i] < 0 || order[i] >= dock_count) {
@@ -1126,108 +1179,108 @@ static void finish_dock_drag(struct tahoe_server *server) {
 			order[insert] = launcher;
 		}
 		memcpy(server->config.dock_order, order, sizeof(order));
-		tahoe_config_save(&server->config, server->options->config_path);
+		orange_config_save(&server->config, server->options->config_path);
 		server_mark_shell_dirty(server);
 	} else if (!moved && index >= 0 && index < dock_count) {
 		int launcher_idx = server->config.dock_order[index];
-		launch_command(tahoe_shell_dock_command(launcher_idx));
+		launch_command(orange_shell_dock_command(launcher_idx));
 		server_mark_shell_dirty(server);
 	}
 }
 
-static void handle_shell_click(struct tahoe_server *server, int x, int y) {
+static void handle_shell_click(struct orange_server *server, int x, int y) {
 	int local_x = 0;
 	int local_y = 0;
-	struct tahoe_output *output = output_at_cursor(server, &local_x, &local_y);
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
 	if (output == NULL) {
 		(void)x;
 		(void)y;
 		return;
 	}
 
-	struct tahoe_shell_layout layout;
+	struct orange_shell_layout layout;
 	compute_shell_layout_for_output(server, output, &layout);
-	struct tahoe_shell_hit hit = tahoe_shell_hit_test(&layout, local_x, local_y);
+	struct orange_shell_hit hit = orange_shell_hit_test(&layout, local_x, local_y);
 
 	switch (hit.kind) {
-	case TAHOE_HIT_CONTEXT_MENU_ITEM:
+	case ORANGE_HIT_CONTEXT_MENU_ITEM:
 		handle_context_menu_action(server, hit.index);
 		break;
-	case TAHOE_HIT_APPLE_MENU:
+	case ORANGE_HIT_SYSTEM_MENU:
 		clear_context_menu(server);
-		server->apple_menu_open = !server->apple_menu_open;
+		server->system_menu_open = !server->system_menu_open;
 		server_mark_shell_dirty(server);
 		break;
-	case TAHOE_HIT_APPLE_MENU_ITEM:
+	case ORANGE_HIT_SYSTEM_MENU_ITEM:
 		clear_context_menu(server);
 		handle_shell_menu_action(server, hit.index);
 		break;
-	case TAHOE_HIT_DOCK_ITEM:
+	case ORANGE_HIT_DOCK_ITEM:
 		clear_context_menu(server);
-		server->apple_menu_open = false;
+		server->system_menu_open = false;
 		start_dock_drag(server, &layout, hit.index);
 		server_mark_shell_dirty(server);
 		break;
-	case TAHOE_HIT_WIDGET:
+	case ORANGE_HIT_WIDGET:
 		clear_context_menu(server);
-		server->apple_menu_open = false;
+		server->system_menu_open = false;
 		server_mark_shell_dirty(server);
 		break;
-	case TAHOE_HIT_DESKTOP_ITEM:
+	case ORANGE_HIT_DESKTOP_ITEM:
 		clear_context_menu(server);
-		server->apple_menu_open = false;
+		server->system_menu_open = false;
 		start_desktop_drag(server, output, &layout, hit.index, local_x, local_y);
 		server_mark_shell_dirty(server);
 		break;
-	case TAHOE_HIT_DESKTOP:
-	case TAHOE_HIT_NONE:
+	case ORANGE_HIT_DESKTOP:
+	case ORANGE_HIT_NONE:
 		clear_context_menu(server);
-		if (server->apple_menu_open) {
-			server->apple_menu_open = false;
+		if (server->system_menu_open) {
+			server->system_menu_open = false;
 			server_mark_shell_dirty(server);
 		}
 		break;
 	}
 }
 
-static void handle_shell_right_click(struct tahoe_server *server, int x, int y) {
+static void handle_shell_right_click(struct orange_server *server, int x, int y) {
 	int local_x = 0;
 	int local_y = 0;
-	struct tahoe_output *output = output_at_cursor(server, &local_x, &local_y);
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
 	if (output == NULL) {
 		(void)x;
 		(void)y;
 		return;
 	}
 
-	struct tahoe_shell_layout layout;
+	struct orange_shell_layout layout;
 	compute_shell_layout_for_output(server, output, &layout);
-	struct tahoe_shell_hit hit = tahoe_shell_hit_test(&layout, local_x, local_y);
+	struct orange_shell_hit hit = orange_shell_hit_test(&layout, local_x, local_y);
 
-	server->apple_menu_open = false;
+	server->system_menu_open = false;
 	server->context_menu_cursor_x = local_x;
 	server->context_menu_cursor_y = local_y;
-	if (hit.kind == TAHOE_HIT_DOCK_ITEM) {
-		server->context_menu_kind = TAHOE_CONTEXT_MENU_DOCK;
+	if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK;
 		server->context_menu_index = hit.index;
-	} else if (hit.kind == TAHOE_HIT_WIDGET) {
-		server->context_menu_kind = TAHOE_CONTEXT_MENU_WIDGET;
+	} else if (hit.kind == ORANGE_HIT_WIDGET) {
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_WIDGET;
 		server->context_menu_index = hit.index;
-	} else if (hit.kind == TAHOE_HIT_DESKTOP_ITEM) {
-		server->context_menu_kind = TAHOE_CONTEXT_MENU_DESKTOP_ICON;
+	} else if (hit.kind == ORANGE_HIT_DESKTOP_ITEM) {
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_ICON;
 		server->context_menu_index = hit.index;
-	} else if (hit.kind == TAHOE_HIT_DESKTOP) {
-		server->context_menu_kind = TAHOE_CONTEXT_MENU_DESKTOP;
+	} else if (hit.kind == ORANGE_HIT_DESKTOP) {
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP;
 		server->context_menu_index = -1;
 	} else {
-		server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 		server->context_menu_index = -1;
 	}
 	server_mark_shell_dirty(server);
 }
 
 static void handle_cursor_motion(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, cursor_motion);
 	struct wlr_pointer_motion_event *event = data;
 	wlr_cursor_move(server->cursor, &event->pointer->base,
@@ -1236,7 +1289,7 @@ static void handle_cursor_motion(struct wl_listener *listener, void *data) {
 }
 
 static void handle_cursor_motion_absolute(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, cursor_motion_absolute);
 	struct wlr_pointer_motion_absolute_event *event = data;
 	wlr_cursor_warp_absolute(server->cursor,
@@ -1247,13 +1300,13 @@ static void handle_cursor_motion_absolute(struct wl_listener *listener, void *da
 }
 
 static void handle_cursor_button(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, cursor_button);
 	struct wlr_pointer_button_event *event = data;
 
 	if (event->state == WLR_BUTTON_RELEASED &&
-			server->cursor_mode != TAHOE_CURSOR_PASSTHROUGH) {
-		server->cursor_mode = TAHOE_CURSOR_PASSTHROUGH;
+			server->cursor_mode != ORANGE_CURSOR_PASSTHROUGH) {
+		server->cursor_mode = ORANGE_CURSOR_PASSTHROUGH;
 		server->grabbed_view = NULL;
 	}
 	if (event->state == WLR_BUTTON_RELEASED &&
@@ -1272,7 +1325,7 @@ static void handle_cursor_button(struct wl_listener *listener, void *data) {
 
 	double sx = 0.0;
 	double sy = 0.0;
-	struct tahoe_view *view = NULL;
+	struct orange_view *view = NULL;
 	struct wlr_surface *surface = surface_at(server,
 		server->cursor->x,
 		server->cursor->y,
@@ -1310,7 +1363,7 @@ static void handle_cursor_button(struct wl_listener *listener, void *data) {
 }
 
 static void handle_cursor_axis(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, cursor_axis);
 	struct wlr_pointer_axis_event *event = data;
 	wlr_seat_pointer_notify_axis(server->seat,
@@ -1322,14 +1375,14 @@ static void handle_cursor_axis(struct wl_listener *listener, void *data) {
 }
 
 static void handle_cursor_frame(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, cursor_frame);
 	(void)data;
 	wlr_seat_pointer_notify_frame(server->seat);
 }
 
 static bool handle_keybinding(
-		struct tahoe_server *server,
+		struct orange_server *server,
 		xkb_keysym_t sym) {
 	switch (sym) {
 	case XKB_KEY_Return:
@@ -1361,8 +1414,8 @@ static bool handle_keybinding(
 		}
 		return true;
 	case XKB_KEY_Escape:
-		if (server->apple_menu_open) {
-			server->apple_menu_open = false;
+		if (server->system_menu_open) {
+			server->system_menu_open = false;
 			server_mark_shell_dirty(server);
 			return true;
 		}
@@ -1373,9 +1426,9 @@ static bool handle_keybinding(
 }
 
 static void handle_keyboard_key(struct wl_listener *listener, void *data) {
-	struct tahoe_keyboard *keyboard =
+	struct orange_keyboard *keyboard =
 		wl_container_of(listener, keyboard, key);
-	struct tahoe_server *server = keyboard->server;
+	struct orange_server *server = keyboard->server;
 	struct wlr_keyboard_key_event *event = data;
 
 	bool handled = false;
@@ -1407,7 +1460,7 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 }
 
 static void handle_keyboard_modifiers(struct wl_listener *listener, void *data) {
-	struct tahoe_keyboard *keyboard =
+	struct orange_keyboard *keyboard =
 		wl_container_of(listener, keyboard, modifiers);
 	(void)data;
 	wlr_seat_set_keyboard(keyboard->server->seat, keyboard->keyboard);
@@ -1416,7 +1469,7 @@ static void handle_keyboard_modifiers(struct wl_listener *listener, void *data) 
 }
 
 static void handle_keyboard_destroy(struct wl_listener *listener, void *data) {
-	struct tahoe_keyboard *keyboard =
+	struct orange_keyboard *keyboard =
 		wl_container_of(listener, keyboard, destroy);
 	(void)data;
 	wl_list_remove(&keyboard->link);
@@ -1427,7 +1480,7 @@ static void handle_keyboard_destroy(struct wl_listener *listener, void *data) {
 }
 
 static void handle_new_input(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, new_input);
 	struct wlr_input_device *device = data;
 
@@ -1445,7 +1498,7 @@ static void handle_new_input(struct wl_listener *listener, void *data) {
 		xkb_context_unref(context);
 		wlr_keyboard_set_repeat_info(wlr_keyboard, 25, 600);
 
-		struct tahoe_keyboard *keyboard = calloc(1, sizeof(*keyboard));
+		struct orange_keyboard *keyboard = calloc(1, sizeof(*keyboard));
 		if (keyboard == NULL) {
 			return;
 		}
@@ -1477,7 +1530,7 @@ static void handle_new_input(struct wl_listener *listener, void *data) {
 }
 
 static void handle_request_set_cursor(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, request_set_cursor);
 	struct wlr_seat_pointer_request_set_cursor_event *event = data;
 	if (server->seat->pointer_state.focused_client == event->seat_client) {
@@ -1489,7 +1542,7 @@ static void handle_request_set_cursor(struct wl_listener *listener, void *data) 
 }
 
 static void handle_request_set_selection(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, request_set_selection);
 	struct wlr_seat_request_set_selection_event *event = data;
 	wlr_seat_set_selection(server->seat, event->source, event->serial);
@@ -1498,14 +1551,14 @@ static void handle_request_set_selection(struct wl_listener *listener, void *dat
 static void handle_request_set_primary_selection(
 		struct wl_listener *listener,
 		void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, request_set_primary_selection);
 	struct wlr_seat_request_set_primary_selection_event *event = data;
 	wlr_seat_set_primary_selection(server->seat, event->source, event->serial);
 }
 
 static void handle_view_commit(struct wl_listener *listener, void *data) {
-	struct tahoe_view *view = wl_container_of(listener, view, commit);
+	struct orange_view *view = wl_container_of(listener, view, commit);
 	(void)data;
 	if (!view->mapped) {
 		return;
@@ -1513,14 +1566,14 @@ static void handle_view_commit(struct wl_listener *listener, void *data) {
 	struct wlr_box geom;
 	wlr_xdg_surface_get_geometry(view->xdg_surface, &geom);
 	if (geom.width > 0 && geom.height > 0 &&
-			view->server->cursor_mode != TAHOE_CURSOR_RESIZE) {
+			view->server->cursor_mode != ORANGE_CURSOR_RESIZE) {
 		view->width = geom.width;
 		view->height = geom.height;
 	}
 }
 
 static void handle_view_map(struct wl_listener *listener, void *data) {
-	struct tahoe_view *view = wl_container_of(listener, view, map);
+	struct orange_view *view = wl_container_of(listener, view, map);
 	(void)data;
 
 	struct wlr_box geom;
@@ -1550,7 +1603,7 @@ static void handle_view_map(struct wl_listener *listener, void *data) {
 }
 
 static void handle_view_unmap(struct wl_listener *listener, void *data) {
-	struct tahoe_view *view = wl_container_of(listener, view, unmap);
+	struct orange_view *view = wl_container_of(listener, view, unmap);
 	(void)data;
 	view->mapped = false;
 	wlr_scene_node_set_enabled(&view->scene_tree->node, false);
@@ -1559,16 +1612,18 @@ static void handle_view_unmap(struct wl_listener *listener, void *data) {
 		wlr_seat_keyboard_notify_clear_focus(view->server->seat);
 	}
 	if (view->server->grabbed_view == view) {
-		view->server->cursor_mode = TAHOE_CURSOR_PASSTHROUGH;
+		view->server->cursor_mode = ORANGE_CURSOR_PASSTHROUGH;
 		view->server->grabbed_view = NULL;
 	}
 	server_mark_shell_dirty(view->server);
 }
 
 static void handle_view_destroy(struct wl_listener *listener, void *data) {
-	struct tahoe_view *view = wl_container_of(listener, view, destroy);
+	struct orange_view *view = wl_container_of(listener, view, destroy);
 	(void)data;
-	handle_view_unmap(&view->unmap, NULL);
+	/* wlroots already destroyed the scene tree (via
+	 * wlr_scene_xdg_surface_create's internal listener). The unmap listener
+	 * cleaned up focused_view / grabbed_view state. We just unlink and free. */
 	wl_list_remove(&view->link);
 	wl_list_remove(&view->map.link);
 	wl_list_remove(&view->unmap.link);
@@ -1578,43 +1633,42 @@ static void handle_view_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&view->request_resize.link);
 	wl_list_remove(&view->request_maximize.link);
 	wl_list_remove(&view->request_fullscreen.link);
-	wlr_scene_node_destroy(&view->scene_tree->node);
 	free(view);
 }
 
 static void handle_view_request_move(struct wl_listener *listener, void *data) {
-	struct tahoe_view *view = wl_container_of(listener, view, request_move);
+	struct orange_view *view = wl_container_of(listener, view, request_move);
 	(void)data;
-	begin_interactive(view, TAHOE_CURSOR_MOVE, 0);
+	begin_interactive(view, ORANGE_CURSOR_MOVE, 0);
 }
 
 static void handle_view_request_resize(struct wl_listener *listener, void *data) {
-	struct tahoe_view *view = wl_container_of(listener, view, request_resize);
+	struct orange_view *view = wl_container_of(listener, view, request_resize);
 	struct wlr_xdg_toplevel_resize_event *event = data;
-	begin_interactive(view, TAHOE_CURSOR_RESIZE, event->edges);
+	begin_interactive(view, ORANGE_CURSOR_RESIZE, event->edges);
 }
 
 static void handle_view_request_maximize(struct wl_listener *listener, void *data) {
-	struct tahoe_view *view = wl_container_of(listener, view, request_maximize);
+	struct orange_view *view = wl_container_of(listener, view, request_maximize);
 	(void)data;
 	apply_maximize(view, view->xdg_surface->toplevel->requested.maximized);
 }
 
 static void handle_view_request_fullscreen(struct wl_listener *listener, void *data) {
-	struct tahoe_view *view = wl_container_of(listener, view, request_fullscreen);
+	struct orange_view *view = wl_container_of(listener, view, request_fullscreen);
 	(void)data;
 	apply_fullscreen(view, view->xdg_surface->toplevel->requested.fullscreen);
 }
 
 static void handle_new_xdg_surface(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, new_xdg_surface);
 	struct wlr_xdg_surface *xdg_surface = data;
 	if (xdg_surface->role != WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
 		return;
 	}
 
-	struct tahoe_view *view = calloc(1, sizeof(*view));
+	struct orange_view *view = calloc(1, sizeof(*view));
 	if (view == NULL) {
 		return;
 	}
@@ -1668,7 +1722,7 @@ static void handle_new_xdg_surface(struct wl_listener *listener, void *data) {
 static void handle_decoration_request_mode(
 		struct wl_listener *listener,
 		void *data) {
-	struct tahoe_decoration *decoration =
+	struct orange_decoration *decoration =
 		wl_container_of(listener, decoration, request_mode);
 	(void)data;
 	wlr_xdg_toplevel_decoration_v1_set_mode(decoration->decoration,
@@ -1676,7 +1730,7 @@ static void handle_decoration_request_mode(
 }
 
 static void handle_decoration_destroy(struct wl_listener *listener, void *data) {
-	struct tahoe_decoration *decoration =
+	struct orange_decoration *decoration =
 		wl_container_of(listener, decoration, destroy);
 	(void)data;
 	wl_list_remove(&decoration->request_mode.link);
@@ -1685,12 +1739,12 @@ static void handle_decoration_destroy(struct wl_listener *listener, void *data) 
 }
 
 static void handle_new_xdg_decoration(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, new_xdg_decoration);
 	(void)server;
 	struct wlr_xdg_toplevel_decoration_v1 *wlr_decoration = data;
 
-	struct tahoe_decoration *decoration = calloc(1, sizeof(*decoration));
+	struct orange_decoration *decoration = calloc(1, sizeof(*decoration));
 	if (decoration == NULL) {
 		return;
 	}
@@ -1706,7 +1760,7 @@ static void handle_new_xdg_decoration(struct wl_listener *listener, void *data) 
 }
 
 static void handle_output_frame(struct wl_listener *listener, void *data) {
-	struct tahoe_output *output = wl_container_of(listener, output, frame);
+	struct orange_output *output = wl_container_of(listener, output, frame);
 	(void)data;
 
 	if (output->commit_pending || output->wlr_output->frame_pending) {
@@ -1732,7 +1786,7 @@ static void handle_output_frame(struct wl_listener *listener, void *data) {
 }
 
 static void handle_output_present(struct wl_listener *listener, void *data) {
-	struct tahoe_output *output = wl_container_of(listener, output, present);
+	struct orange_output *output = wl_container_of(listener, output, present);
 	(void)data;
 	output->commit_pending = false;
 	if (output->shell_dirty || output->wlr_output->needs_frame) {
@@ -1741,7 +1795,7 @@ static void handle_output_present(struct wl_listener *listener, void *data) {
 }
 
 static void handle_output_destroy(struct wl_listener *listener, void *data) {
-	struct tahoe_output *output =
+	struct orange_output *output =
 		wl_container_of(listener, output, destroy);
 	(void)data;
 	wl_list_remove(&output->link);
@@ -1786,7 +1840,7 @@ static struct wlr_output_mode *find_closest_output_mode(
 }
 
 static bool commit_initial_output_state(
-		struct tahoe_server *server,
+		struct orange_server *server,
 		struct wlr_output *wlr_output) {
 	struct wlr_output_state state;
 	wlr_output_state_init(&state);
@@ -1830,7 +1884,7 @@ static bool commit_initial_output_state(
 }
 
 static void handle_new_output(struct wl_listener *listener, void *data) {
-	struct tahoe_server *server =
+	struct orange_server *server =
 		wl_container_of(listener, server, new_output);
 	struct wlr_output *wlr_output = data;
 
@@ -1843,7 +1897,7 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 		return;
 	}
 
-	struct tahoe_output *output = calloc(1, sizeof(*output));
+	struct orange_output *output = calloc(1, sizeof(*output));
 	if (output == NULL) {
 		return;
 	}
@@ -1881,7 +1935,7 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 }
 
 static int handle_clock_timer(void *data) {
-	struct tahoe_server *server = data;
+	struct orange_server *server = data;
 	if (!server->desktop_drag_active) {
 		server_load_config(server, false);
 	}
@@ -1905,7 +1959,7 @@ static bool ensure_runtime_dir(void) {
 	}
 
 	char fallback[256];
-	snprintf(fallback, sizeof(fallback), "/tmp/tahoe-runtime-%ld",
+	snprintf(fallback, sizeof(fallback), "/tmp/orange-runtime-%ld",
 		(long)getuid());
 	if (mkdir(fallback, 0700) < 0 && access(fallback, W_OK | X_OK) != 0) {
 		wlr_log(WLR_ERROR, "failed to create runtime dir %s", fallback);
@@ -1917,26 +1971,26 @@ static bool ensure_runtime_dir(void) {
 	return true;
 }
 
-static bool server_init(struct tahoe_server *server,
-		const struct tahoe_options *options) {
+static bool server_init(struct orange_server *server,
+		const struct orange_options *options) {
 	memset(server, 0, sizeof(*server));
 	server->options = options;
 	server->hot_dock_index = -1;
-	server->context_menu_kind = TAHOE_CONTEXT_MENU_NONE;
+	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 	server->context_menu_index = -1;
 	server->desktop_drag_index = -1;
-	server->cursor_mode = TAHOE_CURSOR_PASSTHROUGH;
+	server->cursor_mode = ORANGE_CURSOR_PASSTHROUGH;
 	wl_list_init(&server->outputs);
 	wl_list_init(&server->views);
 	wl_list_init(&server->keyboards);
-	tahoe_config_set_defaults(&server->config);
+	orange_config_set_defaults(&server->config);
 	server_load_config(server, false);
-	tahoe_desktop_entry_load_all(options->desktop_entry_dir,
+	orange_desktop_entry_load_all(options->desktop_entry_dir,
 		server->desktop_entries,
-		TAHOE_DESKTOP_MAX,
+		ORANGE_DESKTOP_MAX,
 		&server->desktop_entry_count);
-	tahoe_assets_init(&server->assets);
-	tahoe_assets_load(&server->assets, options->asset_root);
+	orange_assets_init(&server->assets);
+	orange_assets_load(&server->assets, options->asset_root);
 
 	server->display = wl_display_create();
 	if (server->display == NULL) {
@@ -1974,7 +2028,7 @@ static bool server_init(struct tahoe_server *server,
 		return false;
 	}
 
-#ifdef TAHOE_HAVE_VULKAN
+#ifdef ORANGE_HAVE_VULKAN
 	if (wlr_renderer_is_vk(server->renderer)) {
 		wlr_log(WLR_INFO, "wlroots selected the Vulkan renderer");
 	} else {
@@ -2095,8 +2149,8 @@ static bool server_init(struct tahoe_server *server,
 	return true;
 }
 
-static void server_finish(struct tahoe_server *server) {
-	tahoe_assets_finish(&server->assets);
+static void server_finish(struct orange_server *server) {
+	orange_assets_finish(&server->assets);
 	if (server->xcursor_manager != NULL) {
 		wlr_xcursor_manager_destroy(server->xcursor_manager);
 		server->xcursor_manager = NULL;
@@ -2107,7 +2161,7 @@ static void server_finish(struct tahoe_server *server) {
 	}
 }
 
-int tahoe_compositor_run(const struct tahoe_options *options) {
+int orange_compositor_run(const struct orange_options *options) {
 	struct sigaction sigchld = {
 		.sa_handler = SIG_IGN,
 		.sa_flags = SA_NOCLDWAIT,
@@ -2117,7 +2171,47 @@ int tahoe_compositor_run(const struct tahoe_options *options) {
 
 	wlr_log_init(WLR_INFO, NULL);
 
-	struct tahoe_server server;
+	const char *xdg_config = getenv("XDG_CONFIG_HOME");
+	const char *home = getenv("HOME");
+	const char *config_dir = (xdg_config != NULL && xdg_config[0] != '\0')
+		? xdg_config : NULL;
+	char fallback[4096];
+	if (config_dir == NULL && home != NULL) {
+		int n = snprintf(fallback, sizeof(fallback), "%s/.config", home);
+		if (n > 0 && n < (int)sizeof(fallback)) {
+			config_dir = fallback;
+		}
+	}
+	static const char *versions[] = {"gtk-4.0", "gtk-3.0"};
+	for (size_t vi = 0; vi < sizeof(versions) / sizeof(versions[0]); vi++) {
+		if (config_dir == NULL) {
+			break;
+		}
+		char path[4096];
+		int n = snprintf(path, sizeof(path), "%s/%s", config_dir, versions[vi]);
+		if (n <= 0 || n >= (int)sizeof(path)) {
+			continue;
+		}
+		mkdir(path, 0755);
+		n = snprintf(path, sizeof(path), "%s/%s/settings.ini",
+			config_dir, versions[vi]);
+		if (n <= 0 || n >= (int)sizeof(path)) {
+			continue;
+		}
+		FILE *f = fopen(path, "r");
+		if (f != NULL) {
+			fclose(f);
+			continue;
+		}
+		f = fopen(path, "w");
+		if (f == NULL) {
+			continue;
+		}
+		fprintf(f, "[Settings]\ngtk-decoration-layout=close,minimize,maximize:\n");
+		fclose(f);
+	}
+
+	struct orange_server server;
 	if (!server_init(&server, options)) {
 		server_finish(&server);
 		return 1;

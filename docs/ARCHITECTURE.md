@@ -31,7 +31,7 @@ Responsibilities:
 - draw shell context menus for Dock items, widgets, desktop items, and empty
   desktop background,
 - expose deterministic layout and hit-test math for tests,
-- maintain transient UI state such as the Apple-style menu popover.
+- maintain transient UI state such as the system menu popover.
 
 ### Widget Layer
 
@@ -56,7 +56,7 @@ theme or web for shortcut graphics.
 Responsibilities:
 
 - keep asset use local-only,
-- provide tracked Tahoe-branded placeholder PNGs by default,
+- provide tracked Orange-branded placeholder PNGs by default,
 - resolve desktop shortcut icons from each parsed `.desktop` file's `Icon=`
   name,
 - validate loaded image dimensions,
@@ -82,24 +82,24 @@ Settings app responsibilities include appearance, desktop icon, widget, Dock,
 cursor theme, and cursor size controls, writing config changes without a
 compositor restart.
 
-About app responsibilities include showing the Tahoe/macOS version and build
+About app responsibilities include showing the Orange version/build
 affordance, model, real chip and memory values, and theme-style window
-controls, launched from the Apple-style menu.
+controls, launched from the system menu.
 
 ### Bundled GTK Theme
 
 Expanded upstream release themes under `themes/MacTahoe-Light/` and
 `themes/MacTahoe-Dark/` provide the installed GTK theme payload used by launched
-GTK clients. CSS files under `themes/TahoeGTK/` remain as lightweight fallback
+GTK clients. CSS files under `themes/OrangeGTK/` remain as lightweight fallback
 themes. The `themes/MacTahoe-gtk-theme` submodule bundles the upstream MacTahoe
 source for provenance and updates. The compositor exports GTK environment
 variables for launched clients.
 
 ### GTK Icon Theme
 
-`themes/TahoeIcons/` contains icon-theme metadata and expected app icon names.
+`themes/OrangeIcons/` contains icon-theme metadata and expected app icon names.
 Local PNGs from `./assets/` can be copied into this theme so GTK clients and
-the Settings app can resolve the same Tahoe icon names used by the shell.
+the Settings app can resolve the same Orange icon names used by the shell.
 
 ### View Management And Input
 
@@ -140,7 +140,7 @@ Responsibilities:
 7. Shell click handlers launch commands from Dock definitions or parsed XDG
    `.desktop` entries.
 8. Desktop drag state updates the in-memory config while dragging and saves
-   `tahoe.conf` on release.
+   `orange.conf` on release.
 9. Right-click hit testing opens a shell context menu above a Dock item, near a
    widget, near a desktop item, or at the empty desktop cursor location.
 

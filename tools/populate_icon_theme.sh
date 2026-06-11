@@ -2,17 +2,17 @@
 set -eu
 
 src="${1:-assets}"
-theme="${2:-themes/TahoeIcons}"
+theme="${2:-themes/OrangeIcons}"
 
 mkdir -p "$theme/apps/256x256" "$theme/status/64x64" "$theme/places/256x256"
 
 icon_src="$src/icons"
 status_src="$src/status"
-if [ ! -d "$icon_src" ] && [ -d "$src/apple/icons" ]; then
-	icon_src="$src/apple/icons"
+if [ ! -d "$icon_src" ] && [ -d "$src/private/icons" ]; then
+	icon_src="$src/private/icons"
 fi
-if [ ! -d "$status_src" ] && [ -d "$src/apple/status" ]; then
-	status_src="$src/apple/status"
+if [ ! -d "$status_src" ] && [ -d "$src/private/status" ]; then
+	status_src="$src/private/status"
 fi
 
 if [ -d "$icon_src" ]; then

@@ -1,11 +1,12 @@
-#include "tahoe/config.h"
-#include "tahoe/shell.h"
+#include "orange/config.h"
+#include "orange/shell.h"
 
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define VISUAL_WIDTH 2880
 #define VISUAL_HEIGHT 1800
@@ -26,19 +27,43 @@ static struct color pixel_from_u32(uint32_t pixel) {
 	};
 }
 
-static void test_context_menu_glass_and_scaling(void) {
-	struct tahoe_config config;
-	tahoe_config_set_defaults(&config);
+static cairo_surface_t *solid_icon_surface(void) {
+	cairo_surface_t *surface = cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, 64, 64);
+	cairo_t *cr = cairo_create(surface);
+	cairo_set_source_rgba(cr, 0.95, 0.12, 0.18, 1.0);
+	cairo_paint(cr);
+	cairo_destroy(cr);
+	cairo_surface_flush(surface);
+	return surface;
+}
 
-	struct tahoe_shell_layout small;
-	struct tahoe_shell_layout large;
-	tahoe_shell_layout_compute(1440, 900, false, &config, 0, &small);
-	tahoe_shell_layout_set_context_menu(&small,
-		TAHOE_CONTEXT_MENU_DESKTOP, -1, 720, 450);
-	tahoe_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0,
+static struct color pixel_at(
+		uint32_t *pixels,
+		int stride,
+		int x,
+		int y) {
+	return pixel_from_u32(
+		pixels[(size_t)y * (size_t)(stride / 4) + (size_t)x]);
+}
+
+static bool is_solid_icon_pixel(struct color color) {
+	return color.a > 220 && color.r > 200 && color.g < 80 && color.b < 100;
+}
+
+static void test_context_menu_glass_and_scaling(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+
+	struct orange_shell_layout small;
+	struct orange_shell_layout large;
+	orange_shell_layout_compute(1440, 900, false, &config, 0, &small);
+	orange_shell_layout_set_context_menu(&small,
+		ORANGE_CONTEXT_MENU_DESKTOP, -1, 720, 450);
+	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0,
 		&large);
-	tahoe_shell_layout_set_context_menu(&large,
-		TAHOE_CONTEXT_MENU_DESKTOP, -1, 1440, 900);
+	orange_shell_layout_set_context_menu(&large,
+		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900);
 	assert(large.context_menu_panel.width > small.context_menu_panel.width);
 	assert(large.context_menu_items[0].height >
 		small.context_menu_items[0].height);
@@ -47,26 +72,26 @@ static void test_context_menu_glass_and_scaling(void) {
 	int stride = VISUAL_WIDTH * 4;
 	uint32_t *pixels = calloc((size_t)VISUAL_HEIGHT, (size_t)stride);
 	assert(pixels != NULL);
-	struct tahoe_shell_state state = {
-		.apple_menu_open = false,
+	struct orange_shell_state state = {
+		.system_menu_open = false,
 		.hot_dock_index = -1,
 		.dock_drag_index = -1,
 		.dock_drag_insert_before = -1,
 		.now = 1757638380,
 		.assets = NULL,
 		.config = &config,
-		.context_menu_kind = TAHOE_CONTEXT_MENU_DESKTOP,
+		.context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP,
 		.context_menu_index = -1,
 		.context_menu_cursor_x = 1440,
 		.context_menu_cursor_y = 900,
 	};
-	const struct tahoe_shell_draw_options options = {
+	const struct orange_shell_draw_options options = {
 		.draw_wallpaper = false,
 	};
-	tahoe_shell_draw_with_options(pixels, VISUAL_WIDTH, VISUAL_HEIGHT,
+	orange_shell_draw_with_options(pixels, VISUAL_WIDTH, VISUAL_HEIGHT,
 		stride, &state, &options);
 
-	struct tahoe_rect panel = large.context_menu_panel;
+	struct orange_rect panel = large.context_menu_panel;
 	bool found_translucent_glass = false;
 	for (int y = panel.y + 12; y < panel.y + panel.height - 12; y++) {
 		for (int x = panel.x + panel.width - 30;
@@ -86,8 +111,78 @@ static void test_context_menu_glass_and_scaling(void) {
 	free(pixels);
 }
 
+static void test_dock_magnification_wave_paints_above_base_icons(void) {
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *pixels = calloc((size_t)height, (size_t)stride);
+	assert(pixels != NULL);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config, 0, &layout);
+	int hot = 5;
+	assert(layout.dock_item_count > hot + 1);
+	struct orange_rect hot_base = layout.dock_items[hot];
+	struct orange_rect neighbor_base = layout.dock_items[hot + 1];
+
+	cairo_surface_t *icon = solid_icon_surface();
+	struct orange_assets assets = {0};
+	assets.dock_icon_count = orange_shell_dock_count();
+	for (int i = 0; i < assets.dock_icon_count &&
+			i < ORANGE_ASSET_DOCK_ICON_MAX; i++) {
+		assets.dock_icons[ORANGE_ASSET_ICON_LIGHT][i] = icon;
+		assets.dock_icons[ORANGE_ASSET_ICON_DARK][i] = icon;
+	}
+
+	struct orange_shell_state state = {
+		.system_menu_open = false,
+		.hot_dock_index = hot,
+		.dock_pointer_x = hot_base.x + hot_base.width / 2,
+		.dock_pointer_y = hot_base.y + hot_base.height / 2,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1757638380,
+		.assets = &assets,
+		.config = &config,
+	};
+	const struct orange_shell_draw_options options = {
+		.draw_wallpaper = false,
+	};
+
+	config.dock_magnification = false;
+	orange_shell_draw_with_options(pixels, width, height, stride,
+		&state, &options);
+	struct color hot_plain = pixel_at(pixels, stride,
+		hot_base.x + hot_base.width / 2, hot_base.y - 3);
+	struct color neighbor_plain = pixel_at(pixels, stride,
+		neighbor_base.x + neighbor_base.width / 2, neighbor_base.y - 3);
+
+	memset(pixels, 0, (size_t)height * (size_t)stride);
+	config.dock_magnification = true;
+	orange_shell_draw_with_options(pixels, width, height, stride,
+		&state, &options);
+	struct color hot_magnified = pixel_at(pixels, stride,
+		hot_base.x + hot_base.width / 2, hot_base.y - 3);
+	struct color neighbor_magnified = pixel_at(pixels, stride,
+		neighbor_base.x + neighbor_base.width / 2, neighbor_base.y - 3);
+
+	assert(!is_solid_icon_pixel(hot_plain));
+	assert(!is_solid_icon_pixel(neighbor_plain));
+	assert(is_solid_icon_pixel(hot_magnified));
+	assert(is_solid_icon_pixel(neighbor_magnified));
+
+	cairo_surface_destroy(icon);
+	free(pixels);
+}
+
 int main(void) {
 	test_context_menu_glass_and_scaling();
+	test_dock_magnification_wave_paints_above_base_icons();
 	puts("shell visual tests passed");
 	return 0;
 }

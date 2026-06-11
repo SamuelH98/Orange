@@ -4,22 +4,22 @@
 
 ### Project Name
 
-Tahoe
+Orange
 
 ### Goal
 
-Build a C/wlroots Linux compositor prototype that recreates the supplied macOS
-Tahoe 26 desktop reference and behaves like a usable macOS-style shell, with
-optional local Apple asset overrides and Vulkan renderer support through
+Build Orange, a C/wlroots Linux compositor prototype that follows the supplied
+macOS-like desktop reference and behaves like a usable macOS-like shell,
+with optional local private asset overrides and Vulkan renderer support through
 wlroots.
 
 ### Current Status
 
 Functional shell prototype is implemented and validated locally. It includes a
-wlroots compositor, reference-sized Tahoe shell geometry, transparent menu bar,
-compact macOS-style Dock layout, scalable widgets, basic xdg-shell window
+wlroots compositor, reference-sized shell geometry, transparent menu bar,
+compact macOS-like Dock layout, scalable widgets, basic xdg-shell window
 management, Dock launchers, XDG `.desktop` desktop launchers with drag/context
-menus, keyboard shortcuts, cursor customization, local Tahoe asset sourcing,
+menus, keyboard shortcuts, cursor customization, local Orange asset sourcing,
 GTK theme/icon theme scaffolding, PNG render export, foreground-only visual
 smoke coverage, bundled installed MacTahoe GTK themes plus upstream source, and
 headless one-shot validation including custom startup arguments.
@@ -47,11 +47,11 @@ scaling, and a render smoke test.
 - `meson setup build` passed.
 - `ninja -C build` passed.
 - `meson test -C build --print-errorlogs` passed.
-- `build/tahoe-render-shell /tmp/tahoe-shell.png` passed.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once`
+- `build/orange-render-shell /tmp/orange-shell.png` passed.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once`
   passed and rendered one headless frame.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once
-  --width 1440 --height 900 --assets assets --config /tmp/tahoe-custom.conf
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
+  --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf
   --desktop-dir assets/desktop --themes .` passed and rendered one headless
   custom-size frame.
 
@@ -68,19 +68,19 @@ Meson startup smoke test for custom headless compositor arguments.
 
 - `ninja -C build` passed cleanly.
 - `meson test -C build --print-errorlogs` passed.
-- `build/tahoe-render-shell /tmp/tahoe-shell.png` passed.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once`
+- `build/orange-render-shell /tmp/orange-shell.png` passed.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once`
   passed and rendered one headless frame.
 
 #### Implemented
 
-- Persistent `tahoe.conf` model for appearance, desktop icon, and Dock settings.
+- Persistent `orange.conf` model for appearance, desktop icon, and Dock settings.
 - Conditional GTK4 Settings app source for appearance, desktop icon, and Dock
   controls, with GTK headerbar controls requested on the left and default size
   clamped to monitor geometry.
-- Conditional GTK4 About This Mac app source launched from Apple menu >
-  About Tahoe, using a portrait macOS Tahoe-style reference layout with custom
-  macOS traffic-light window controls (close/minimize/maximize), no GTK title
+- Conditional GTK4 About Orange app source launched from system menu >
+  About Orange, using a portrait About-style reference layout with custom
+  traffic-light window controls (close/minimize/maximize), no GTK title
   bar, top area draggable via gesture-initiated surface move, laptop
   illustration, centered model/year, compact local chip/memory rows, More Info
   action, and regulatory footer. It caps at 72% of the reference design size
@@ -93,7 +93,7 @@ Meson startup smoke test for custom headless compositor arguments.
 - Light/dark shell appearance switching and MacTahoe GTK theme environment
   export.
 - Bundled GTK CSD theme CSS with traffic-light window control styling.
-- Bundled `TahoeIcons` GTK icon theme metadata plus a population script.
+- Bundled `OrangeIcons` GTK icon theme metadata plus a population script.
 - Widget registry layer with Calendar and Weather widgets pinned under client
   windows.
 - Deterministic `.desktop` parser and right-side desktop shortcuts from
@@ -105,16 +105,17 @@ Meson startup smoke test for custom headless compositor arguments.
 - Foreground visual testing checks context-menu glass/translucency and scaling
   without requiring a checked-in visual reference image.
 
-### Cursor, Menus, And Tahoe Assets
+### Cursor, Menus, And Orange Assets
 
 #### Implemented
 
-- Cursor theme and cursor size settings in `tahoe.conf`.
+- Cursor theme and cursor size settings in `orange.conf`.
 - GTK Settings app controls for cursor theme and cursor size.
 - Config-driven `wlr_xcursor_manager` setup and `XCURSOR_*` environment export.
-- Tracked Tahoe placeholder PNG asset pack under `assets/` using `T` branding.
-- Asset generator script: `tools/generate_tahoe_assets.sh`.
-- Larger white Tahoe menu logo in the transparent menu bar.
+- Tracked Orange placeholder PNG asset pack under `assets/` using `O` branding.
+- Asset generator script: `tools/generate_orange_assets.sh`.
+- Generated 5120x3200 light/dark Orange wallpapers with a centered `O` mark.
+- Larger white Orange menu logo in the transparent menu bar.
 - Appearance-aware status icon tinting; status glyphs render light in dark mode.
 - Status strip icons now pack leftward from measured clock text in fixed visual
   slots, with tighter generated battery/Wi-Fi/search/control/weather masks.
@@ -141,32 +142,32 @@ Meson startup smoke test for custom headless compositor arguments.
 - `.desktop`-required desktop icon layout test.
 - Foreground context-menu glass/translucency and scaling test.
 
-### macOS Tahoe 26 Context Menus & Apple Menu
+### macOS-Like Context Menus & System Menu
 
 #### Implemented
 
-- Full macOS Tahoe Apple menu (10 items) with separator lines between groups:
-  About Tahoe, System Settings..., App Store..., Recent Items,
+- Full macOS-like system menu for Orange (10 items) with separator lines between groups:
+  About Orange, System Settings..., Software..., Recent Items,
   Force Quit..., Sleep, Restart..., Shut Down..., Lock Screen, Log Out.
 - System actions: `systemctl suspend/reboot/poweroff`,
   `xdg-screensaver lock` for Lock Screen, `wl_display_terminate` for Log Out.
 - Dock right-click context menu (5 items, 2 separators): Open,
-  Show in Finder, Remove from Dock, Open at Login, Dock Settings.
+  Show in Files, Remove from Dock, Open at Login, Dock Settings.
 - Desktop background right-click context menu (8 items, 2 separators):
   New Folder, Get Info, Use Stacks, Sort By, Clean Up By,
   Show View Options, Change Desktop Background..., Edit Widgets.
 - Widget right-click context menu (5 items, 2 separators): Edit Widget, Small,
   Medium, Large, Remove Widget.
 - Desktop icon right-click context menu (9 items, 3 separators):
-  Open, Show in Finder, Copy, Get Info, Rename, Duplicate,
+  Open, Show in Files, Copy, Get Info, Rename, Duplicate,
   Quick Look, Share, Move to Trash.
-- `TAHOE_CONTEXT_MENU_WIDGET` enum for widget menus.
-- `TAHOE_HIT_WIDGET` hit kind so widgets no longer behave like wallpaper.
-- `TAHOE_CONTEXT_MENU_DESKTOP_ICON` enum for icon vs. background menus.
-- `TAHOE_HIT_DESKTOP` hit kind for empty desktop background detection.
+- `ORANGE_CONTEXT_MENU_WIDGET` enum for widget menus.
+- `ORANGE_HIT_WIDGET` hit kind so widgets no longer behave like wallpaper.
+- `ORANGE_CONTEXT_MENU_DESKTOP_ICON` enum for icon vs. background menus.
+- `ORANGE_HIT_DESKTOP` hit kind for empty desktop background detection.
 - Separator line support (`separator_before[]` arrays with flags in layout).
 - Cursor-position-driven desktop background menu placement.
-- Context menus and the Apple menu use the same glass material family as the
+- Context menus and the system menu use the same glass material family as the
   Dock, with text and item geometry scaled from output resolution.
 
 #### Tests Added
@@ -175,7 +176,7 @@ Meson startup smoke test for custom headless compositor arguments.
 - Widget hit/menu coverage and hidden-widget hit exclusion.
 - Desktop icon context menu (DESKTOP_ICON, item 0, 9 items, 3 separators).
 - Desktop background context menu at cursor.
-- Desktop background hit test (TAHOE_HIT_DESKTOP on empty desktop area).
+- Desktop background hit test (ORANGE_HIT_DESKTOP on empty desktop area).
 - Config load/save coverage for widget visibility and size.
 - Foreground visual test for context-menu glass/scaling.
 
@@ -183,35 +184,40 @@ Meson startup smoke test for custom headless compositor arguments.
 
 ### Active Feature
 
-Project renamed to Tahoe. Reference-image testing removed. Widget shortcut
-menus, context-menu glass, Dock ordering, status icon refinement, bundled
-installed MacTahoe themes and source, resolution-scaled screenshot-matched GTK
-About app source, left-side GTK4 utility controls, and foreground visual tests
-complete. Custom-argument compositor startup validation is now covered by Meson.
+Project is renamed to Orange across source, public headers, Meson targets,
+local fallback themes, placeholder assets, docs, default config paths, and GTK
+app IDs. About Orange dark mode, red/gray/gray traffic-light controls with
+slightly wider spacing, fixed-center Dock magnification behavior, and tracked
+high-resolution light/dark Orange wallpapers are implemented.
 
 ### Progress
 
-Implementation compiles, both GTK utility app help paths run, the original
-4 Meson tests pass, the non-reference visual test passes, rendered status-strip
-crops were checked with both default and private Apple assets, bundled MacTahoe
-GTK4 CSS exists, and headless compositor one-shot validation passes.
+Current validation passes:
 
-Current validation also passes all 5 Meson tests, including
-`headless-custom-startup`, and a manual 1440x900 custom-size headless one-shot
-run exits cleanly.
+- `meson setup build --reconfigure`
+- `ninja -C build`
+- `meson test -C build --print-errorlogs`
+- `build/orange-render-shell /tmp/orange-shell.png`
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once`
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
+  --width 1440 --height 900 --assets assets --config orange.conf
+  --desktop-dir assets/desktop --themes .`
 
 The About app now uses the tall portrait reference proportions, shows real
-local chip and memory values without a serial-number row, and uses 16px
-custom-drawn MacTahoe-style traffic-light controls with wider spacing. The
-normal state is red/gray/gray; gray buttons stay blank on hover, while the red
-close control shows its glyph on hover/press. The portrait window is capped at
-72% design scale so it stays skinny without dominating a 1440x900 desktop.
+local chip and memory values without a serial-number row, follows the bundled
+MacTahoe dark GTK palette in dark mode, and uses 16px custom-drawn
+traffic-light controls with a 23px titlebutton step. The active state uses
+red/gray/gray, inactive/backdrop uses gray, and only the red close button shows
+a hover/press glyph. The portrait window is capped at 72% design scale so it
+stays skinny without dominating a 1440x900 desktop.
 
 Major shell UI surfaces now share the 0.50-1.60 resolution scale used by the
-menu bar, Dock, desktop icons, Apple menu dropdowns, and context menus. Dock
-hover feedback now uses magnification plus a label bubble instead of a circular
-halo, Dock drag order normalizes invalid visible entries to avoid blank slots,
-and Dock context menus anchor above the Dock glass instead of overlapping it.
+menu bar, Dock, desktop icons, system menu dropdowns, and context menus. Dock
+hover feedback uses fixed-slot magnification plus a label bubble instead of a
+circular halo, so neighboring icons no longer slide sideways when one icon is
+hovered. Dock drag order normalizes invalid visible entries to avoid blank
+slots, and Dock context menus anchor above the Dock glass instead of overlapping
+it.
 
 Output rendering now throttles scene commits while a previous output commit is
 pending presentation, which prevents repeated wlroots swapchain-buffer
@@ -228,7 +234,7 @@ path.
 Interactive nested Wayland runs are expected to keep running after logging
 `running on Wayland display wayland-N`; use `--headless --once` for startup
 tests that should exit by themselves.
-Pixel-level 1:1 depends on the ignored private Apple assets. Automated visual
+Pixel-level matching depends on the ignored private user assets. Automated visual
 coverage intentionally avoids checked-in reference-image comparison.
 More faithful behavior would require real app/menu integration, richer
 animation, and full desktop services.
@@ -237,11 +243,11 @@ animation, and full desktop services.
 
 ## Next Actions
 
-1. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/tahoe`.
-2. Replace generated Tahoe placeholder PNGs under `assets/icons/` and
-   `assets/status/` with final repo-safe GitHub-sourced Tahoe assets.
+1. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/orange`.
+2. Replace generated Orange placeholder PNGs under `assets/icons/` and
+   `assets/status/` with final repo-safe GitHub-sourced Orange assets.
 3. Populate the GTK icon pack with
-   `./tools/populate_icon_theme.sh assets themes/TahoeIcons` after local
+   `./tools/populate_icon_theme.sh assets themes/OrangeIcons` after local
    assets are present.
 
 ---
@@ -254,15 +260,15 @@ None blocking for the prototype.
 
 ### Known Issues
 
-Apple proprietary assets are not included. GTK4 development headers are
-installed in this environment now, and both `tahoe-settings` and `tahoe-about`
+Proprietary third-party assets are not included. GTK4 development headers are
+installed in this environment now, and both `orange-settings` and `orange-about`
 build here. They remain conditional for systems without GTK4 development files.
 
 ### Fixed
 
 - **Vulkan dependency made optional**: The `vulkan` dependency in `meson.build`
   was hard-required, preventing builds on systems without the Vulkan SDK.
-  Changed to `required: false` with a `TAHOE_HAVE_VULKAN` preprocessor guard
+  Changed to `required: false` with a `ORANGE_HAVE_VULKAN` preprocessor guard
   around the `wlr_renderer_is_vk()` runtime check. The compositor now builds
   and runs with any renderer (Pixman, GLES2, Vulkan) without requiring the
   Vulkan SDK at build time.
@@ -273,12 +279,12 @@ build here. They remain conditional for systems without GTK4 development files.
   (2) in `handle_new_output()` so hotplugged outputs also get the theme.
 - **xdg-shell capability assertion fixed**: GTK4 clients can bind xdg-shell v3,
   while `wlr_xdg_toplevel_set_wm_capabilities()` requires the toplevel
-  capability protocol version. Tahoe now creates xdg-shell v5 and only advertises
+  capability protocol version. Orange now creates xdg-shell v5 and only advertises
   window-manager capabilities when the client resource version supports them.
-- **GTK utility controls moved left**: Tahoe's GTK4 utility apps request
+- **GTK utility controls moved left**: Orange's GTK4 utility apps request
   `close,minimize,maximize:` through GTK decoration layout; the Settings app
   uses a GTK headerbar with left-aligned decoration layout, while the About app
-  uses custom macOS-style traffic-light buttons (no GTK title bar) with
+  uses custom macOS-like traffic-light buttons (no GTK title bar) with
   gesture-driven window move for a more native appearance.
 - **GTK utility sizing made monitor-aware**: The About app scales its compact
   reference layout to the current monitor (up to 2x on high-resolution displays)
@@ -289,17 +295,17 @@ build here. They remain conditional for systems without GTK4 development files.
   and explicit asset/config/desktop/theme arguments. Output initialization uses
   wlroots' expected render-init-before-commit order and falls back to fixed
   output modes when a backend rejects the requested custom size.
-- **About app portrait layout matched**: The About This Mac window now uses the
+- **About app portrait layout matched**: The About Orange window now uses the
   tall portrait reference proportions, with the laptop, title, local hardware
   rows, More Info button, and footer spaced vertically like the supplied
-  screenshot. Its custom traffic-light buttons use the bundled MacTahoe 16px
-  titlebutton geometry, wider spacing, red/gray/gray normal colors, a close
-  glyph only on the red hover/pressed state, and gray inactive/backdrop state.
+  screenshot. Its custom traffic-light buttons use 16px button geometry, a 23px
+  step, active red/gray/gray colors, no hover effect on the gray buttons, gray
+  inactive/backdrop state, and MacTahoe dark GTK colors.
 - **About hardware rows made local**: The About app reads the local CPU label
   from `/proc/cpuinfo`, memory from `sysinfo(2)`, ellipsizes long chip names,
   and removes the serial-number row.
 - **Resolution-scaled shell surfaces tightened**: Menu bar, Dock, desktop
-  icons, Apple menu dropdowns, and context menus are covered by layout tests
+  icons, system menu dropdowns, and context menus are covered by layout tests
   comparing 1440x900 and 2880x1800 geometry.
 - **Dock drag blank slot fixed**: Visible Dock order entries are normalized to
   the launcher count, drag insert targets are clamped to visible items, and the
@@ -322,16 +328,16 @@ The same `no DRM FD available` failure can occur in WSLg with the Wayland
 backend even when the Windows host has a discrete GPU, because WSLg GPU
 acceleration does not guarantee the DRM render-node path wlroots Vulkan needs.
 The committed procedural background fallback and any missing local PNGs are not
-pixel-identical to Apple proprietary assets; exact local visual matching depends
-on ignored asset overrides.
+pixel-identical to proprietary third-party assets; exact local visual matching
+depends on ignored asset overrides.
 
 ---
 
 ## Resume Instructions
 
-Continue from the committed implementation. Target wlroots 0.17.1, keep Apple
+Continue from the committed implementation. Target wlroots 0.17.1, keep private
 assets and populated GTK icon PNGs ignored, validate with
 `meson test -C build --print-errorlogs` and
-`WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once`,
+`WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once`,
 plus the custom-size one-shot command documented in README, then test
 interactively under WSLg or nested Wayland.

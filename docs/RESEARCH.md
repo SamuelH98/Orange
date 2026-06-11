@@ -12,7 +12,7 @@
 - `gcc`: 13.3.0
 - `gtk4`: 4.14.5
 - `gtk+-3.0`: not installed in this environment
-- `convert` / ImageMagick: installed and used to generate repo-safe Tahoe
+- `convert` / ImageMagick: installed and used to generate repo-safe Orange
   placeholder PNG assets
 
 ## wlroots Notes
@@ -35,9 +35,9 @@ descriptor in that mode; headless validation uses Pixman.
 
 ## Visual Reference Notes
 
-Apple describes the Tahoe-era design as using "Liquid Glass": translucent UI
-materials that adapt to surrounding content and include real-time highlights.
-For this prototype, that is approximated with:
+The visual reference uses Apple's Liquid Glass-era design language:
+translucent UI materials that adapt to surrounding content and include
+real-time highlights. For this prototype, that is approximated with:
 
 - blurred/translucent glass panels,
 - rounded widgets and dock,
@@ -45,10 +45,10 @@ For this prototype, that is approximated with:
 - softly tinted icon backgrounds,
 - wallpaper-colored transparency.
 
-The same material treatment is used for context menus and the Apple menu
+The same material treatment is used for context menus and the system menu
 popover. Apple's current HIG positions Liquid Glass as the system material for
 foreground controls and navigation surfaces, and its menu/action components are
-part of that foreground UI layer. The shell therefore renders dock, Apple menu,
+part of that foreground UI layer. The shell therefore renders dock, system menu,
 and context menu panels through glass material helpers instead of opaque menu
 panels.
 
@@ -66,12 +66,11 @@ menu check for scaled geometry and translucent glass, without comparing against
 a checked-in visual reference image.
 
 Apple documents About This Mac as an Apple-menu window that always includes the
-macOS name and version, with build details revealed from the version text. The
+system name and version, with build details revealed from the version text. The
 Mac user guide says the Mac model appears at the top, hardware details such as
-chip and serial number sit immediately below, and macOS version information
-appears below that. Apple's June 3, 2026 Tahoe update notes list macOS Tahoe
-`26.5.1`, so the bundled Tahoe About app uses that version string and toggles
-to the local Tahoe build string.
+chip and serial number sit immediately below, and version information appears
+below that. The bundled Orange About app follows that structure while showing
+the local Orange build string instead of claiming to be an Apple OS release.
 
 The upstream `vinceliuice/MacTahoe-gtk-theme` project describes itself as a
 macOS Tahoe-like GTK theme for Linux desktops, based on WhiteSur. Its README
@@ -81,16 +80,15 @@ license, commit history, and updates, and expands the upstream `MacTahoe-Light`
 and `MacTahoe-Dark` release archives under `themes/` so an installed theme
 payload is available without running the installer.
 
-The compact TahoeGTK GTK4 shim styles GTK `windowcontrols` with 12px minimum
-controls and 4px side margins, while the bundled MacTahoe metacity titlebutton
-assets are 16x16 SVGs with a 14px colored circle, hover glyphs, pressed
-variants, and gray backdrop variants. Tahoe's custom About app controls use the
-16px asset geometry and draw the hover/backdrop states directly so they match
-the theme behavior without depending on loading external SVG assets at runtime.
-The Tahoe About reference image keeps only the close control red in the normal
-state, with the minimize and maximize controls gray, so the custom controls use
-that red/gray/gray palette. The gray controls stay blank on hover, while the
-red close control reveals its close glyph on hover or press.
+The compact OrangeGTK GTK4 shim styles GTK `windowcontrols` with 12px minimum
+controls and 4px side margins, while the bundled MacTahoe titlebutton assets
+are 16x16 SVGs with 14px colored circles, hover glyphs, pressed variants, and
+gray backdrop variants. Orange's custom About app controls use 16px geometry,
+a 23px button step, active red/gray/gray colors, a hover/pressed glyph only on
+the red close button, and gray inactive/backdrop colors, drawing the states
+directly without depending on external SVG assets at runtime. The About dark
+palette uses the bundled MacTahoe dark GTK named colors:
+`window_bg_color #333333`, `window_fg_color #dadada`, and `view_bg_color #242424`.
 
 Apple's Desktop & Dock settings documentation describes Dock size as
 slider-controlled, Dock magnification as icon magnification when the pointer
@@ -111,7 +109,7 @@ plus a compact label bubble for hover feedback.
   expected WSLg fallback.
 - Running a real compositor outside headless mode may require a nested Wayland
   or X11 session, or a TTY with seat permissions.
-- Exact Apple assets cannot be redistributed in this repository.
+- Exact proprietary vendor assets cannot be redistributed in this repository.
 - The native GTK Settings and About apps are implemented conditionally so the
   compositor can still build on systems without GTK development headers.
 - Client-side traffic-light controls depend on GTK client support for CSD and
@@ -120,15 +118,15 @@ plus a compact label bubble for hover feedback.
 
 ## References
 
-- Apple newsroom: macOS Tahoe design and Liquid Glass announcement.
-- Apple macOS Tahoe product page for visual layout reference.
+- Apple newsroom: Liquid Glass software design announcement.
+- Apple macOS design/product pages for visual layout reference.
 - Apple Human Interface Guidelines: Liquid Glass material guidance and
   menu/action component guidance.
 - Apple Support, "Add and customize widgets on Mac":
   https://support.apple.com/guide/mac-help/add-and-customize-widgets-mchl52be5da5/mac
 - Apple Support, "Find out which macOS your Mac is using":
   https://support.apple.com/109033
-- Apple Support, "What's new in the updates for macOS Tahoe 26":
+- Apple Support, macOS update notes:
   https://support.apple.com/en-au/122868
 - Apple Support, "Find the Getting Started guide for your Mac":
   https://support.apple.com/guide/mac-help/mchl30bc42cb/mac

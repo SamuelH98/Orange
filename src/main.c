@@ -1,4 +1,4 @@
-#include "tahoe/compositor.h"
+#include "orange/compositor.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,13 +11,13 @@ static void usage(const char *argv0) {
 }
 
 int main(int argc, char **argv) {
-	struct tahoe_options options = {
+	struct orange_options options = {
 		.headless = false,
 		.once = false,
 		.width = 1920,
 		.height = 1080,
 		.asset_root = "assets",
-		.config_path = "tahoe.conf",
+		.config_path = "orange.conf",
 		.desktop_entry_dir = "assets/desktop",
 		.theme_root = ".",
 	};
@@ -53,5 +53,5 @@ int main(int argc, char **argv) {
 		return 2;
 	}
 
-	return tahoe_compositor_run(&options);
+	return orange_compositor_run(&options);
 }

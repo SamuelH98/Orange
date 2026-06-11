@@ -1,4 +1,4 @@
-#include "tahoe/desktop_entry.h"
+#include "orange/desktop_entry.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -33,9 +33,9 @@ static bool has_desktop_suffix(const char *name) {
 	return len > 8 && strcmp(name + len - 8, ".desktop") == 0;
 }
 
-bool tahoe_desktop_entry_load(
+bool orange_desktop_entry_load(
 		const char *path,
-		struct tahoe_desktop_entry *entry) {
+		struct orange_desktop_entry *entry) {
 	memset(entry, 0, sizeof(*entry));
 	FILE *file = fopen(path, "r");
 	if (file == NULL) {
@@ -79,9 +79,9 @@ bool tahoe_desktop_entry_load(
 	return entry->name[0] != '\0' && entry->exec[0] != '\0';
 }
 
-bool tahoe_desktop_entry_load_all(
+bool orange_desktop_entry_load_all(
 		const char *directory,
-		struct tahoe_desktop_entry *entries,
+		struct orange_desktop_entry *entries,
 		size_t capacity,
 		size_t *count) {
 	*count = 0;
@@ -124,7 +124,7 @@ bool tahoe_desktop_entry_load_all(
 	for (size_t i = 0; i < name_count && *count < capacity; i++) {
 		char path[4096];
 		snprintf(path, sizeof(path), "%s/%s", directory, names[i]);
-		if (tahoe_desktop_entry_load(path, &entries[*count])) {
+		if (orange_desktop_entry_load(path, &entries[*count])) {
 			(*count)++;
 		}
 	}

@@ -6,11 +6,15 @@
 #define ABOUT_DESIGN_WIDTH 560
 #define ABOUT_DESIGN_HEIGHT 974
 #define ABOUT_MAX_SCALE 0.72
+#ifndef ORANGE_PROJECT_VERSION
+#define ORANGE_PROJECT_VERSION "0.1.0"
+#endif
 #define TRAFFIC_LIGHT_DESIGN_SIZE 16
 #define TRAFFIC_LIGHT_DESIGN_Y 18
 #define TRAFFIC_LIGHT_1_X 18
-#define TRAFFIC_LIGHT_2_X 46
-#define TRAFFIC_LIGHT_3_X 74
+#define TRAFFIC_LIGHT_STEP 23
+#define TRAFFIC_LIGHT_2_X (TRAFFIC_LIGHT_1_X + TRAFFIC_LIGHT_STEP)
+#define TRAFFIC_LIGHT_3_X (TRAFFIC_LIGHT_2_X + TRAFFIC_LIGHT_STEP)
 
 struct about_app {
 	GtkApplication *app;
@@ -74,36 +78,71 @@ static struct about_metrics about_metrics_for_display(void) {
 	};
 }
 
-static void apply_css(double scale) {
+static bool about_should_use_dark(void) {
+	const char *appearance = g_getenv("ORANGE_APPEARANCE");
+	if (appearance != NULL && appearance[0] != '\0') {
+		return g_ascii_strcasecmp(appearance, "dark") == 0;
+	}
+
+	const char *theme = g_getenv("GTK_THEME");
+	if (theme != NULL &&
+			(g_strrstr(theme, "Dark") != NULL ||
+			 g_strrstr(theme, "dark") != NULL)) {
+		return true;
+	}
+
+	GtkSettings *settings = gtk_settings_get_default();
+	if (settings != NULL &&
+			g_object_class_find_property(G_OBJECT_GET_CLASS(settings),
+				"gtk-application-prefer-dark-theme") != NULL) {
+		gboolean prefer_dark = FALSE;
+		g_object_get(settings,
+			"gtk-application-prefer-dark-theme",
+			&prefer_dark,
+			NULL);
+		return prefer_dark;
+	}
+	return false;
+}
+
+static void apply_css(double scale, bool dark) {
 	GtkCssProvider *provider = gtk_css_provider_new();
+	const char *root_bg = dark ? "#333333" : "#fbfbfb";
+	const char *primary = dark ? "#dadada" : "#252527";
+	const char *secondary = dark ? "#9a9996" : "#b8b8ba";
+	const char *spec_key = dark ? "#dadada" : "#242426";
+	const char *spec_value = dark ? "#b8b8ba" : "#7f7f83";
+	const char *button_bg = dark ? "#242424" : "#eeeeef";
+	const char *button_hover = dark ? "#3d3d3d" : "#e7e7e8";
+	const char *button_fg = dark ? "#dadada" : "#272729";
 	char *css = g_strdup_printf(
 		"window { background: transparent; }"
 		".about-root {"
-		"  background: #fbfbfb;"
-		"  color: #252527;"
+		"  background: %s;"
+		"  color: %s;"
 		"  border-radius: 22px;"
 		"  overflow: hidden;"
 		"}"
 		".model-title {"
-		"  color: #252527;"
+		"  color: %s;"
 		"  font-size: %dpx;"
 		"  font-weight: 800;"
 		"  letter-spacing: 0;"
 		"}"
 		".model-year {"
-		"  color: #b8b8ba;"
+		"  color: %s;"
 		"  font-size: %dpx;"
 		"  font-weight: 400;"
 		"  letter-spacing: 0;"
 		"}"
 		".spec-key {"
-		"  color: #242426;"
+		"  color: %s;"
 		"  font-size: %dpx;"
 		"  font-weight: 400;"
 		"  letter-spacing: 0;"
 		"}"
 		".spec-value {"
-		"  color: #7f7f83;"
+		"  color: %s;"
 		"  font-size: %dpx;"
 		"  font-weight: 400;"
 		"  letter-spacing: 0;"
@@ -114,14 +153,14 @@ static void apply_css(double scale) {
 		"  padding: 0;"
 		"  border: 0;"
 		"  border-radius: %dpx;"
-		"  background: #eeeeef;"
+		"  background: %s;"
 		"  background-image: none;"
 		"  box-shadow: none;"
-		"  color: #272729;"
+		"  color: %s;"
 		"  font-size: %dpx;"
 		"  font-weight: 400;"
 		"}"
-		"button.more-info:hover { background: #e7e7e8; }"
+		"button.more-info:hover { background: %s; }"
 		".traffic-light {"
 		"  min-width: %dpx;"
 		"  min-height: %dpx;"
@@ -133,28 +172,39 @@ static void apply_css(double scale) {
 		"  box-shadow: none;"
 		"}"
 		".regulatory {"
-		"  color: #b8b8ba;"
+		"  color: %s;"
 		"  font-size: %dpx;"
 		"  font-weight: 400;"
 		"  letter-spacing: 0;"
 		"}"
 		".copyright {"
-		"  color: #b8b8ba;"
+		"  color: %s;"
 		"  font-size: %dpx;"
 		"  font-weight: 400;"
 		"  letter-spacing: 0;"
 		"}",
+		root_bg,
+		primary,
+		primary,
 		scaled_px(scale, 42),
+		secondary,
 		scaled_px(scale, 21),
+		spec_key,
 		scaled_px(scale, 21),
+		spec_value,
 		scaled_px(scale, 21),
 		scaled_px(scale, 184),
 		scaled_px(scale, 48),
 		scaled_px(scale, 10),
+		button_bg,
+		button_fg,
 		scaled_px(scale, 24),
+		button_hover,
 		TRAFFIC_LIGHT_DESIGN_SIZE,
 		TRAFFIC_LIGHT_DESIGN_SIZE,
+		secondary,
 		scaled_px(scale, 12),
+		secondary,
 		scaled_px(scale, 12));
 	gtk_css_provider_load_from_string(provider, css);
 	gtk_style_context_add_provider_for_display(gdk_display_get_default(),
@@ -183,7 +233,7 @@ static void rounded_rectangle(
 
 static void draw_laptop(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data) {
 	(void)area;
-	(void)data;
+	bool dark = GPOINTER_TO_INT(data) != 0;
 
 	const double design_w = 420.0;
 	const double design_h = 222.0;
@@ -257,15 +307,21 @@ static void draw_laptop(GtkDrawingArea *area, cairo_t *cr, int width, int height
 
 	rounded_rectangle(cr, base_x, base_y, base_w, 17.0, 3.0);
 	cairo_pattern_t *base = cairo_pattern_create_linear(0.0, base_y, 0.0, base_y + 17.0);
-	cairo_pattern_add_color_stop_rgb(base, 0.0, 0.86, 0.87, 0.87);
-	cairo_pattern_add_color_stop_rgb(base, 0.45, 0.62, 0.63, 0.63);
-	cairo_pattern_add_color_stop_rgb(base, 1.0, 0.92, 0.92, 0.92);
+	if (dark) {
+		cairo_pattern_add_color_stop_rgb(base, 0.0, 0.56, 0.57, 0.60);
+		cairo_pattern_add_color_stop_rgb(base, 0.45, 0.30, 0.31, 0.34);
+		cairo_pattern_add_color_stop_rgb(base, 1.0, 0.68, 0.69, 0.72);
+	} else {
+		cairo_pattern_add_color_stop_rgb(base, 0.0, 0.86, 0.87, 0.87);
+		cairo_pattern_add_color_stop_rgb(base, 0.45, 0.62, 0.63, 0.63);
+		cairo_pattern_add_color_stop_rgb(base, 1.0, 0.92, 0.92, 0.92);
+	}
 	cairo_set_source(cr, base);
 	cairo_fill(cr);
 	cairo_pattern_destroy(base);
 
 	cairo_rectangle(cr, base_x + 7.0, base_y + 5.0, base_w - 14.0, 2.0);
-	cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.42);
+	cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, dark ? 0.22 : 0.42);
 	cairo_fill(cr);
 
 	cairo_move_to(cr, base_x + 149.0, base_y + 8.0);
@@ -513,8 +569,9 @@ static void draw_traffic_light(GtkDrawingArea *area, cairo_t *cr,
 	bool active_window = td->window == NULL || gtk_window_is_active(td->window);
 	GtkStateFlags flags = td->button != NULL ?
 		gtk_widget_get_state_flags(td->button) : GTK_STATE_FLAG_NORMAL;
-	bool pressed = (flags & GTK_STATE_FLAG_ACTIVE) != 0;
-	bool show_glyph = (td->hover || pressed) && td->kind == TRAFFIC_LIGHT_CLOSE;
+	bool active_button = td->kind == TRAFFIC_LIGHT_CLOSE;
+	bool pressed = active_button && (flags & GTK_STATE_FLAG_ACTIVE) != 0;
+	bool show_glyph = active_button && (td->hover || pressed);
 	double scale = MIN((double)width / 16.0, (double)height / 16.0);
 	cairo_translate(cr, ((double)width - 16.0 * scale) / 2.0,
 		((double)height - 16.0 * scale) / 2.0);
@@ -531,9 +588,16 @@ static void draw_traffic_light(GtkDrawingArea *area, cairo_t *cr,
 		}
 		break;
 	case TRAFFIC_LIGHT_MINIMIZE:
+		if (active_window) {
+			outer = 0xbababa;
+			inner = 0xcecece;
+		}
+		break;
 	case TRAFFIC_LIGHT_MAXIMIZE:
-		outer = 0xbababa;
-		inner = 0xcecece;
+		if (active_window) {
+			outer = 0xbababa;
+			inner = 0xcecece;
+		}
 		break;
 	}
 
@@ -626,10 +690,11 @@ static GtkWidget *traffic_light_new(
 static void activate(GtkApplication *app, gpointer data) {
 	(void)data;
 	struct about_metrics metrics = about_metrics_for_display();
-	apply_css(metrics.scale);
+	bool dark = about_should_use_dark();
+	apply_css(metrics.scale, dark);
 
 	GtkWidget *window = gtk_application_window_new(app);
-	gtk_window_set_title(GTK_WINDOW(window), "About This Mac");
+	gtk_window_set_title(GTK_WINDOW(window), "About Orange");
 	gtk_window_set_default_size(GTK_WINDOW(window), metrics.width, metrics.height);
 	gtk_window_set_resizable(GTK_WINDOW(window), false);
 
@@ -672,7 +737,8 @@ static void activate(GtkApplication *app, gpointer data) {
 	gtk_widget_set_size_request(laptop,
 		scaled_px(metrics.scale, 360),
 		scaled_px(metrics.scale, 190));
-	gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(laptop), draw_laptop, NULL, NULL);
+	gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(laptop), draw_laptop,
+		GINT_TO_POINTER(dark), NULL);
 	gtk_fixed_put(GTK_FIXED(root), laptop,
 		scaled_px(metrics.scale, 100),
 		scaled_px(metrics.scale, 156));
@@ -700,7 +766,7 @@ static void activate(GtkApplication *app, gpointer data) {
 	char *memory = read_memory_label();
 	add_spec_row(root, metrics.scale, 592, "Chip", chip);
 	add_spec_row(root, metrics.scale, 624, "Memory", memory);
-	add_spec_row(root, metrics.scale, 656, "macOS", "Tahoe 26.0");
+	add_spec_row(root, metrics.scale, 656, "Orange", ORANGE_PROJECT_VERSION);
 	g_free(chip);
 	g_free(memory);
 
@@ -735,7 +801,7 @@ static void activate(GtkApplication *app, gpointer data) {
 		30,
 		0.5f);
 	gtk_label_set_markup(GTK_LABEL(copyright),
-		"&#8482; and &#169; 1983-2025 Apple Inc.\nAll Rights Reserved.");
+		"&#169; 2026 Orange Project\nAll Rights Reserved.");
 	gtk_label_set_justify(GTK_LABEL(copyright), GTK_JUSTIFY_CENTER);
 
 	gtk_window_present(GTK_WINDOW(window));
@@ -743,7 +809,7 @@ static void activate(GtkApplication *app, gpointer data) {
 
 int main(int argc, char **argv) {
 	struct about_app about = {
-		.app = gtk_application_new("dev.tahoe.About",
+		.app = gtk_application_new("dev.orange.About",
 			G_APPLICATION_DEFAULT_FLAGS),
 	};
 	g_signal_connect(about.app, "activate", G_CALLBACK(activate), &about);

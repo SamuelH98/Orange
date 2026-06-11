@@ -1,9 +1,9 @@
-#ifndef TAHOE_COMPOSITOR_H
-#define TAHOE_COMPOSITOR_H
+#ifndef ORANGE_COMPOSITOR_H
+#define ORANGE_COMPOSITOR_H
 
 #include <stdbool.h>
 
-struct tahoe_options {
+struct orange_options {
 	bool headless;
 	bool once;
 	int width;
@@ -14,6 +14,6 @@ struct tahoe_options {
 	const char *theme_root;
 };
 
-int tahoe_compositor_run(const struct tahoe_options *options);
+int orange_compositor_run(const struct orange_options *options);
 
 #endif

@@ -1,8 +1,8 @@
-@define-color tahoe_titlebar_bg rgba(246, 251, 255, 0.78);
-@define-color tahoe_titlebar_fg #1f2329;
-@define-color tahoe_close #ff5f57;
-@define-color tahoe_minimize #febc2e;
-@define-color tahoe_maximize #28c840;
+@define-color orange_titlebar_bg rgba(246, 251, 255, 0.78);
+@define-color orange_titlebar_fg #1f2329;
+@define-color orange_close #ff5f57;
+@define-color orange_minimize #febc2e;
+@define-color orange_maximize #28c840;
 
 window, window.background {
   background: rgba(246, 249, 252, 0.92);
@@ -13,8 +13,8 @@ window, window.background {
 headerbar, .titlebar {
   min-height: 34px;
   padding: 0 10px;
-  background: @tahoe_titlebar_bg;
-  color: @tahoe_titlebar_fg;
+  background: @orange_titlebar_bg;
+  color: @orange_titlebar_fg;
   border-bottom: 1px solid rgba(255, 255, 255, 0.55);
 }
 
@@ -28,9 +28,9 @@ windowcontrols.start button.maximize {
   padding: 0;
 }
 
-windowcontrols.start button.close { background: @tahoe_close; }
-windowcontrols.start button.minimize { background: @tahoe_minimize; }
-windowcontrols.start button.maximize { background: @tahoe_maximize; }
+windowcontrols.start button.close { background: @orange_close; }
+windowcontrols.start button.minimize { background: @orange_minimize; }
+windowcontrols.start button.maximize { background: @orange_maximize; }
 
 switch:checked slider,
 scale highlight {

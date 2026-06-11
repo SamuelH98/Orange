@@ -1,5 +1,5 @@
 project(
-  'tahoe',
+  'orange',
   'c',
   version: '0.1.0',
   default_options: [
@@ -27,7 +27,7 @@ wlroots_dep = dependency('wlroots')
 xkbcommon_dep = dependency('xkbcommon')
 vulkan_dep = dependency('vulkan', required: false)
 if vulkan_dep.found()
-  add_project_arguments('-DTAHOE_HAVE_VULKAN=1', language: 'c')
+  add_project_arguments('-DORANGE_HAVE_VULKAN=1', language: 'c')
 endif
 gtk4_dep = dependency('gtk4', required: false)
 math_dep = cc.find_library('m', required: true)
@@ -43,28 +43,28 @@ xdg_shell_protocol = custom_target(
   command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
 )
 
-tahoe_core_sources = files(
+orange_core_sources = files(
   'src/assets.c',
   'src/config.c',
   'src/desktop_entry.c',
   'src/shell.c',
 )
 
-tahoe_core = static_library(
-  'tahoe-core',
-  tahoe_core_sources,
+orange_core = static_library(
+  'orange-core',
+  orange_core_sources,
   include_directories: inc,
   dependencies: [cairo_dep, drm_dep, math_dep],
 )
 
-tahoe_core_dep = declare_dependency(
+orange_core_dep = declare_dependency(
   include_directories: inc,
-  link_with: tahoe_core,
+  link_with: orange_core,
   dependencies: [cairo_dep, drm_dep, math_dep],
 )
 
-tahoe_exe = executable(
-  'tahoe',
+orange_exe = executable(
+  'orange',
   files(
     'src/buffer.c',
     'src/compositor.c',
@@ -73,7 +73,7 @@ tahoe_exe = executable(
   xdg_shell_protocol,
   include_directories: inc,
   dependencies: [
-    tahoe_core_dep,
+    orange_core_dep,
     cairo_dep,
     drm_dep,
     pixman_dep,
@@ -90,7 +90,7 @@ headless_startup_env.set('WLR_BACKENDS', 'headless')
 headless_startup_env.set('WLR_RENDERER', 'pixman')
 test(
   'headless-custom-startup',
-  tahoe_exe,
+  orange_exe,
   args: [
     '--headless',
     '--once',
@@ -106,42 +106,42 @@ test(
 )
 
 executable(
-  'tahoe-render-shell',
+  'orange-render-shell',
   files('tools/render_shell.c'),
   include_directories: inc,
-  dependencies: [tahoe_core_dep, cairo_dep],
+  dependencies: [orange_core_dep, cairo_dep],
   install: false,
 )
 
 if gtk4_dep.found()
   gtk_app_c_args = ['-Wno-pedantic']
   executable(
-    'tahoe-settings',
+    'orange-settings',
     files('src/settings_app.c'),
     include_directories: inc,
-    dependencies: [tahoe_core_dep, gtk4_dep],
+    dependencies: [orange_core_dep, gtk4_dep],
     c_args: gtk_app_c_args,
     install: false,
   )
   executable(
-    'tahoe-about',
+    'orange-about',
     files('src/about_app.c'),
     include_directories: inc,
     dependencies: [gtk4_dep],
     c_args: gtk_app_c_args + [
-      '-DTAHOE_PROJECT_VERSION="@0@"'.format(meson.project_version()),
+      '-DORANGE_PROJECT_VERSION="@0@"'.format(meson.project_version()),
     ],
     install: false,
   )
 else
-  message('gtk4 development files not found; skipping tahoe-settings and tahoe-about targets')
+  message('gtk4 development files not found; skipping orange-settings and orange-about targets')
 endif
 
 test_shell_layout = executable(
   'test-shell-layout',
   files('tests/test_shell_layout.c'),
   include_directories: inc,
-  dependencies: [tahoe_core_dep],
+  dependencies: [orange_core_dep],
 )
 
 test('shell-layout', test_shell_layout)
@@ -150,7 +150,7 @@ test_shell_visual = executable(
   'test-shell-visual',
   files('tests/test_shell_visual.c'),
   include_directories: inc,
-  dependencies: [tahoe_core_dep],
+  dependencies: [orange_core_dep],
 )
 
 test('shell-visual', test_shell_visual)
@@ -159,14 +159,14 @@ test_config = executable(
   'test-config',
   files('tests/test_config.c'),
   include_directories: inc,
-  dependencies: [tahoe_core_dep],
+  dependencies: [orange_core_dep],
 )
 
 test_desktop_entry = executable(
   'test-desktop-entry',
   files('tests/test_desktop_entry.c'),
   include_directories: inc,
-  dependencies: [tahoe_core_dep],
+  dependencies: [orange_core_dep],
 )
 
 test('config', test_config)

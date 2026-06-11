@@ -1,6 +1,6 @@
 [Icon Theme]
-Name=TahoeIcons
-Comment=Tahoe local icon theme backed by ./assets imagery
+Name=OrangeIcons
+Comment=Orange local icon theme backed by ./assets imagery
 Directories=apps/256x256,status/64x64,places/256x256
 Inherits=hicolor
 

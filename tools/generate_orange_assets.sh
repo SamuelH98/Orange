@@ -6,6 +6,23 @@ icons="$out/icons"
 status="$out/status"
 mkdir -p "$icons" "$status"
 
+make_wallpaper() {
+	name="$1"
+	top="$2"
+	bottom="$3"
+	mark="$4"
+	stroke="$5"
+	shadow="$6"
+	convert -size 5120x3200 gradient:"$top"-"$bottom" \
+		-alpha set \
+		-gravity center -font DejaVu-Sans-Bold \
+		-fill "$shadow" -stroke none -pointsize 1320 \
+		-annotate +30+30 O \
+		-fill "$mark" -stroke "$stroke" -strokewidth 7 -pointsize 1320 \
+		-annotate +0+0 O \
+		"$out/$name"
+}
+
 make_icon() {
 	name="$1"
 	label="$2"
@@ -81,32 +98,36 @@ make_status_weather() {
 		"PNG32:$status/weather.png"
 }
 
-make_icon tahoe-menu T "#f7fbff" "#d7e8ff"
+make_icon orange-menu O "#f7fbff" "#d7e8ff"
 convert -size 96x96 xc:none \
 	-fill white -gravity center -font DejaVu-Sans-Bold -pointsize 70 \
-	-annotate +0+7 T \
-	"$out/tahoe-menu.png"
-make_icon finder T "#1aa7ff" "#87ddff"
-make_icon launchpad T "#fbfdff" "#d9e1e8"
-make_icon safari T "#2e9eff" "#eef8ff"
-make_icon messages T "#36d45d" "#b9ffca"
-make_icon mail T "#2578d8" "#8fd1ff"
-make_icon maps T "#55d979" "#3f8cff"
-make_icon photos T "#ff4b6b" "#ffd45f"
-make_icon facetime T "#28d85c" "#a6ffbf"
-make_icon phone T "#25c65c" "#8fffaa"
-make_icon calendar T "#ffffff" "#e8ebef"
-make_icon contacts T "#c8c1a5" "#f6f1dc"
-make_icon reminders T "#ffffff" "#e8eef8"
-make_icon notes T "#fff37a" "#fffbe1"
-make_icon tv T "#26262a" "#0c0d11"
-make_icon music T "#ff2d55" "#ff879d"
-make_icon rocket T "#ff5a3d" "#ffd1c6"
-make_icon app-store T "#1976ff" "#73c7ff"
-make_icon calculator T "#32343a" "#d6d8dd"
-make_icon settings T "#8f969e" "#d8dbe0"
-make_icon desktop-preview T "#6ba7e8" "#d8ecff"
-make_icon trash T "#dfe5ea" "#aeb7c1"
+	-annotate +0+7 O \
+	"$out/orange-menu.png"
+make_wallpaper wallpaper.png "#ffd36d" "#f56a00" \
+	"rgba(255,248,232,0.68)" "rgba(120,45,0,0.20)" "rgba(104,38,0,0.16)"
+make_wallpaper wallpaper-dark.png "#2b0d03" "#a93400" \
+	"rgba(255,131,28,0.54)" "rgba(255,221,174,0.16)" "rgba(0,0,0,0.32)"
+make_icon files O "#1aa7ff" "#87ddff"
+make_icon launcher O "#fbfdff" "#d9e1e8"
+make_icon browser O "#2e9eff" "#eef8ff"
+make_icon messages O "#36d45d" "#b9ffca"
+make_icon mail O "#2578d8" "#8fd1ff"
+make_icon maps O "#55d979" "#3f8cff"
+make_icon photos O "#ff4b6b" "#ffd45f"
+make_icon video O "#28d85c" "#a6ffbf"
+make_icon phone O "#25c65c" "#8fffaa"
+make_icon calendar O "#ffffff" "#e8ebef"
+make_icon contacts O "#c8c1a5" "#f6f1dc"
+make_icon reminders O "#ffffff" "#e8eef8"
+make_icon notes O "#fff37a" "#fffbe1"
+make_icon tv O "#26262a" "#0c0d11"
+make_icon music O "#ff2d55" "#ff879d"
+make_icon rocket O "#ff5a3d" "#ffd1c6"
+make_icon software O "#1976ff" "#73c7ff"
+make_icon calculator O "#32343a" "#d6d8dd"
+make_icon settings O "#8f969e" "#d8dbe0"
+make_icon desktop-preview O "#6ba7e8" "#d8ecff"
+make_icon trash O "#dfe5ea" "#aeb7c1"
 
 for file in "$icons"/*.png; do
 	base="$(basename "$file" .png)"
@@ -122,4 +143,4 @@ make_status_search
 make_status_control_center
 make_status_weather
 
-printf 'Generated Tahoe placeholder assets in %s\n' "$out"
+printf 'Generated Orange placeholder assets in %s\n' "$out"

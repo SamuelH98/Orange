@@ -1,9 +1,9 @@
 build/
 .cache/
 .venv/
-assets/apple/
-themes/TahoeIcons/apps/
-themes/TahoeIcons/places/
-themes/TahoeIcons/status/
+assets/private/
+themes/OrangeIcons/apps/
+themes/OrangeIcons/places/
+themes/OrangeIcons/status/
 *.o
 *.png.tmp

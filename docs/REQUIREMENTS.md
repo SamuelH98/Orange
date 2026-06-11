@@ -2,9 +2,9 @@
 
 ## Goal
 
-Create a native Linux wlroots compositor prototype in C that recreates the
-provided macOS Tahoe 26 desktop screenshot visually and behaves like a usable
-macOS-style shell prototype.
+Create Orange, a native Linux wlroots compositor prototype in C that follows
+the provided macOS-like desktop screenshot visually and behaves like a usable
+macOS-like shell prototype.
 
 ## Functional Requirements
 
@@ -13,23 +13,24 @@ macOS-style shell prototype.
   is Vulkan when `WLR_RENDERER=vulkan` is requested.
 - Render a full-output desktop shell with:
   - clear lake/mountain-style wallpaper,
-  - fully transparent menu bar with Apple-style menu glyph area and menu
+  - fully transparent menu bar with system menu glyph area and menu
     titles drawn directly over the wallpaper,
   - right-aligned status area and date/time,
   - calendar and weather widgets in the upper-left area,
   - right-side desktop items,
   - translucent bottom dock with app icons, divider, running indicators, and
     trash.
-- Ship a tracked, non-Apple Tahoe placeholder asset pack under `assets/` using
-  Tahoe `T` branding for app/menu icons, with private Apple assets remaining
+- Ship a tracked, vendor-neutral Orange placeholder asset pack under `assets/` using
+  Orange `O` branding for app/menu icons, with private user assets remaining
   optional under ignored paths.
 - Scale menu bar, widgets, desktop items, and Dock geometry from the output
   resolution so the shell remains usable on small and large displays.
 - Match the reference Dock measurements with resolution-scaled constants for
   icon size, icon gaps, glass padding, indicator lane, and bottom edge
   alignment.
-- Provide procedural wallpaper/background fallback only. Dock icons, desktop
-  shortcut icons, weather icons, and status icons are local-file sourced.
+- Provide tracked high-resolution Orange light/dark wallpapers plus a
+  procedural background fallback. Dock icons, desktop shortcut icons, weather
+  icons, and status icons are local-file sourced.
 - Load all shell icon imagery from local `./assets/` paths. Dock icons,
   desktop shortcut icons, weather icons, and status tray icons must not use web
   URLs or system icon theme lookups.
@@ -48,15 +49,15 @@ macOS-style shell prototype.
 - Provide a native GTK Settings application source that controls this
   configuration and uses the bundled GTK theme when GTK development libraries
   are available at build time.
-- Provide a native GTK About This Mac application source that opens from the
-  Apple-style About Tahoe menu item when GTK development libraries are available
-  at build time. It should present a compact Tahoe-style model/version summary
+- Provide a native GTK About Orange application source that opens from the
+  system menu About Orange item when GTK development libraries are available
+  at build time. It should present a compact Orange model/version summary
   with real chip and memory values and no serial number row.
-- Bundle installed macOS-style MacTahoe GTK theme variants and configure GTK
+- Bundle installed macOS-like MacTahoe GTK theme variants and configure GTK
   clients launched from the shell to use them.
 - Bundle the upstream MacTahoe GTK theme source while preserving upstream
   licensing and update path.
-- Provide a bundled GTK icon theme (`TahoeIcons`) that maps the local dock and
+- Provide a bundled GTK icon theme (`OrangeIcons`) that maps the local dock and
   shortcut icon names into standard GTK icon-theme lookup paths when populated
   from `./assets/`.
 - Disable server-side compositor decorations and prefer client-side window
@@ -86,7 +87,7 @@ macOS-style shell prototype.
 - Provide clickable shell areas:
   - Dock launchers for common apps/actions,
   - desktop folder/document launchers,
-  - Apple-style menu popover with shell actions.
+  - system menu popover with shell actions.
 - Provide keyboard shortcuts modeled after a Mac-like Command key flow:
   - Super/Logo+Return launches a terminal,
   - Super/Logo+Space launches an app picker if available,
@@ -96,7 +97,7 @@ macOS-style shell prototype.
 ## Non-Functional Requirements
 
 - Use C, Meson, wlroots, Wayland server APIs, Cairo, Pixman, and Vulkan headers.
-- Keep proprietary Apple assets out of Git history.
+- Keep proprietary third-party assets out of Git history.
 - Keep code modular enough to evolve into a real shell: compositor lifecycle,
   shell rendering, asset loading, and tests should be separate concerns.
 - Compile cleanly with warnings enabled on the installed Ubuntu/wlroots stack.
@@ -105,24 +106,24 @@ macOS-style shell prototype.
 
 - This is a visual/technical shell prototype, not a full macOS implementation.
 - Full macOS behavior, proprietary animations, WindowServer compatibility,
-  Finder, Notification Center, real Dock app launching, and Apple private APIs
+  proprietary desktop services, real Dock app launching, and platform-private APIs
   are out of scope.
-- A production Finder replacement, full menu bar app integration, Mission
+- A production file-manager replacement, full menu bar app integration, Mission
   Control, Spotlight indexing, real LaunchServices, notarization, iCloud,
   Continuity, and system settings backends are out of scope.
-- Exact Apple fonts, shipped wallpaper, official icons, and trademarks are only
-  loaded if the user provides local licensed files. The runtime is designed to
-  source from local `./assets/` paths.
+- Exact proprietary fonts, shipped wallpapers, official icons, and trademarks
+  are only loaded if the user provides local licensed files. The runtime is
+  designed to source from local `./assets/` paths.
 
 ## Acceptance Criteria
 
 - `meson setup build` succeeds.
 - `ninja -C build` succeeds.
 - Unit tests pass.
-- `WLR_BACKENDS=headless build/tahoe --headless --once` renders and
+- `WLR_BACKENDS=headless build/orange --headless --once` renders and
   exits successfully.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/tahoe --headless --once
-  --width 1440 --height 900 --assets assets --config /tmp/tahoe-custom.conf
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
+  --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf
   --desktop-dir assets/desktop --themes .` renders and exits successfully.
 - Runtime logs include selected renderer type information.
 - A user can launch configured apps from the Dock/desktop and interact with

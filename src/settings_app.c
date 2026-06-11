@@ -1,4 +1,4 @@
-#include "tahoe/config.h"
+#include "orange/config.h"
 
 #include <gtk/gtk.h>
 #include <stdio.h>
@@ -7,7 +7,7 @@
 
 struct settings_app {
 	GtkApplication *app;
-	struct tahoe_config config;
+	struct orange_config config;
 	const char *config_path;
 };
 
@@ -57,7 +57,7 @@ static void set_left_decoration_layout(void) {
 }
 
 static void save_config(struct settings_app *settings) {
-	tahoe_config_save(&settings->config, settings->config_path);
+	orange_config_save(&settings->config, settings->config_path);
 }
 
 static GtkWidget *row_new(const char *title, GtkWidget *control) {
@@ -88,7 +88,7 @@ static void on_dark_mode(GtkSwitch *widget, GParamSpec *pspec, gpointer data) {
 	(void)pspec;
 	struct settings_app *settings = data;
 	settings->config.appearance = gtk_switch_get_active(widget) ?
-		TAHOE_APPEARANCE_DARK : TAHOE_APPEARANCE_LIGHT;
+		ORANGE_APPEARANCE_DARK : ORANGE_APPEARANCE_LIGHT;
 	save_config(settings);
 }
 
@@ -166,14 +166,14 @@ static void on_dock_mag_scale(GtkRange *range, gpointer data) {
 static void on_calendar_size(GtkRange *range, gpointer data) {
 	struct settings_app *settings = data;
 	settings->config.calendar_widget_size =
-		(enum tahoe_widget_size)(int)gtk_range_get_value(range);
+		(enum orange_widget_size)(int)gtk_range_get_value(range);
 	save_config(settings);
 }
 
 static void on_weather_size(GtkRange *range, gpointer data) {
 	struct settings_app *settings = data;
 	settings->config.weather_widget_size =
-		(enum tahoe_widget_size)(int)gtk_range_get_value(range);
+		(enum orange_widget_size)(int)gtk_range_get_value(range);
 	save_config(settings);
 }
 
@@ -229,7 +229,7 @@ static void activate(GtkApplication *app, gpointer data) {
 
 	GtkWidget *dark = gtk_switch_new();
 	gtk_switch_set_active(GTK_SWITCH(dark),
-		settings->config.appearance == TAHOE_APPEARANCE_DARK);
+		settings->config.appearance == ORANGE_APPEARANCE_DARK);
 	g_signal_connect(dark, "notify::active", G_CALLBACK(on_dark_mode), settings);
 	gtk_box_append(GTK_BOX(content), row_new("Dark Appearance", dark));
 
@@ -325,13 +325,13 @@ static void activate(GtkApplication *app, gpointer data) {
 }
 
 int main(int argc, char **argv) {
-	const char *config_path = argc > 1 ? argv[1] : "tahoe.conf";
+	const char *config_path = argc > 1 ? argv[1] : "orange.conf";
 	struct settings_app settings = {
 		.config_path = config_path,
 	};
-	tahoe_config_load(&settings.config, config_path);
+	orange_config_load(&settings.config, config_path);
 
-	settings.app = gtk_application_new("dev.tahoe.Settings",
+	settings.app = gtk_application_new("dev.orange.Settings",
 		G_APPLICATION_DEFAULT_FLAGS);
 	g_signal_connect(settings.app, "activate", G_CALLBACK(activate), &settings);
 	int status = g_application_run(G_APPLICATION(settings.app), argc, argv);

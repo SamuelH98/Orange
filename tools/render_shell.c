@@ -1,7 +1,7 @@
-#include "tahoe/assets.h"
-#include "tahoe/config.h"
-#include "tahoe/desktop_entry.h"
-#include "tahoe/shell.h"
+#include "orange/assets.h"
+#include "orange/config.h"
+#include "orange/desktop_entry.h"
+#include "orange/shell.h"
 
 #include <cairo/cairo.h>
 #include <stdbool.h>
@@ -19,17 +19,17 @@ static void usage(const char *argv0) {
 
 static bool parse_context_menu_kind(
 		const char *value,
-		enum tahoe_context_menu_kind *kind) {
+		enum orange_context_menu_kind *kind) {
 	if (strcmp(value, "none") == 0) {
-		*kind = TAHOE_CONTEXT_MENU_NONE;
+		*kind = ORANGE_CONTEXT_MENU_NONE;
 	} else if (strcmp(value, "dock") == 0) {
-		*kind = TAHOE_CONTEXT_MENU_DOCK;
+		*kind = ORANGE_CONTEXT_MENU_DOCK;
 	} else if (strcmp(value, "widget") == 0) {
-		*kind = TAHOE_CONTEXT_MENU_WIDGET;
+		*kind = ORANGE_CONTEXT_MENU_WIDGET;
 	} else if (strcmp(value, "desktop") == 0) {
-		*kind = TAHOE_CONTEXT_MENU_DESKTOP;
+		*kind = ORANGE_CONTEXT_MENU_DESKTOP;
 	} else if (strcmp(value, "desktop-icon") == 0) {
-		*kind = TAHOE_CONTEXT_MENU_DESKTOP_ICON;
+		*kind = ORANGE_CONTEXT_MENU_DESKTOP_ICON;
 	} else {
 		return false;
 	}
@@ -40,11 +40,11 @@ int main(int argc, char **argv) {
 	int width = 2880;
 	int height = 1800;
 	const char *asset_root = "assets";
-	const char *config_path = "tahoe.conf";
+	const char *config_path = "orange.conf";
 	const char *desktop_dir = "assets/desktop";
 	time_t now = 1757638380;
 	bool foreground_only = false;
-	enum tahoe_context_menu_kind context_kind = TAHOE_CONTEXT_MENU_NONE;
+	enum orange_context_menu_kind context_kind = ORANGE_CONTEXT_MENU_NONE;
 	int context_index = -1;
 	int context_x = -1;
 	int context_y = -1;
@@ -91,14 +91,14 @@ int main(int argc, char **argv) {
 		usage(argv[0]);
 		return 2;
 	}
-	if (context_kind != TAHOE_CONTEXT_MENU_NONE) {
+	if (context_kind != ORANGE_CONTEXT_MENU_NONE) {
 		if (context_x < 0) {
 			context_x = width / 2;
 		}
 		if (context_y < 0) {
 			context_y = height / 2;
 		}
-		if (context_index < 0 && context_kind != TAHOE_CONTEXT_MENU_DESKTOP) {
+		if (context_index < 0 && context_kind != ORANGE_CONTEXT_MENU_DESKTOP) {
 			context_index = 0;
 		}
 	}
@@ -109,18 +109,18 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	struct tahoe_assets assets;
-	tahoe_assets_init(&assets);
-	tahoe_assets_load(&assets, asset_root);
-	struct tahoe_config config;
-	tahoe_config_load(&config, config_path);
-	struct tahoe_desktop_entry desktop_entries[TAHOE_DESKTOP_MAX];
+	struct orange_assets assets;
+	orange_assets_init(&assets);
+	orange_assets_load(&assets, asset_root);
+	struct orange_config config;
+	orange_config_load(&config, config_path);
+	struct orange_desktop_entry desktop_entries[ORANGE_DESKTOP_MAX];
 	size_t desktop_entry_count = 0;
-	tahoe_desktop_entry_load_all(desktop_dir, desktop_entries,
-		TAHOE_DESKTOP_MAX, &desktop_entry_count);
+	orange_desktop_entry_load_all(desktop_dir, desktop_entries,
+		ORANGE_DESKTOP_MAX, &desktop_entry_count);
 
-	struct tahoe_shell_state state = {
-		.apple_menu_open = false,
+	struct orange_shell_state state = {
+		.system_menu_open = false,
 		.hot_dock_index = -1,
 		.dock_drag_index = -1,
 		.dock_drag_insert_before = -1,
@@ -135,13 +135,13 @@ int main(int argc, char **argv) {
 		.context_menu_cursor_y = context_y,
 	};
 	if (foreground_only) {
-		const struct tahoe_shell_draw_options options = {
+		const struct orange_shell_draw_options options = {
 			.draw_wallpaper = false,
 		};
-		tahoe_shell_draw_with_options(pixels, width, height, stride,
+		orange_shell_draw_with_options(pixels, width, height, stride,
 			&state, &options);
 	} else {
-		tahoe_shell_draw(pixels, width, height, stride, &state);
+		orange_shell_draw(pixels, width, height, stride, &state);
 	}
 
 	cairo_surface_t *surface = cairo_image_surface_create_for_data(
@@ -152,7 +152,7 @@ int main(int argc, char **argv) {
 		stride);
 	cairo_status_t status = cairo_surface_write_to_png(surface, output);
 	cairo_surface_destroy(surface);
-	tahoe_assets_finish(&assets);
+	orange_assets_finish(&assets);
 	free(pixels);
 
 	if (status != CAIRO_STATUS_SUCCESS) {
