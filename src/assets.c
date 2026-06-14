@@ -698,8 +698,12 @@ static const char *const aliases_sound[] = {
 	"multimedia-volume-control", "audio-card", NULL,
 };
 static const char *const aliases_display[] = {
-	"preferences-desktop-display", "video-display", "display",
+	"preferences-desktop-display", "display",
 	"screen", NULL,
+};
+static const char *const aliases_video_player[] = {
+	"multimedia-video-player", "video-display", "video",
+	"media-playback-starting", NULL,
 };
 static const char *const aliases_keyboard[] = {
 	"input-keyboard", "keyboard-brightness", "preferences-desktop-keyboard",
@@ -749,6 +753,19 @@ static const char *const aliases_terminal[] = {
 static const char *const aliases_folder_new[] = {
 	"folder-new", "folder", NULL,
 };
+static const char *const aliases_maps[] = {
+	"maps-app", "org.gnome.Maps", "maps", "gnome-maps", NULL,
+};
+static const char *const aliases_image_ext[] = {
+	"image-x-generic", "image", "photo", "image-x-generic-symbolic", NULL,
+};
+static const char *const aliases_address_book[] = {
+	"x-office-address-book", "contacts", "address-book",
+	"x-office-contact", NULL,
+};
+static const char *const aliases_audio_generic[] = {
+	"audio-x-generic", "audio", "music", "audio-x-generic-symbolic", NULL,
+};
 
 struct icon_alias_set {
 	const char *name;
@@ -772,7 +789,7 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"preferences-system-notifications", aliases_focus},
 	{"audio-volume-high", aliases_sound},
 	{"preferences-desktop-display", aliases_display},
-	{"video-display", aliases_display},
+	{"video-display", aliases_video_player},
 	{"input-keyboard", aliases_keyboard},
 	{"application-x-executable", aliases_generic_app},
 	{"application-default-icon", aliases_generic_app},
@@ -797,6 +814,10 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"org.gnome.Terminal", aliases_terminal},
 	{"utilities-terminal", aliases_terminal},
 	{"folder-new", aliases_folder_new},
+	{"maps-app", aliases_maps},
+	{"image-x-generic", aliases_image_ext},
+	{"x-office-address-book", aliases_address_book},
+	{"audio-x-generic", aliases_audio_generic},
 };
 
 static const char *const *aliases_for_icon(const char *name) {

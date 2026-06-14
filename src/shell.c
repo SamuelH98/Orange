@@ -862,7 +862,7 @@ static void draw_dock_glass(cairo_t *cr, const struct orange_rect *rect,
 static void draw_menu_glass(cairo_t *cr, const struct orange_rect *rect,
 		double radius, bool dark) {
 	rounded_rect(cr, rect->x, rect->y + 3.0, rect->width, rect->height, radius);
-	set_source_rgba255(cr, 0, 0, 0, dark ? 0.30 : 0.18);
+	set_source_rgba255(cr, 0, 0, 0, dark ? 0.20 : 0.12);
 	cairo_fill(cr);
 
 	cairo_save(cr);
@@ -872,13 +872,13 @@ static void draw_menu_glass(cairo_t *cr, const struct orange_rect *rect,
 	cairo_pattern_t *shade = cairo_pattern_create_linear(
 		rect->x, rect->y, rect->x, rect->y + rect->height);
 	if (dark) {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.17, 0.18, 0.20, 0.88);
-		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.12, 0.13, 0.15, 0.84);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.07, 0.08, 0.10, 0.82);
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.17, 0.18, 0.20, 0.65);
+		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.12, 0.13, 0.15, 0.62);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.07, 0.08, 0.10, 0.58);
 	} else {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 1.0, 1.0, 1.0, 0.92);
-		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.96, 0.97, 0.98, 0.88);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.80, 0.84, 0.88, 0.83);
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 1.0, 1.0, 1.0, 0.70);
+		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.96, 0.97, 0.98, 0.66);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.80, 0.84, 0.88, 0.60);
 	}
 	cairo_rectangle(cr, rect->x, rect->y, rect->width, rect->height);
 	cairo_set_source(cr, shade);
