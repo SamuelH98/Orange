@@ -1,4 +1,5 @@
 #include "orange/config.h"
+#include "orange/desktop_entry.h"
 #include "orange/shell.h"
 
 #include <assert.h>
@@ -123,6 +124,35 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 	config.calendar_widget_visible = false;
 	config.weather_widget_visible = false;
 
+	/* Set up dock apps for the test */
+	const char *dock_ids[] = {
+		"__launcher__", "test1", "test2", "test3", "test4",
+		"test5", "test6", "__trash__",
+	};
+	int dock_count = sizeof(dock_ids) / sizeof(dock_ids[0]);
+	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
+		if (i < dock_count) {
+			snprintf(config.dock_apps[i], 128, "%s", dock_ids[i]);
+		} else {
+			config.dock_apps[i][0] = '\0';
+		}
+	}
+
+	/* Create matching desktop entries */
+	struct orange_desktop_entry entries[8];
+	int entry_count = 0;
+	for (int i = 0; i < dock_count; i++) {
+		if (dock_ids[i][0] == '_') {
+			continue;
+		}
+		snprintf(entries[entry_count].id, 256, "%s", dock_ids[i]);
+		snprintf(entries[entry_count].name, 512, "Test %d", i);
+		snprintf(entries[entry_count].icon, 512, "folder");
+		snprintf(entries[entry_count].exec, 512, "true");
+		entries[entry_count].terminal = false;
+		entry_count++;
+	}
+
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(width, height, false, &config, 0, &layout);
 	int hot = 5;
@@ -132,12 +162,31 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 
 	cairo_surface_t *icon = solid_icon_surface();
 	struct orange_assets assets = {0};
-	assets.dock_icon_count = orange_shell_dock_count();
-	for (int i = 0; i < assets.dock_icon_count &&
-			i < ORANGE_ASSET_DOCK_ICON_MAX; i++) {
-		assets.dock_icons[ORANGE_ASSET_ICON_LIGHT][i] = icon;
-		assets.dock_icons[ORANGE_ASSET_ICON_DARK][i] = icon;
-	}
+	orange_assets_init(&assets);
+
+	snprintf(assets.icons[assets.icon_count].name,
+		sizeof(assets.icons[assets.icon_count].name), "%s", "folder");
+	assets.icons[assets.icon_count].surface[ORANGE_ASSET_ICON_LIGHT] =
+		cairo_surface_reference(icon);
+	assets.icons[assets.icon_count].surface[ORANGE_ASSET_ICON_DARK] =
+		cairo_surface_reference(icon);
+	assets.icon_count++;
+
+	snprintf(assets.icons[assets.icon_count].name,
+		sizeof(assets.icons[assets.icon_count].name), "%s", "preferences-system");
+	assets.icons[assets.icon_count].surface[ORANGE_ASSET_ICON_LIGHT] =
+		cairo_surface_reference(icon);
+	assets.icons[assets.icon_count].surface[ORANGE_ASSET_ICON_DARK] =
+		cairo_surface_reference(icon);
+	assets.icon_count++;
+
+	snprintf(assets.icons[assets.icon_count].name,
+		sizeof(assets.icons[assets.icon_count].name), "%s", "user-trash");
+	assets.icons[assets.icon_count].surface[ORANGE_ASSET_ICON_LIGHT] =
+		cairo_surface_reference(icon);
+	assets.icons[assets.icon_count].surface[ORANGE_ASSET_ICON_DARK] =
+		cairo_surface_reference(icon);
+	assets.icon_count++;
 
 	struct orange_shell_state state = {
 		.system_menu_open = false,
@@ -149,6 +198,8 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 		.now = 1757638380,
 		.assets = &assets,
 		.config = &config,
+		.desktop_entries = entries,
+		.desktop_entry_count = entry_count,
 	};
 	const struct orange_shell_draw_options options = {
 		.draw_wallpaper = false,
@@ -177,6 +228,7 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 	assert(is_solid_icon_pixel(neighbor_magnified));
 
 	cairo_surface_destroy(icon);
+	orange_assets_finish(&assets);
 	free(pixels);
 }
 

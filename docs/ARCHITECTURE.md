@@ -26,7 +26,7 @@ Responsibilities:
 - draw wallpaper,
 - draw a transparent menu bar, widgets, desktop items, dock, and icons,
 - apply persistent appearance, desktop, and Dock configuration,
-- load local assets from `./assets/`,
+- load wallpapers from `./assets/` and ask the asset layer for themed icons,
 - place desktop icons from persisted coordinates when the user drags them,
 - draw shell context menus for Dock items, widgets, desktop items, and empty
   desktop background,
@@ -49,16 +49,22 @@ Responsibilities:
 
 ### Asset Loader
 
-Loads PNG assets from local `./assets/` roots. The loader maps specific Dock,
-desktop, weather, and status icon names so shell code never asks the system icon
-theme or web for shortcut graphics.
+Loads wallpapers from local `./assets/` roots and resolves PNG/SVG icons from
+freedesktop-style icon theme directories. The loader maps specific Dock,
+desktop, weather, and status icon names so shell code asks for semantic icon
+names while the asset layer handles configured themes, inherited themes,
+`hicolor` fallback, unthemed pixmaps, and aliases to freedesktop standard icon
+names.
 
 Responsibilities:
 
-- keep asset use local-only,
-- provide tracked Orange-branded placeholder PNGs by default,
+- keep tracked assets wallpaper-only,
+- lazily decode wallpapers and cache output-sized wallpaper surfaces,
+- lazily resolve and cache only requested icon names,
 - resolve desktop shortcut icons from each parsed `.desktop` file's `Icon=`
   name,
+- resolve status and Dock icon names from the configured icon theme, inherited
+  themes, then hicolor/system fallbacks,
 - validate loaded image dimensions,
 - avoid failing startup when optional files are absent.
 
@@ -69,7 +75,8 @@ Small line-oriented config model used by both the compositor and Settings app.
 Responsibilities:
 
 - read and write `appearance`, desktop icon, widget, and Dock preferences,
-- read and write cursor theme/size and dragged desktop icon positions,
+- read and write cursor theme/size, GTK theme names, icon theme name, and
+  dragged desktop icon positions,
 - provide defaults when config is missing,
 - expose one struct consumed by shell layout and rendering.
 
@@ -86,20 +93,20 @@ About app responsibilities include showing the Orange version/build
 affordance, model, real chip and memory values, and theme-style window
 controls, launched from the system menu.
 
-### Bundled GTK Theme
+### GTK Themes
 
-Expanded upstream release themes under `themes/MacTahoe-Light/` and
-`themes/MacTahoe-Dark/` provide the installed GTK theme payload used by launched
-GTK clients. CSS files under `themes/OrangeGTK/` remain as lightweight fallback
-themes. The `themes/MacTahoe-gtk-theme` submodule bundles the upstream MacTahoe
-source for provenance and updates. The compositor exports GTK environment
-variables for launched clients.
+Launched GTK clients receive `GTK_THEME` from `gtk_theme_light` or
+`gtk_theme_dark` in `orange.conf`, depending on the current appearance.
+MacTahoe is the current test default, but any installed GTK theme name can be
+used.
 
-### GTK Icon Theme
+### Icon Theme
 
-`themes/OrangeIcons/` contains icon-theme metadata and expected app icon names.
-Local PNGs from `./assets/` can be copied into this theme so GTK clients and
-the Settings app can resolve the same Orange icon names used by the shell.
+`icon_theme` in `orange.conf` selects the freedesktop icon theme used by the
+shell and launched GTK clients. The asset loader checks standard user icon
+directories, `$XDG_DATA_DIRS/icons`, inherited themes, `hicolor`, and
+`/usr/share/pixmaps`. It caches both successful lookups and missing icon names
+so normal redraws do not scan or render whole icon themes.
 
 ### View Management And Input
 
@@ -124,8 +131,11 @@ Small local process launcher for Dock, desktop, and shortcut commands.
 Responsibilities:
 
 - launch commands through `/bin/sh -c` in a child process,
+- prepare freedesktop `.desktop` `Exec` commands for no-file launches by
+  removing file/URL field codes and expanding safe name/icon field codes,
 - prefer user-configured environment variables for terminal/app picker,
-- export `GTK_THEME` and related theme search paths for launched GTK clients,
+- export `GTK_THEME`, `GTK_ICON_THEME`, and `ORANGE_APPEARANCE` for launched
+  GTK clients,
 - avoid blocking the compositor event loop.
 
 ## Data Flow
@@ -149,8 +159,9 @@ Responsibilities:
 - Renderer creation failure: exit with an error.
 - Output render initialization failure: disable that output and continue.
 - Asset load failure: use procedural background fallback only.
-- Missing local assets: log/continue; affected icon slot is left without system
-  fallback imagery.
+- Missing wallpaper assets: use the procedural background fallback.
+- Missing icon theme or icon names: cache the miss and leave that icon slot
+  empty while continuing to render.
 - Missing cursor theme: wlroots falls back according to xcursor lookup rules.
 - Headless `--once` no output: create an explicit headless output.
 - Vulkan unavailable: wlroots renderer creation may fail; the log identifies

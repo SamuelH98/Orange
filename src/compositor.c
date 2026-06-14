@@ -4,9 +4,11 @@
 #include "orange/desktop_entry.h"
 #include "orange/shell.h"
 
+#include <gio/gio.h>
 #include <assert.h>
 #include <linux/input-event-codes.h>
 #include <limits.h>
+#include <math.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -129,7 +131,7 @@ struct orange_server {
 	struct wlr_xcursor_manager *xcursor_manager;
 	struct orange_assets assets;
 	struct orange_config config;
-	struct orange_desktop_entry desktop_entries[ORANGE_DESKTOP_MAX];
+	struct orange_desktop_entry desktop_entries[1024];
 	size_t desktop_entry_count;
 
 	struct wl_list outputs;
@@ -164,7 +166,11 @@ struct orange_server {
 	uint32_t resize_edges;
 
 	bool system_menu_open;
+	struct orange_status_state status;
+	int status_poll_ticks;
 	int hot_dock_index;
+	int last_dock_pointer_x;
+	int last_dock_pointer_y;
 	bool dock_open[ORANGE_DOCK_MAX];
 	enum orange_context_menu_kind context_menu_kind;
 	int context_menu_index;
@@ -194,24 +200,195 @@ static void start_dock_drag(struct orange_server *server,
 static void process_dock_drag(struct orange_server *server);
 static void finish_dock_drag(struct orange_server *server);
 
+static void status_set_defaults(struct orange_status_state *status) {
+	memset(status, 0, sizeof(*status));
+	snprintf(status->network_icon, sizeof(status->network_icon),
+		"%s", "network-wireless");
+	snprintf(status->network_label, sizeof(status->network_label),
+		"%s", "Wi-Fi");
+	status->network_available = true;
+	snprintf(status->sound_icon, sizeof(status->sound_icon),
+		"%s", "audio-volume-high");
+	snprintf(status->sound_label, sizeof(status->sound_label),
+		"%s", "Sound");
+	status->sound_percent = -1;
+	snprintf(status->battery_icon, sizeof(status->battery_icon),
+		"%s", "battery");
+	snprintf(status->battery_label, sizeof(status->battery_label),
+		"%s", "Battery");
+	status->battery_percent = -1;
+}
+
+static GVariant *dbus_get_property(
+		GBusType bus_type,
+		const char *bus_name,
+		const char *object_path,
+		const char *interface,
+		const char *property) {
+	GError *error = NULL;
+	GDBusConnection *connection = g_bus_get_sync(bus_type, NULL, &error);
+	if (error != NULL) {
+		g_error_free(error);
+	}
+	if (connection == NULL) {
+		return NULL;
+	}
+	GVariant *reply = g_dbus_connection_call_sync(
+		connection,
+		bus_name,
+		object_path,
+		"org.freedesktop.DBus.Properties",
+		"Get",
+		g_variant_new("(ss)", interface, property),
+		G_VARIANT_TYPE("(v)"),
+		G_DBUS_CALL_FLAGS_NO_AUTO_START,
+		80,
+		NULL,
+		&error);
+	g_object_unref(connection);
+	if (error != NULL) {
+		g_error_free(error);
+	}
+	if (reply == NULL) {
+		return NULL;
+	}
+	GVariant *value = NULL;
+	g_variant_get(reply, "(v)", &value);
+	g_variant_unref(reply);
+	return value;
+}
+
+static void update_network_status(struct orange_status_state *status) {
+	GVariant *connectivity = dbus_get_property(G_BUS_TYPE_SYSTEM,
+		"org.freedesktop.NetworkManager",
+		"/org/freedesktop/NetworkManager",
+		"org.freedesktop.NetworkManager",
+		"Connectivity");
+	if (connectivity == NULL) {
+		return;
+	}
+	uint32_t state = g_variant_get_uint32(connectivity);
+	g_variant_unref(connectivity);
+
+	status->network_available = true;
+	status->network_connected = state == 4;
+	if (state == 4) {
+		snprintf(status->network_icon, sizeof(status->network_icon),
+			"%s", "network-wireless");
+		snprintf(status->network_label, sizeof(status->network_label),
+			"%s", "Wi-Fi Connected");
+	} else if (state == 3 || state == 2) {
+		snprintf(status->network_icon, sizeof(status->network_icon),
+			"%s", "network-error");
+		snprintf(status->network_label, sizeof(status->network_label),
+			"%s", "Wi-Fi Limited");
+	} else {
+		snprintf(status->network_icon, sizeof(status->network_icon),
+			"%s", "network-offline");
+		snprintf(status->network_label, sizeof(status->network_label),
+			"%s", "Wi-Fi Off");
+	}
+
+	GVariant *wireless = dbus_get_property(G_BUS_TYPE_SYSTEM,
+		"org.freedesktop.NetworkManager",
+		"/org/freedesktop/NetworkManager",
+		"org.freedesktop.NetworkManager",
+		"WirelessEnabled");
+	if (wireless != NULL) {
+		if (!g_variant_get_boolean(wireless)) {
+			status->network_connected = false;
+			snprintf(status->network_icon, sizeof(status->network_icon),
+				"%s", "network-offline");
+			snprintf(status->network_label, sizeof(status->network_label),
+				"%s", "Wi-Fi Disabled");
+		}
+		g_variant_unref(wireless);
+	}
+}
+
+static void update_battery_status(struct orange_status_state *status) {
+	const char *path = "/org/freedesktop/UPower/devices/DisplayDevice";
+	GVariant *present = dbus_get_property(G_BUS_TYPE_SYSTEM,
+		"org.freedesktop.UPower", path,
+		"org.freedesktop.UPower.Device", "IsPresent");
+	if (present != NULL) {
+		status->battery_present = g_variant_get_boolean(present);
+		g_variant_unref(present);
+	}
+
+	GVariant *percentage = dbus_get_property(G_BUS_TYPE_SYSTEM,
+		"org.freedesktop.UPower", path,
+		"org.freedesktop.UPower.Device", "Percentage");
+	if (percentage != NULL) {
+		double percent = g_variant_get_double(percentage);
+		if (percent < 0.0) {
+			percent = 0.0;
+		} else if (percent > 100.0) {
+			percent = 100.0;
+		}
+		status->battery_percent = (int)lrint(percent);
+		status->battery_present = true;
+		g_variant_unref(percentage);
+	}
+
+	GVariant *state = dbus_get_property(G_BUS_TYPE_SYSTEM,
+		"org.freedesktop.UPower", path,
+		"org.freedesktop.UPower.Device", "State");
+	if (state != NULL) {
+		uint32_t battery_state = g_variant_get_uint32(state);
+		status->battery_charging = battery_state == 1 || battery_state == 4;
+		g_variant_unref(state);
+	}
+
+	GVariant *icon = dbus_get_property(G_BUS_TYPE_SYSTEM,
+		"org.freedesktop.UPower", path,
+		"org.freedesktop.UPower.Device", "IconName");
+	if (icon != NULL) {
+		const char *icon_name = g_variant_get_string(icon, NULL);
+		if (icon_name != NULL && icon_name[0] != '\0') {
+			snprintf(status->battery_icon, sizeof(status->battery_icon),
+				"%s", icon_name);
+		}
+		g_variant_unref(icon);
+	}
+
+	if (status->battery_percent >= 0) {
+		snprintf(status->battery_label, sizeof(status->battery_label),
+			status->battery_charging ? "Battery %d%% Charging" : "Battery %d%%",
+			status->battery_percent);
+	} else {
+		snprintf(status->battery_label, sizeof(status->battery_label),
+			"%s", "Battery");
+	}
+}
+
+static bool server_update_status(struct orange_server *server) {
+	struct orange_status_state next;
+	status_set_defaults(&next);
+	update_network_status(&next);
+	update_battery_status(&next);
+
+	bool changed = memcmp(&server->status, &next, sizeof(next)) != 0;
+	server->status = next;
+	return changed;
+}
+
 static void server_apply_theme_env(struct orange_server *server) {
 	const char *theme = server->config.appearance == ORANGE_APPEARANCE_DARK ?
-		"MacTahoe-Dark" : "MacTahoe-Light";
-	setenv("GTK_THEME", theme, true);
-	setenv("GTK_ICON_THEME", "OrangeIcons", true);
-	setenv("GTK_CSD", "1", true);
-	if (server->options->theme_root != NULL) {
-		const char *old_dirs = getenv("XDG_DATA_DIRS");
-		char dirs[4096];
-		if (old_dirs != NULL && old_dirs[0] != '\0') {
-			snprintf(dirs, sizeof(dirs), "%s:%s",
-				server->options->theme_root, old_dirs);
-		} else {
-			snprintf(dirs, sizeof(dirs), "%s:/usr/local/share:/usr/share",
-				server->options->theme_root);
-		}
-		setenv("XDG_DATA_DIRS", dirs, true);
+		server->config.gtk_theme_dark : server->config.gtk_theme_light;
+	if (theme[0] != '\0') {
+		setenv("GTK_THEME", theme, true);
+	} else {
+		unsetenv("GTK_THEME");
 	}
+	if (server->config.icon_theme[0] != '\0') {
+		setenv("GTK_ICON_THEME", server->config.icon_theme, true);
+	} else {
+		unsetenv("GTK_ICON_THEME");
+	}
+	setenv("ORANGE_APPEARANCE",
+		orange_config_appearance_name(server->config.appearance), true);
+	setenv("GTK_CSD", "1", true);
 }
 
 static void server_apply_cursor_config(struct orange_server *server) {
@@ -309,16 +486,130 @@ static bool contains_case(const char *haystack, const char *needle) {
 	return haystack != NULL && needle != NULL && strcasestr(haystack, needle) != NULL;
 }
 
-static int dock_index_for_view(struct orange_view *view) {
+static const struct orange_desktop_entry *server_desktop_entry_for_app_id(
+		struct orange_server *server,
+		const char *app_id) {
+	if (server == NULL || app_id == NULL || app_id[0] == '\0') {
+		return NULL;
+	}
+	for (size_t i = 0; i < server->desktop_entry_count; i++) {
+		if (orange_desktop_entry_id_matches(
+				server->desktop_entries[i].id, app_id)) {
+			return &server->desktop_entries[i];
+		}
+	}
+	return NULL;
+}
+
+static void launch_desktop_entry(
+		const struct orange_desktop_entry *entry) {
+	if (entry == NULL) {
+		return;
+	}
+	char command[1024];
+	if (orange_desktop_entry_expand_exec(entry, command, sizeof(command))) {
+		launch_command(command);
+	} else {
+		launch_command(entry->exec);
+	}
+}
+
+static void launch_dock_launcher(
+		struct orange_server *server,
+		int launcher_idx) {
+	if (server == NULL || launcher_idx < 0 ||
+			launcher_idx >= ORANGE_DOCK_MAX ||
+			server->config.dock_apps[launcher_idx][0] == '\0') {
+		return;
+	}
+
+	const char *command = orange_shell_dock_command(launcher_idx,
+		server->desktop_entries, (int)server->desktop_entry_count,
+		&server->config);
+	const struct orange_desktop_entry *entry =
+		server_desktop_entry_for_app_id(server,
+			server->config.dock_apps[launcher_idx]);
+	if (entry != NULL) {
+		launch_desktop_entry(entry);
+	} else {
+		launch_command(command);
+	}
+}
+
+static int dock_launcher_for_visible_index(
+		struct orange_server *server,
+		int visible_index) {
+	if (server == NULL || visible_index < 0) {
+		return -1;
+	}
+
+	int launchers[ORANGE_DOCK_MAX] = {0};
+	bool used[ORANGE_DOCK_MAX] = {0};
+	int visible = 0;
+	int dock_count = orange_shell_dock_count(&server->config);
+	for (int i = 0; i < dock_count && visible < ORANGE_DOCK_MAX; i++) {
+		int idx = server->config.dock_order[i];
+		if (idx < 0 || idx >= ORANGE_DOCK_MAX ||
+				server->config.dock_apps[idx][0] == '\0' ||
+				used[idx]) {
+			continue;
+		}
+		launchers[visible++] = idx;
+		used[idx] = true;
+	}
+	for (int i = 0; i < ORANGE_DOCK_MAX && visible < dock_count; i++) {
+		if (server->config.dock_apps[i][0] != '\0' && !used[i]) {
+			launchers[visible++] = i;
+			used[i] = true;
+		}
+	}
+	return visible_index < visible ? launchers[visible_index] : -1;
+}
+
+static int dock_visible_index_for_launcher(
+		struct orange_server *server,
+		int launcher_idx) {
+	if (server == NULL || launcher_idx < 0) {
+		return -1;
+	}
+	int dock_count = orange_shell_dock_count(&server->config);
+	for (int i = 0; i < dock_count; i++) {
+		if (dock_launcher_for_visible_index(server, i) == launcher_idx) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int dock_launcher_for_view(struct orange_server *server, struct orange_view *view) {
 	if (view == NULL || view->xdg_surface == NULL ||
 			view->xdg_surface->toplevel == NULL) {
 		return -1;
 	}
 	const char *app_id = view->xdg_surface->toplevel->app_id;
 	const char *title = view->xdg_surface->toplevel->title;
+	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
+		const char *dock_id = server->config.dock_apps[i];
+		if (dock_id[0] == '\0' || dock_id[0] == '_') {
+			continue;
+		}
+		if (orange_desktop_entry_id_matches(app_id, dock_id)) {
+			return i;
+		}
+		const struct orange_desktop_entry *entry =
+			server_desktop_entry_for_app_id(server, dock_id);
+		if (entry != NULL &&
+				(orange_desktop_entry_id_matches(entry->id, app_id) ||
+				contains_case(app_id, entry->name) ||
+				contains_case(title, entry->name) ||
+				contains_case(app_id, entry->icon))) {
+			return i;
+		}
+	}
 	if (contains_case(app_id, "files") ||
 			contains_case(app_id, "nautilus") || contains_case(title, "files")) {
-		return 0;
+		return server_desktop_entry_for_app_id(server,
+			"org.gnome.Nautilus.desktop") != NULL ? 1 : -1;
 	}
 	if (contains_case(app_id, "browser") ||
 			contains_case(app_id, "firefox") || contains_case(app_id, "chrom") ||
@@ -326,42 +617,36 @@ static int dock_index_for_view(struct orange_view *view) {
 		return 2;
 	}
 	if (contains_case(app_id, "mail") || contains_case(title, "mail")) {
-		return 4;
+		return -1;
 	}
 	if (contains_case(app_id, "map") || contains_case(title, "map")) {
-		return 5;
+		return -1;
 	}
 	if (contains_case(app_id, "photo") || contains_case(title, "photo")) {
-		return 6;
+		return -1;
 	}
 	if (contains_case(app_id, "calendar") || contains_case(title, "calendar")) {
-		return 9;
-	}
-	if (contains_case(app_id, "contact") || contains_case(title, "contact")) {
-		return 10;
-	}
-	if (contains_case(app_id, "todo") || contains_case(app_id, "endeavour") ||
-			contains_case(app_id, "reminder") || contains_case(title, "reminder")) {
-		return 11;
+		return -1;
 	}
 	if (contains_case(app_id, "text") || contains_case(app_id, "gedit") ||
 			contains_case(app_id, "mousepad") || contains_case(title, "notes")) {
-		return 12;
-	}
-	if (contains_case(app_id, "music") || contains_case(title, "music")) {
-		return 14;
+		return server_desktop_entry_for_app_id(server,
+			"org.gnome.TextEditor.desktop") != NULL ? 4 : -1;
 	}
 	if (contains_case(app_id, "software") || contains_case(app_id, "discover") ||
 			contains_case(title, "software")) {
-		return 16;
+		return server_desktop_entry_for_app_id(server,
+			"org.gnome.Software.desktop") != NULL ? 6 : -1;
 	}
 	if (contains_case(app_id, "calculator") || contains_case(app_id, "kcalc") ||
 			contains_case(title, "calculator")) {
-		return 17;
+		return server_desktop_entry_for_app_id(server,
+			"org.gnome.Calculator.desktop") != NULL ? 3 : -1;
 	}
 	if (contains_case(app_id, "settings") || contains_case(app_id, "control-center") ||
 			contains_case(title, "settings")) {
-		return 18;
+		return server_desktop_entry_for_app_id(server,
+			"org.gnome.Settings.desktop") != NULL ? 5 : -1;
 	}
 	return -1;
 }
@@ -373,7 +658,7 @@ static void server_update_dock_open(struct orange_server *server) {
 		if (!view->mapped) {
 			continue;
 		}
-		int index = dock_index_for_view(view);
+		int index = dock_launcher_for_view(server, view);
 		if (index >= 0 && index < ORANGE_DOCK_MAX) {
 			server->dock_open[index] = true;
 		}
@@ -562,6 +847,7 @@ static void output_redraw_shell(struct orange_output *output) {
 		.now = time(NULL),
 		.assets = &output->server->assets,
 		.config = &output->server->config,
+		.status = output->server->status,
 		.desktop_entries = output->server->desktop_entries,
 		.desktop_entry_count = (int)output->server->desktop_entry_count,
 		.context_menu_kind = output->server->context_menu_kind,
@@ -723,6 +1009,7 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 	int local_y = 0;
 	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
 	int new_hot = -1;
+	int dock_redraw_threshold = 16;
 	if (output != NULL) {
 		struct orange_shell_layout layout;
 		compute_shell_layout_for_output(server, output, &layout);
@@ -734,12 +1021,33 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 			new_hot = dock_hover_index_for_pointer(&layout,
 				&server->config, local_x, local_y);
 		}
+		if (new_hot >= 0 && new_hot < layout.dock_item_count) {
+			int item_w = layout.dock_items[new_hot].width;
+			dock_redraw_threshold = item_w / 4;
+			if (dock_redraw_threshold < 12) {
+				dock_redraw_threshold = 12;
+			}
+			if (dock_redraw_threshold > 28) {
+				dock_redraw_threshold = 28;
+			}
+		}
 	}
 	if (new_hot != server->hot_dock_index) {
 		server->hot_dock_index = new_hot;
+		server->last_dock_pointer_x = local_x;
+		server->last_dock_pointer_y = local_y;
 		server_mark_shell_dirty(server);
 	} else if (new_hot >= 0 && server->config.dock_magnification) {
-		server_mark_shell_dirty(server);
+		int dx = abs(local_x - server->last_dock_pointer_x);
+		int dy = abs(local_y - server->last_dock_pointer_y);
+		if (dx >= dock_redraw_threshold || dy >= dock_redraw_threshold) {
+			server->last_dock_pointer_x = local_x;
+			server->last_dock_pointer_y = local_y;
+			server_mark_shell_dirty(server);
+		}
+	} else if (new_hot < 0) {
+		server->last_dock_pointer_x = INT_MIN;
+		server->last_dock_pointer_y = INT_MIN;
 	}
 }
 
@@ -927,11 +1235,10 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 	server->context_menu_index = -1;
 
 	if (kind == ORANGE_CONTEXT_MENU_DOCK) {
-		int launcher_idx = target >= 0 && target < ORANGE_DOCK_MAX ?
-			server->config.dock_order[target] : target;
+		int launcher_idx = dock_launcher_for_visible_index(server, target);
 		switch (item_index) {
 		case 0:
-			launch_command(orange_shell_dock_command(launcher_idx));
+			launch_dock_launcher(server, launcher_idx);
 			break;
 		case 1:
 			launch_command("xdg-open \"$HOME\" || true");
@@ -966,7 +1273,7 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		switch (item_index) {
 		case 0:
 			if (target >= 0 && target < (int)server->desktop_entry_count) {
-				launch_command(server->desktop_entries[target].exec);
+				launch_desktop_entry(&server->desktop_entries[target]);
 			}
 			break;
 		case 6:
@@ -990,6 +1297,29 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			break;
 		case 7:
 			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
+			break;
+		default:
+			break;
+		}
+	} else if (kind == ORANGE_CONTEXT_MENU_STATUS) {
+		switch (item_index) {
+		case 0:
+			launch_command("nm-connection-editor || gnome-control-center wifi || true");
+			break;
+		case 1:
+			launch_command("pavucontrol || gnome-control-center sound || true");
+			break;
+		case 2:
+			launch_command("gnome-control-center power || true");
+			break;
+		case 3:
+			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || gnome-control-center || systemsettings || true");
+			break;
+		case 4:
+			launch_command("xdg-screensaver lock || gnome-screensaver-command -l || true");
+			break;
+		case 5:
+			launch_command("systemctl poweroff || true");
 			break;
 		default:
 			break;
@@ -1084,7 +1414,7 @@ static void finish_desktop_drag(struct orange_server *server) {
 		orange_config_save(&server->config, server->options->config_path);
 		server_mark_shell_dirty(server);
 	} else if (index >= 0 && index < (int)server->desktop_entry_count) {
-		launch_command(server->desktop_entries[index].exec);
+		launch_desktop_entry(&server->desktop_entries[index]);
 	}
 }
 
@@ -1156,13 +1486,13 @@ static void finish_dock_drag(struct orange_server *server) {
 	server->dock_drag_index = -1;
 	server->dock_drag_insert_before = -1;
 
-	int dock_count = orange_shell_dock_count();
+	int dock_count = orange_shell_dock_count(&server->config);
 	if (moved && index >= 0 && index < dock_count &&
 			insert >= 0 && insert < dock_count) {
 		int order[ORANGE_DOCK_MAX];
-		memcpy(order, server->config.dock_order, sizeof(order));
 		for (int i = 0; i < dock_count; i++) {
-			if (order[i] < 0 || order[i] >= dock_count) {
+			order[i] = dock_launcher_for_visible_index(server, i);
+			if (order[i] < 0) {
 				order[i] = i;
 			}
 		}
@@ -1178,12 +1508,14 @@ static void finish_dock_drag(struct orange_server *server) {
 			}
 			order[insert] = launcher;
 		}
-		memcpy(server->config.dock_order, order, sizeof(order));
+		for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
+			server->config.dock_order[i] = i < dock_count ? order[i] : i;
+		}
 		orange_config_save(&server->config, server->options->config_path);
 		server_mark_shell_dirty(server);
 	} else if (!moved && index >= 0 && index < dock_count) {
-		int launcher_idx = server->config.dock_order[index];
-		launch_command(orange_shell_dock_command(launcher_idx));
+		int launcher_idx = dock_launcher_for_visible_index(server, index);
+		launch_dock_launcher(server, launcher_idx);
 		server_mark_shell_dirty(server);
 	}
 }
@@ -1214,6 +1546,20 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 	case ORANGE_HIT_SYSTEM_MENU_ITEM:
 		clear_context_menu(server);
 		handle_shell_menu_action(server, hit.index);
+		break;
+	case ORANGE_HIT_APP_MENU:
+		clear_context_menu(server);
+		server->system_menu_open = false;
+		server_mark_shell_dirty(server);
+		break;
+	case ORANGE_HIT_STATUS_AREA:
+		clear_context_menu(server);
+		server->system_menu_open = false;
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_STATUS;
+		server->context_menu_index = -1;
+		server->context_menu_cursor_x = local_x;
+		server->context_menu_cursor_y = local_y;
+		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_DOCK_ITEM:
 		clear_context_menu(server);
@@ -1263,6 +1609,26 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 	if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK;
 		server->context_menu_index = hit.index;
+	} else if (hit.kind == ORANGE_HIT_STATUS_AREA) {
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_STATUS;
+		server->context_menu_index = -1;
+	} else if (hit.kind == ORANGE_HIT_APP_MENU) {
+		int launcher_idx = dock_launcher_for_view(server, server->focused_view);
+		int visible_idx = dock_visible_index_for_launcher(server, launcher_idx);
+		if (visible_idx < 0) {
+			for (int i = 0; i < orange_shell_dock_count(&server->config); i++) {
+				launcher_idx = dock_launcher_for_visible_index(server, i);
+				if (launcher_idx >= 0 &&
+						server->config.dock_apps[launcher_idx][0] != '_' &&
+						strcmp(server->config.dock_apps[launcher_idx], "__trash__") != 0) {
+					visible_idx = i;
+					break;
+				}
+			}
+		}
+		server->context_menu_kind = visible_idx >= 0 ?
+			ORANGE_CONTEXT_MENU_DOCK : ORANGE_CONTEXT_MENU_NONE;
+		server->context_menu_index = visible_idx;
 	} else if (hit.kind == ORANGE_HIT_WIDGET) {
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_WIDGET;
 		server->context_menu_index = hit.index;
@@ -1939,6 +2305,14 @@ static int handle_clock_timer(void *data) {
 	if (!server->desktop_drag_active) {
 		server_load_config(server, false);
 	}
+	bool status_changed = false;
+	if (server->status_poll_ticks <= 0) {
+		status_changed = server_update_status(server);
+		server->status_poll_ticks = 15;
+	} else {
+		server->status_poll_ticks--;
+	}
+	(void)status_changed;
 	server_mark_shell_dirty(server);
 	wl_event_source_timer_update(server->clock_timer, 1000);
 	return 0;
@@ -1976,6 +2350,9 @@ static bool server_init(struct orange_server *server,
 	memset(server, 0, sizeof(*server));
 	server->options = options;
 	server->hot_dock_index = -1;
+	server->last_dock_pointer_x = INT_MIN;
+	server->last_dock_pointer_y = INT_MIN;
+	server->status_poll_ticks = 0;
 	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 	server->context_menu_index = -1;
 	server->desktop_drag_index = -1;
@@ -1985,12 +2362,13 @@ static bool server_init(struct orange_server *server,
 	wl_list_init(&server->keyboards);
 	orange_config_set_defaults(&server->config);
 	server_load_config(server, false);
-	orange_desktop_entry_load_all(options->desktop_entry_dir,
-		server->desktop_entries,
-		ORANGE_DESKTOP_MAX,
-		&server->desktop_entry_count);
+	status_set_defaults(&server->status);
+	server_update_status(server);
+	server->desktop_entry_count = orange_desktop_entry_load_all_xdg(
+		server->desktop_entries, 1024);
 	orange_assets_init(&server->assets);
-	orange_assets_load(&server->assets, options->asset_root);
+	orange_assets_load(&server->assets, options->asset_root,
+		server->config.icon_theme);
 
 	server->display = wl_display_create();
 	if (server->display == NULL) {

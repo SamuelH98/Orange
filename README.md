@@ -3,9 +3,8 @@
 A small wlroots compositor prototype for Linux with a macOS-like desktop UI
 drawn in C.
 
-The committed project ships repo-safe Orange-branded placeholder assets under
-`assets/`, using an `O` mark instead of vendor imagery. Private user-provided
-assets can still live under ignored `assets/private/` for local experiments.
+The committed `assets/` directory is wallpaper-only. Shell, Dock, desktop, menu,
+and status icons are resolved from the configured freedesktop icon theme.
 
 ## Build
 
@@ -30,7 +29,7 @@ On WSLg, run it nested inside the existing WSLg Wayland session:
 
 ```sh
 cd ~/orange-wlroots
-WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build/orange --assets assets --config orange.conf --desktop-dir assets/desktop --themes .
+WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build/orange --assets assets --config orange.conf
 ```
 
 When this command logs `running on Wayland display wayland-N`, startup
@@ -51,59 +50,31 @@ WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
 For a custom-size startup smoke test that exits on its own:
 
 ```sh
-WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf --desktop-dir assets/desktop --themes .
+WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf
 ```
 
 ## Assets
 
-Tracked Orange placeholder files live in:
+Tracked assets are limited to:
 
-- `assets/wallpaper.png` and `assets/wallpaper-dark.png` at 5120x3200
-- `assets/orange-menu.png`
-- `assets/icons/*.png`
-- `assets/icons/*-dark.png`
-- `assets/status/*.png`
+- `assets/wallpaper.png`
+- `assets/wallpaper-dark.png`
 
-Regenerate them with:
+Optional private wallpapers can live in `assets/private/`, which is ignored by
+Git. To make a run use only that private wallpaper root, pass
+`--assets assets/private`.
 
-```sh
-./tools/generate_orange_assets.sh assets
-```
-
-Optional private files can live in `assets/private/`, which is ignored by Git.
-To make a run use only that private root, pass `--assets assets/private`.
-
-- `assets/private/wallpaper.png`
-- `assets/private/wallpaper-dark.png`
-- `assets/private/wallpaper-beach-day.png`
-- `assets/private/system-menu.png`
-- Dock icons in `assets/private/icons/`:
-  `files.png`, `launcher.png`, `browser.png`, `messages.png`, `mail.png`,
-  `maps.png`, `photos.png`, `video.png`, `phone.png`, `calendar.png`,
-  `contacts.png`, `reminders.png`, `notes.png`, `tv.png`, `music.png`,
-  `rocket.png`, `software.png`, `calculator.png`, `settings.png`,
-  `desktop-preview.png`, `trash.png`
-- Optional dark icon variants in `assets/private/icons/` using `-dark.png`.
-- Status icons in `assets/private/status/`:
-  `battery.100.png`, `wifi.png`, `magnifyingglass.png`,
-  `control-center.png`, `weather.png`
-
-These files are intentionally not tracked.
-
-The optional blue abstract reference wallpaper can live at
-`assets/private/wallpaper-beach-day.png`; it is only used when the selected asset
-root does not provide the default Orange wallpaper.
+Icons are looked up by name from the configured installed icon theme using
+freedesktop theme directories, inherited themes, and `hicolor` fallback. Orange
+checks standard user/system icon locations such as `$HOME/.local/share/icons`,
+`$HOME/.icons`, and `$XDG_DATA_DIRS/icons`.
 
 ## Desktop Entries
 
-Right-side desktop shortcuts are parsed from XDG `.desktop` files in
-`assets/desktop/`. The committed entries are:
-
-- `assets/desktop/images.desktop`
-- `assets/desktop/pdf-document.desktop`
-
-The shell uses each entry's `Name=`, `Icon=`, and `Exec=` fields. Icon names
-must match PNG files in `assets/icons/` or `assets/private/icons/`.
+Right-side desktop shortcuts are parsed from XDG `.desktop` files installed on
+the system. The shell scans `$XDG_DATA_HOME/applications/` and each path in
+`$XDG_DATA_DIRS/applications/` for `.desktop` entries. Dock items are configured
+via `dock_apps` in `orange.conf` (comma-separated desktop file IDs).
 
 ## Settings And Themes
 
@@ -126,28 +97,20 @@ Desktop icons can be dragged; custom positions are persisted in `orange.conf` as
 their shell context menus. Right-click Calendar or Weather widgets for
 widget-specific edit, size, and remove actions.
 
-Bundled installed MacTahoe GTK themes live under `themes/MacTahoe-Light/` and
-`themes/MacTahoe-Dark/` and are the compositor defaults for launched GTK
-clients. Lightweight fallback themes remain under `themes/OrangeGTK/` and
-`themes/OrangeGTK-dark/`. The upstream MacTahoe source is also bundled as the
-`themes/MacTahoe-gtk-theme` submodule, pinned to the upstream MIT-licensed
-project for provenance and updates. The compositor exports GTK theme variables
-and requests client-side decorations.
+Theme names are config-driven:
 
-To initialize the bundled MacTahoe theme source after cloning:
-
-```sh
-git submodule update --init --recursive
+```ini
+icon_theme=MacTahoe
+gtk_theme_light=MacTahoe-Light
+gtk_theme_dark=MacTahoe-Dark
 ```
 
-To populate the GTK icon pack from local assets:
+Any installed GTK/icon theme can be used by changing those values in
+`orange.conf`. MacTahoe is only the current test default.
 
-```sh
-./tools/populate_icon_theme.sh assets themes/OrangeIcons
-```
-
-The generated `themes/OrangeIcons/apps`, `places`, and `status` directories are
-ignored so private icon PNGs do not enter Git history.
+Install or develop GTK/icon themes outside this repository, then set the theme
+names in `orange.conf`. The compositor exports `GTK_THEME`, `GTK_ICON_THEME`,
+and `ORANGE_APPEARANCE` before launching child GTK clients.
 
 To render a native-size PNG for manual inspection:
 

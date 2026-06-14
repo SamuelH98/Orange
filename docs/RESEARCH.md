@@ -13,7 +13,7 @@
 - `gtk4`: 4.14.5
 - `gtk+-3.0`: not installed in this environment
 - `convert` / ImageMagick: installed and used to generate repo-safe Orange
-  placeholder PNG assets
+  wallpaper PNG assets
 
 ## wlroots Notes
 
@@ -74,20 +74,58 @@ the local Orange build string instead of claiming to be an Apple OS release.
 
 The upstream `vinceliuice/MacTahoe-gtk-theme` project describes itself as a
 macOS Tahoe-like GTK theme for Linux desktops, based on WhiteSur. Its README
-documents source installation and customization flags, and its COPYING file is
-MIT-style. The project bundles the upstream source as a Git submodule for
-license, commit history, and updates, and expands the upstream `MacTahoe-Light`
-and `MacTahoe-Dark` release archives under `themes/` so an installed theme
-payload is available without running the installer.
+documents source installation, `./install.sh`, destination selection with
+`-d/--dest`, and naming with `-n/--name`. The companion
+`vinceliuice/MacTahoe-icon-theme` README documents the same install-script
+shape for icons, defaulting icon installation to `$HOME/.local/share/icons`.
+Orange keeps MacTahoe as config-selected test values when those themes are
+installed locally; theme payloads live outside this compositor repository.
 
-The compact OrangeGTK GTK4 shim styles GTK `windowcontrols` with 12px minimum
-controls and 4px side margins, while the bundled MacTahoe titlebutton assets
-are 16x16 SVGs with 14px colored circles, hover glyphs, pressed variants, and
-gray backdrop variants. Orange's custom About app controls use 16px geometry,
-a 23px button step, active red/gray/gray colors, a hover/pressed glyph only on
-the red close button, and gray inactive/backdrop colors, drawing the states
-directly without depending on external SVG assets at runtime. The About dark
-palette uses the bundled MacTahoe dark GTK named colors:
+Freedesktop's Desktop Entry Specification defines `Exec` as the command line
+used by launchers and reserves field codes such as `%f`, `%F`, `%u`, and `%U`
+for file or URL arguments. For a no-file Dock or desktop launch, those field
+codes must be removed rather than passed literally to a shell. This avoids real
+desktop entries failing when they include `%U` or similar launch placeholders.
+It also defines the `Icon` key as either an absolute path or a themed icon name
+resolved through the Icon Theme Specification.
+
+Freedesktop's Icon Theme Specification defines icon lookup as a mapping from an
+icon name and size to theme files, searched through base directories, theme
+inheritance, and finally `hicolor`. Orange keeps a compact in-memory cache but
+should still honor the practical directory shapes used by XDG themes:
+`$XDG_DATA_DIRS/icons/<theme>/...`, `$HOME/.icons/<theme>/...`,
+and `/usr/share/pixmaps`.
+The Freedesktop Icon Naming Specification provides standard icon names for the
+Linux-facing shell contract, including `start-here`, `system-search`,
+`system-shutdown`, `system-lock-screen`, `network-wireless`, `network-offline`,
+`audio-volume-high`, `battery`, `user-trash`, and `weather-clear`.
+
+Apple's Mac User Guide describes the menu bar as a top-screen strip with the
+Apple/system menu and app menus on the left, and status menu icons plus date
+and time on the right. Status icons are interactive: clicking a status item
+opens details and quick controls such as Wi-Fi options. Orange should preserve
+that user-facing shape while resolving images and launch targets through
+freedesktop desktop entries, icon themes, and standard Linux control commands.
+
+GTK's `GtkIconTheme` documentation describes a named icon theme as a shared
+database and notes that direct lookup takes an icon name, size, and scale.
+The shell renderer cannot depend on a GTK display object inside the wlroots
+compositor path, so Orange implements the same practical model locally: parse
+`index.theme`, probe only the requested icon name through exact/closest size
+lookup, cache successful surfaces, and cache misses. This avoids rendering
+hundreds of theme icons during startup or every shell redraw.
+
+Freedesktop's StatusNotifierItem family is the DBus tray/status-area protocol:
+a StatusNotifierHost represents graphical StatusNotifierItem instances and is
+registered on the session bus. Orange's current menu-bar status strip is still
+static compositor chrome, so this pass fixes its icon-theme/local asset lookup;
+a live DBus StatusNotifier host remains a separate feature.
+
+Orange's custom About app controls use 16px geometry, a 23px button step,
+active red/gray/gray colors, a hover/pressed glyph only on the red close
+button, and gray inactive/backdrop colors, drawing the states directly without
+depending on external SVG assets at runtime. The About dark palette follows
+the installed MacTahoe dark GTK named colors used during testing:
 `window_bg_color #333333`, `window_fg_color #dadada`, and `view_bg_color #242424`.
 
 Apple's Desktop & Dock settings documentation describes Dock size as
@@ -124,6 +162,8 @@ plus a compact label bubble for hover feedback.
   menu/action component guidance.
 - Apple Support, "Add and customize widgets on Mac":
   https://support.apple.com/guide/mac-help/add-and-customize-widgets-mchl52be5da5/mac
+- Apple Support, "What's in the menu bar on Mac?":
+  https://support.apple.com/guide/mac-help/whats-in-the-menu-bar-mchlp1446/mac
 - Apple Support, "Find out which macOS your Mac is using":
   https://support.apple.com/109033
 - Apple Support, macOS update notes:
@@ -132,6 +172,18 @@ plus a compact label bubble for hover feedback.
   https://support.apple.com/guide/mac-help/mchl30bc42cb/mac
 - MacTahoe GTK Theme:
   https://github.com/vinceliuice/MacTahoe-gtk-theme
+- MacTahoe Icon Theme:
+  https://github.com/vinceliuice/MacTahoe-icon-theme
+- GTK4 `GtkIconTheme`:
+  https://docs.gtk.org/gtk4/class.IconTheme.html
+- Freedesktop Icon Theme Specification:
+  https://specifications.freedesktop.org/icon-theme-spec/latest/
+- Freedesktop Icon Naming Specification:
+  https://specifications.freedesktop.org/icon-naming-spec/latest/
+- Freedesktop Desktop Entry Specification:
+  https://specifications.freedesktop.org/desktop-entry-spec/latest/
+- Freedesktop StatusNotifierItem:
+  https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/
 - Apple Support, "Change Desktop & Dock settings on Mac":
   https://support.apple.com/guide/mac-help/change-desktop-dock-settings-mchlp1119/mac
 - Dock (macOS) behavior reference:

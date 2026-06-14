@@ -1,9 +1,12 @@
 build/
 .cache/
 .venv/
-assets/private/
-themes/OrangeIcons/apps/
-themes/OrangeIcons/places/
-themes/OrangeIcons/status/
+private/
 *.o
 *.png.tmp
+assets/private/
+assets/icons/
+assets/status/
+assets/context-menu/
+assets/context-menu-white/
+assets/orange-menu.png

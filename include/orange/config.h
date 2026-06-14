@@ -47,6 +47,10 @@ struct orange_config {
 
 	char cursor_theme[ORANGE_CURSOR_THEME_MAX];
 	int cursor_size;
+	char icon_theme[ORANGE_CURSOR_THEME_MAX];
+	char gtk_theme_light[ORANGE_CURSOR_THEME_MAX];
+	char gtk_theme_dark[ORANGE_CURSOR_THEME_MAX];
+	char dock_apps[ORANGE_DOCK_MAX][128];
 };
 
 void orange_config_set_defaults(struct orange_config *config);

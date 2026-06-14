@@ -20,6 +20,8 @@ add_project_arguments(
 inc = include_directories('include')
 
 cairo_dep = dependency('cairo')
+librsvg_dep = dependency('librsvg-2.0')
+gio_dep = dependency('gio-2.0')
 drm_dep = dependency('libdrm')
 pixman_dep = dependency('pixman-1')
 wayland_server_dep = dependency('wayland-server')
@@ -54,13 +56,13 @@ orange_core = static_library(
   'orange-core',
   orange_core_sources,
   include_directories: inc,
-  dependencies: [cairo_dep, drm_dep, math_dep],
+  dependencies: [cairo_dep, drm_dep, math_dep, librsvg_dep],
 )
 
 orange_core_dep = declare_dependency(
   include_directories: inc,
   link_with: orange_core,
-  dependencies: [cairo_dep, drm_dep, math_dep],
+  dependencies: [cairo_dep, drm_dep, math_dep, librsvg_dep],
 )
 
 orange_exe = executable(
@@ -77,6 +79,7 @@ orange_exe = executable(
     cairo_dep,
     drm_dep,
     pixman_dep,
+    gio_dep,
     wayland_server_dep,
     wlroots_dep,
     xkbcommon_dep,
@@ -98,8 +101,6 @@ test(
     '--height', '900',
     '--assets', meson.current_source_dir() / 'assets',
     '--config', meson.current_build_dir() / 'headless-custom-startup.conf',
-    '--desktop-dir', meson.current_source_dir() / 'assets/desktop',
-    '--themes', meson.current_source_dir(),
   ],
   env: headless_startup_env,
   timeout: 15,
@@ -162,6 +163,13 @@ test_config = executable(
   dependencies: [orange_core_dep],
 )
 
+test_assets = executable(
+  'test-assets',
+  files('tests/test_assets.c'),
+  include_directories: inc,
+  dependencies: [orange_core_dep],
+)
+
 test_desktop_entry = executable(
   'test-desktop-entry',
   files('tests/test_desktop_entry.c'),
@@ -170,4 +178,5 @@ test_desktop_entry = executable(
 )
 
 test('config', test_config)
+test('assets', test_assets)
 test('desktop-entry', test_desktop_entry)

@@ -93,6 +93,16 @@ static void copy_cursor_theme(struct orange_config *config, const char *value) {
 	snprintf(config->cursor_theme, sizeof(config->cursor_theme), "%s", value);
 }
 
+static void copy_theme_name(char *destination,
+		size_t destination_size,
+		const char *value) {
+	if (value == NULL || value[0] == '\0') {
+		destination[0] = '\0';
+		return;
+	}
+	snprintf(destination, destination_size, "%s", value);
+}
+
 static void apply_pair(struct orange_config *config,
 		const char *key,
 		const char *value) {
@@ -159,6 +169,39 @@ static void apply_pair(struct orange_config *config,
 		copy_cursor_theme(config, value);
 	} else if (strcmp(key, "cursor_size") == 0) {
 		config->cursor_size = clamp_int(atoi(value), 16, 96);
+	} else if (strcmp(key, "icon_theme") == 0) {
+		copy_theme_name(config->icon_theme, sizeof(config->icon_theme), value);
+	} else if (strcmp(key, "gtk_theme_light") == 0) {
+		copy_theme_name(config->gtk_theme_light,
+			sizeof(config->gtk_theme_light), value);
+	} else if (strcmp(key, "gtk_theme_dark") == 0) {
+		copy_theme_name(config->gtk_theme_dark,
+			sizeof(config->gtk_theme_dark), value);
+	} else if (strcmp(key, "dock_apps") == 0) {
+		const char *p = value;
+		int idx = 0;
+		while (*p != '\0' && idx < ORANGE_DOCK_MAX) {
+			while (*p == ' ' || *p == ',') {
+				p++;
+			}
+			if (*p == '\0') {
+				break;
+			}
+			const char *start = p;
+			while (*p != '\0' && *p != ',' && *p != ' ') {
+				p++;
+			}
+			size_t len = (size_t)(p - start);
+			if (len > 0 && len < 128) {
+				memcpy(config->dock_apps[idx], start, len);
+				config->dock_apps[idx][len] = '\0';
+				idx++;
+			}
+		}
+		while (idx < ORANGE_DOCK_MAX) {
+			config->dock_apps[idx][0] = '\0';
+			idx++;
+		}
 	}
 }
 
@@ -187,6 +230,31 @@ void orange_config_set_defaults(struct orange_config *config) {
 	config->weather_widget_size = ORANGE_WIDGET_SIZE_SMALL;
 	config->cursor_theme[0] = '\0';
 	config->cursor_size = 28;
+	snprintf(config->icon_theme, sizeof(config->icon_theme), "%s", "MacTahoe");
+	snprintf(config->gtk_theme_light, sizeof(config->gtk_theme_light),
+		"%s", "MacTahoe-Light");
+	snprintf(config->gtk_theme_dark, sizeof(config->gtk_theme_dark),
+		"%s", "MacTahoe-Dark");
+	/* Default dock apps — users should customize these */
+	const char *default_dock[] = {
+		"__launcher__",
+		"org.gnome.Nautilus.desktop",
+		"firefox.desktop",
+		"org.gnome.Calculator.desktop",
+		"org.gnome.TextEditor.desktop",
+		"org.gnome.Settings.desktop",
+		"org.gnome.Software.desktop",
+		"org.gnome.Terminal.desktop",
+		"org.gnome.Weather.desktop",
+		"__trash__",
+	};
+	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
+		if (i < (int)(sizeof(default_dock) / sizeof(default_dock[0]))) {
+			snprintf(config->dock_apps[i], 128, "%s", default_dock[i]);
+		} else {
+			config->dock_apps[i][0] = '\0';
+		}
+	}
 }
 
 bool orange_config_load(struct orange_config *config, const char *path) {
@@ -271,6 +339,19 @@ bool orange_config_save(const struct orange_config *config, const char *path) {
 		widget_size_name(config->weather_widget_size));
 	fprintf(file, "cursor_theme=%s\n", config->cursor_theme);
 	fprintf(file, "cursor_size=%d\n", config->cursor_size);
+	fprintf(file, "icon_theme=%s\n", config->icon_theme);
+	fprintf(file, "gtk_theme_light=%s\n", config->gtk_theme_light);
+	fprintf(file, "gtk_theme_dark=%s\n", config->gtk_theme_dark);
+	fprintf(file, "dock_apps=");
+	bool first = true;
+	for (int i = 0; i < ORANGE_DOCK_MAX && config->dock_apps[i][0] != '\0'; i++) {
+		if (!first) {
+			fprintf(file, ",");
+		}
+		fprintf(file, "%s", config->dock_apps[i]);
+		first = false;
+	}
+	fprintf(file, "\n");
 
 	fclose(file);
 	return true;

@@ -20,26 +20,26 @@ macOS-like shell prototype.
   - right-side desktop items,
   - translucent bottom dock with app icons, divider, running indicators, and
     trash.
-- Ship a tracked, vendor-neutral Orange placeholder asset pack under `assets/` using
-  Orange `O` branding for app/menu icons, with private user assets remaining
-  optional under ignored paths.
+- Keep tracked `assets/` wallpaper-only; shell icons, Dock icons, desktop
+  shortcut icons, menu icons, and status icons must come from configured icon
+  themes.
 - Scale menu bar, widgets, desktop items, and Dock geometry from the output
   resolution so the shell remains usable on small and large displays.
 - Match the reference Dock measurements with resolution-scaled constants for
   icon size, icon gaps, glass padding, indicator lane, and bottom edge
   alignment.
 - Provide tracked high-resolution Orange light/dark wallpapers plus a
-  procedural background fallback. Dock icons, desktop shortcut icons, weather
-  icons, and status icons are local-file sourced.
-- Load all shell icon imagery from local `./assets/` paths. Dock icons,
-  desktop shortcut icons, weather icons, and status tray icons must not use web
-  URLs or system icon theme lookups.
+  procedural background fallback.
+- Resolve all shell icon imagery through freedesktop icon-theme names, including
+  inherited themes and `hicolor` fallback, without storing icons under
+  `assets/`.
 - Provide a persistent desktop configuration model:
   - global light/dark appearance,
   - desktop shortcut visibility, grid spacing, text label size, and icon scale,
   - Dock scale, icon scale, magnification, and active indicator visibility,
   - widget visibility and small/medium/large sizing,
-  - cursor theme name and cursor size.
+  - cursor theme name and cursor size,
+  - GTK light/dark theme names and icon theme name.
 - Provide a root desktop widget system similar in spirit to GNOME Shell:
   - widgets are defined as typed objects with stable IDs, rectangles, and
     visibility flags,
@@ -47,19 +47,24 @@ macOS-like shell prototype.
   - widgets expose shortcut-menu edit, size, and remove actions,
   - widgets remain pinned below floating application windows.
 - Provide a native GTK Settings application source that controls this
-  configuration and uses the bundled GTK theme when GTK development libraries
+  configuration and uses the configured GTK theme when GTK development libraries
   are available at build time.
 - Provide a native GTK About Orange application source that opens from the
   system menu About Orange item when GTK development libraries are available
   at build time. It should present a compact Orange model/version summary
   with real chip and memory values and no serial number row.
-- Bundle installed macOS-like MacTahoe GTK theme variants and configure GTK
-  clients launched from the shell to use them.
-- Bundle the upstream MacTahoe GTK theme source while preserving upstream
-  licensing and update path.
-- Provide a bundled GTK icon theme (`OrangeIcons`) that maps the local dock and
-  shortcut icon names into standard GTK icon-theme lookup paths when populated
-  from `./assets/`.
+- Configure GTK clients launched from the shell using the user-selected GTK
+  theme names.
+- Use MacTahoe GTK and icon themes as default test values, with final Orange
+  GTK and icon themes expected to live in a separate theme project and be
+  installed through normal Linux theme locations.
+- Resolve Dock, desktop shortcut, and shell status icons through
+  freedesktop-style icon-theme names, with semantic aliases for common app IDs
+  and standard XDG icon names.
+- Keep the menu bar behavior macOS-like at the interaction layer: system menu
+  and app menus on the left, status menu icons and clock on the right, with
+  status icons opening quick controls; implement those controls with Linux
+  launch commands, DBus-readable system state, and freedesktop icon names.
 - Disable server-side compositor decorations and prefer client-side window
   decorations for xdg-decoration and KDE server-decoration protocols.
 - Replace static desktop shortcut placeholders with XDG `.desktop` entries.
@@ -70,7 +75,7 @@ macOS-like shell prototype.
   - menu bar item spacing,
   - tray glyph replacement with local battery/Wi-Fi/control icons,
   - calendar header padding and centered day grid,
-  - weather-condition icon sourced from assets,
+  - weather-condition icon sourced from the configured icon theme,
   - desktop label wrapping and centering,
   - Dock indicator dot bottom padding,
   - Dock Calendar icon day/date sync,
@@ -88,6 +93,10 @@ macOS-like shell prototype.
   - Dock launchers for common apps/actions,
   - desktop folder/document launchers,
   - system menu popover with shell actions.
+- Launch Dock and desktop apps from parsed freedesktop `.desktop` entries with
+  unsupported or file-specific `Exec` field codes removed for no-file launches.
+- Right-clicking the active app/menu title area in the menu bar opens the same
+  app context menu used by Dock items so the menu-bar app menu is actionable.
 - Provide keyboard shortcuts modeled after a Mac-like Command key flow:
   - Super/Logo+Return launches a terminal,
   - Super/Logo+Space launches an app picker if available,
@@ -112,8 +121,9 @@ macOS-like shell prototype.
   Control, Spotlight indexing, real LaunchServices, notarization, iCloud,
   Continuity, and system settings backends are out of scope.
 - Exact proprietary fonts, shipped wallpapers, official icons, and trademarks
-  are only loaded if the user provides local licensed files. The runtime is
-  designed to source from local `./assets/` paths.
+  are only loaded if the user provides or installs licensed local files. The
+  runtime is designed to source wallpapers from `./assets/` and icons from
+  installed icon themes.
 
 ## Acceptance Criteria
 
@@ -122,9 +132,8 @@ macOS-like shell prototype.
 - Unit tests pass.
 - `WLR_BACKENDS=headless build/orange --headless --once` renders and
   exits successfully.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
-  --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf
-  --desktop-dir assets/desktop --themes .` renders and exits successfully.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf`
+  renders and exits successfully.
 - Runtime logs include selected renderer type information.
 - A user can launch configured apps from the Dock/desktop and interact with
   ordinary Wayland windows.

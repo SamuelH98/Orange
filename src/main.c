@@ -6,7 +6,7 @@
 
 static void usage(const char *argv0) {
 	fprintf(stderr,
-		"usage: %s [--headless] [--once] [--width N] [--height N] [--assets PATH] [--config PATH] [--desktop-dir PATH] [--themes PATH]\n",
+		"usage: %s [--headless] [--once] [--width N] [--height N] [--assets PATH] [--config PATH]\n",
 		argv0);
 }
 
@@ -18,8 +18,6 @@ int main(int argc, char **argv) {
 		.height = 1080,
 		.asset_root = "assets",
 		.config_path = "orange.conf",
-		.desktop_entry_dir = "assets/desktop",
-		.theme_root = ".",
 	};
 
 	for (int i = 1; i < argc; i++) {
@@ -35,10 +33,6 @@ int main(int argc, char **argv) {
 			options.asset_root = argv[++i];
 		} else if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
 			options.config_path = argv[++i];
-		} else if (strcmp(argv[i], "--desktop-dir") == 0 && i + 1 < argc) {
-			options.desktop_entry_dir = argv[++i];
-		} else if (strcmp(argv[i], "--themes") == 0 && i + 1 < argc) {
-			options.theme_root = argv[++i];
 		} else if (strcmp(argv[i], "--help") == 0) {
 			usage(argv[0]);
 			return 0;

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static char *trim(char *value) {
 	while (isspace((unsigned char)*value)) {
@@ -33,10 +34,156 @@ static bool has_desktop_suffix(const char *name) {
 	return len > 8 && strcmp(name + len - 8, ".desktop") == 0;
 }
 
+static void strip_desktop_suffix(char *name) {
+	size_t len = strlen(name);
+	if (len > 8 && strcmp(name + len - 8, ".desktop") == 0) {
+		name[len - 8] = '\0';
+	}
+}
+
+bool orange_desktop_entry_id_matches(const char *entry_id, const char *id) {
+	if (entry_id == NULL || id == NULL || entry_id[0] == '\0' ||
+			id[0] == '\0') {
+		return false;
+	}
+	if (strcmp(entry_id, id) == 0) {
+		return true;
+	}
+	size_t id_len = strlen(id);
+	if (id_len > 8 && strcmp(id + id_len - 8, ".desktop") == 0 &&
+			strncmp(entry_id, id, id_len - 8) == 0 &&
+			entry_id[id_len - 8] == '\0') {
+		return true;
+	}
+	size_t entry_len = strlen(entry_id);
+	return entry_len + 8 == id_len &&
+		strncmp(entry_id, id, entry_len) == 0 &&
+		strcmp(id + entry_len, ".desktop") == 0;
+}
+
+static bool append_char(char *out, size_t out_size, size_t *len, char c) {
+	if (*len + 1 >= out_size) {
+		return false;
+	}
+	out[(*len)++] = c;
+	out[*len] = '\0';
+	return true;
+}
+
+static bool append_text(char *out, size_t out_size, size_t *len,
+		const char *text) {
+	if (text == NULL) {
+		return true;
+	}
+	while (*text != '\0') {
+		if (!append_char(out, out_size, len, *text++)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool append_shell_quoted(char *out, size_t out_size, size_t *len,
+		const char *text) {
+	if (!append_char(out, out_size, len, '\'')) {
+		return false;
+	}
+	for (const char *p = text != NULL ? text : ""; *p != '\0'; p++) {
+		if (*p == '\'') {
+			if (!append_text(out, out_size, len, "'\\''")) {
+				return false;
+			}
+		} else if (!append_char(out, out_size, len, *p)) {
+			return false;
+		}
+	}
+	return append_char(out, out_size, len, '\'');
+}
+
+static void trim_trailing_space(char *out, size_t *len) {
+	while (*len > 0 && isspace((unsigned char)out[*len - 1])) {
+		(*len)--;
+	}
+	out[*len] = '\0';
+}
+
+bool orange_desktop_entry_expand_exec(
+		const struct orange_desktop_entry *entry,
+		char *command,
+		size_t command_size) {
+	if (entry == NULL || command == NULL || command_size == 0 ||
+			entry->exec[0] == '\0') {
+		return false;
+	}
+
+	size_t len = 0;
+	command[0] = '\0';
+	for (const char *p = entry->exec; *p != '\0'; p++) {
+		if (*p != '%') {
+			if (!append_char(command, command_size, &len, *p)) {
+				return false;
+			}
+			continue;
+		}
+
+		p++;
+		if (*p == '\0') {
+			return false;
+		}
+		switch (*p) {
+		case '%':
+			if (!append_char(command, command_size, &len, '%')) {
+				return false;
+			}
+			break;
+		case 'f':
+		case 'F':
+		case 'u':
+		case 'U':
+		case 'd':
+		case 'D':
+		case 'n':
+		case 'N':
+		case 'v':
+		case 'm':
+			/* No file/URL target is being launched from the shell. */
+			break;
+		case 'i':
+			if (entry->icon[0] != '\0' &&
+					(!append_text(command, command_size, &len, "--icon ") ||
+					!append_shell_quoted(command, command_size, &len, entry->icon))) {
+				return false;
+			}
+			break;
+		case 'c':
+			if (!append_shell_quoted(command, command_size, &len, entry->name)) {
+				return false;
+			}
+			break;
+		case 'k':
+			break;
+		default:
+			return false;
+		}
+	}
+
+	trim_trailing_space(command, &len);
+	return command[0] != '\0';
+}
+
 bool orange_desktop_entry_load(
 		const char *path,
 		struct orange_desktop_entry *entry) {
 	memset(entry, 0, sizeof(*entry));
+
+	/* Extract ID from filename: path/to/Foo.desktop -> Foo */
+	const char *slash = strrchr(path, '/');
+	const char *base = slash != NULL ? slash + 1 : path;
+	char id_buf[256];
+	snprintf(id_buf, sizeof(id_buf), "%s", base);
+	strip_desktop_suffix(id_buf);
+	snprintf(entry->id, sizeof(entry->id), "%s", id_buf);
+
 	FILE *file = fopen(path, "r");
 	if (file == NULL) {
 		return false;
@@ -131,4 +278,51 @@ bool orange_desktop_entry_load_all(
 
 	free(names);
 	return true;
+}
+
+size_t orange_desktop_entry_load_all_xdg(
+		struct orange_desktop_entry *entries,
+		size_t capacity) {
+	size_t count = 0;
+
+	/* XDG data home: $XDG_DATA_HOME/applications/ */
+	const char *xdg_data_home = getenv("XDG_DATA_HOME");
+	const char *home = getenv("HOME");
+	if (xdg_data_home != NULL && xdg_data_home[0] != '\0') {
+		char path[4096];
+		snprintf(path, sizeof(path), "%s/applications", xdg_data_home);
+		size_t dir_count = 0;
+		orange_desktop_entry_load_all(path, entries + count,
+			capacity - count, &dir_count);
+		count += dir_count;
+	} else if (home != NULL && home[0] != '\0') {
+		char path[4096];
+		snprintf(path, sizeof(path), "%s/.local/share/applications", home);
+		size_t dir_count = 0;
+		orange_desktop_entry_load_all(path, entries + count,
+			capacity - count, &dir_count);
+		count += dir_count;
+	}
+
+	/* XDG data dirs: $XDG_DATA_DIRS/applications/ */
+	const char *xdg_data_dirs = getenv("XDG_DATA_DIRS");
+	if (xdg_data_dirs == NULL || xdg_data_dirs[0] == '\0') {
+		xdg_data_dirs = "/usr/local/share:/usr/share";
+	}
+
+	char dirs_copy[4096];
+	snprintf(dirs_copy, sizeof(dirs_copy), "%s", xdg_data_dirs);
+	char *save;
+	char *token = strtok_r(dirs_copy, ":", &save);
+	while (token != NULL && count < capacity) {
+		char path[4096];
+		snprintf(path, sizeof(path), "%s/applications", token);
+		size_t dir_count = 0;
+		orange_desktop_entry_load_all(path, entries + count,
+			capacity - count, &dir_count);
+		count += dir_count;
+		token = strtok_r(NULL, ":", &save);
+	}
+
+	return count;
 }

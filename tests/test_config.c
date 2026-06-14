@@ -25,6 +25,11 @@ int main(void) {
 	config.weather_widget_size = ORANGE_WIDGET_SIZE_LARGE;
 	snprintf(config.cursor_theme, sizeof(config.cursor_theme), "%s", "Bibata-Modern-Ice");
 	config.cursor_size = 36;
+	snprintf(config.icon_theme, sizeof(config.icon_theme), "%s", "Adwaita");
+	snprintf(config.gtk_theme_light, sizeof(config.gtk_theme_light), "%s", "Adwaita");
+	snprintf(config.gtk_theme_dark, sizeof(config.gtk_theme_dark), "%s", "Adwaita-dark");
+	snprintf(config.dock_apps[0], 128, "%s", "test-app.desktop");
+	snprintf(config.dock_apps[1], 128, "%s", "__trash__");
 
 	const char *path = "/tmp/orange-config-test.conf";
 	assert(orange_config_save(&config, path));
@@ -51,6 +56,11 @@ int main(void) {
 	assert(loaded.weather_widget_size == ORANGE_WIDGET_SIZE_LARGE);
 	assert(loaded.cursor_size == 36);
 	assert(strcmp(loaded.cursor_theme, "Bibata-Modern-Ice") == 0);
+	assert(strcmp(loaded.icon_theme, "Adwaita") == 0);
+	assert(strcmp(loaded.gtk_theme_light, "Adwaita") == 0);
+	assert(strcmp(loaded.gtk_theme_dark, "Adwaita-dark") == 0);
+	assert(strcmp(loaded.dock_apps[0], "test-app.desktop") == 0);
+	assert(strcmp(loaded.dock_apps[1], "__trash__") == 0);
 
 	puts("config tests passed");
 	return 0;

@@ -4,8 +4,9 @@
 #include <cairo/cairo.h>
 #include <stdbool.h>
 
-#define ORANGE_ASSET_DOCK_ICON_MAX 32
-#define ORANGE_ASSET_CONTEXT_MENU_ICON_MAX 32
+#define ORANGE_ASSET_ICON_MAX 1024
+#define ORANGE_ASSET_ICON_NAME_MAX 128
+#define ORANGE_THEME_NAME_MAX 128
 
 enum orange_asset_icon_variant {
 	ORANGE_ASSET_ICON_LIGHT,
@@ -13,38 +14,43 @@ enum orange_asset_icon_variant {
 	ORANGE_ASSET_ICON_VARIANTS,
 };
 
-enum orange_status_icon {
-	ORANGE_STATUS_ICON_BATTERY,
-	ORANGE_STATUS_ICON_WIFI,
-	ORANGE_STATUS_ICON_SEARCH,
-	ORANGE_STATUS_ICON_CONTROL_CENTER,
-	ORANGE_STATUS_ICON_WEATHER,
-	ORANGE_STATUS_ICON_COUNT,
+struct orange_named_icon {
+	char name[ORANGE_ASSET_ICON_NAME_MAX];
+	cairo_surface_t *surface[ORANGE_ASSET_ICON_VARIANTS];
+	bool resolved[ORANGE_ASSET_ICON_VARIANTS];
 };
 
 struct orange_assets {
 	cairo_surface_t *wallpaper;
 	cairo_surface_t *wallpaper_dark;
-	cairo_surface_t *wallpaper_beach_day;
-	cairo_surface_t *system_menu;
-	cairo_surface_t *dock_icons[ORANGE_ASSET_ICON_VARIANTS][ORANGE_ASSET_DOCK_ICON_MAX];
-	cairo_surface_t *desktop_icons[ORANGE_ASSET_ICON_VARIANTS][ORANGE_ASSET_DOCK_ICON_MAX];
-	cairo_surface_t *status_icons[ORANGE_STATUS_ICON_COUNT];
-	cairo_surface_t *context_menu_icons[ORANGE_ASSET_CONTEXT_MENU_ICON_MAX];
-	int dock_icon_count;
-	int desktop_icon_count;
-	int context_menu_icon_count;
+	cairo_surface_t *wallpaper_scaled;
+	cairo_surface_t *wallpaper_dark_scaled;
+	bool wallpaper_checked;
+	bool wallpaper_dark_checked;
+	int wallpaper_scaled_width;
+	int wallpaper_scaled_height;
+	int wallpaper_dark_scaled_width;
+	int wallpaper_dark_scaled_height;
+	struct orange_named_icon icons[ORANGE_ASSET_ICON_MAX];
+	int icon_count;
+	char asset_root[4096];
+	char icon_theme[ORANGE_THEME_NAME_MAX];
 };
 
 void orange_assets_init(struct orange_assets *assets);
-bool orange_assets_load(struct orange_assets *assets, const char *root);
+bool orange_assets_load(
+	struct orange_assets *assets,
+	const char *asset_root,
+	const char *icon_theme);
 void orange_assets_finish(struct orange_assets *assets);
-cairo_surface_t *orange_assets_desktop_icon(
-	const struct orange_assets *assets,
+cairo_surface_t *orange_assets_wallpaper(
+	struct orange_assets *assets,
+	bool dark,
+	int width,
+	int height);
+cairo_surface_t *orange_assets_icon(
+	struct orange_assets *assets,
 	enum orange_asset_icon_variant variant,
-	const char *name);
-cairo_surface_t *orange_assets_context_menu_icon(
-	const struct orange_assets *assets,
 	const char *name);
 
 #endif

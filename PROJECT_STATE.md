@@ -20,9 +20,9 @@ wlroots compositor, reference-sized shell geometry, transparent menu bar,
 compact macOS-like Dock layout, scalable widgets, basic xdg-shell window
 management, Dock launchers, XDG `.desktop` desktop launchers with drag/context
 menus, keyboard shortcuts, cursor customization, local Orange asset sourcing,
-GTK theme/icon theme scaffolding, PNG render export, foreground-only visual
-smoke coverage, bundled installed MacTahoe GTK themes plus upstream source, and
-headless one-shot validation including custom startup arguments.
+generic installed GTK/icon theme configuration, lazy freedesktop icon lookup,
+PNG render export, foreground-only visual smoke coverage, and headless one-shot
+validation including custom startup arguments.
 
 ---
 
@@ -50,10 +50,8 @@ scaling, and a render smoke test.
 - `build/orange-render-shell /tmp/orange-shell.png` passed.
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once`
   passed and rendered one headless frame.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
-  --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf
-  --desktop-dir assets/desktop --themes .` passed and rendered one headless
-  custom-size frame.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf`
+  passed and rendered one headless custom-size frame.
 
 #### Tests Added
 
@@ -85,19 +83,21 @@ Meson startup smoke test for custom headless compositor arguments.
   illustration, centered model/year, compact local chip/memory rows, More Info
   action, and regulatory footer. It caps at 72% of the reference design size
   and still scales down to monitor height on smaller displays.
-- Bundled installed MacTahoe release themes as `themes/MacTahoe-Light` and
-  `themes/MacTahoe-Dark`.
-- Bundled upstream MacTahoe GTK theme source as `themes/MacTahoe-gtk-theme`
-  submodule, preserving upstream MIT-style license and update path.
+- Config-driven GTK light/dark theme names and icon theme name, defaulting to
+  MacTahoe for current testing.
+- Theme assets are external to this compositor repo; installed GTK/icon theme
+  names are selected through `orange.conf`.
 - Persistent widget visibility and small/medium/large widget size settings.
-- Light/dark shell appearance switching and MacTahoe GTK theme environment
-  export.
+- Light/dark shell appearance switching with `GTK_THEME`, `GTK_ICON_THEME`,
+  and `ORANGE_APPEARANCE` environment export.
 - Bundled GTK CSD theme CSS with traffic-light window control styling.
-- Bundled `OrangeIcons` GTK icon theme metadata plus a population script.
+- Lazy freedesktop icon-theme lookup with inherited themes, `hicolor` fallback,
+  semantic aliases, positive cache, and miss cache.
+- Lazy wallpaper decode plus output-sized wallpaper cache.
 - Widget registry layer with Calendar and Weather widgets pinned under client
   windows.
 - Deterministic `.desktop` parser and right-side desktop shortcuts from
-  `assets/desktop/`.
+  XDG data directories.
 - Desktop labels wrap and center, including `PDF Documents`.
 - Dock Calendar icon day/date overlay uses current shell time.
 - Dock indicator dots stay inside the glass container.
@@ -112,10 +112,11 @@ Meson startup smoke test for custom headless compositor arguments.
 - Cursor theme and cursor size settings in `orange.conf`.
 - GTK Settings app controls for cursor theme and cursor size.
 - Config-driven `wlr_xcursor_manager` setup and `XCURSOR_*` environment export.
-- Tracked Orange placeholder PNG asset pack under `assets/` using `O` branding.
-- Asset generator script: `tools/generate_orange_assets.sh`.
-- Generated 5120x3200 light/dark Orange wallpapers with a centered `O` mark.
-- Larger white Orange menu logo in the transparent menu bar.
+- `assets/` is now wallpaper-only; shell/Dock/status/desktop/menu icons come
+  from configured icon themes.
+- Generated 5120x3200 light/dark Orange wallpapers.
+- Menu bar falls back to a text `O` if the configured icon theme has no
+  `orange-menu` equivalent.
 - Appearance-aware status icon tinting; status glyphs render light in dark mode.
 - Status strip icons now pack leftward from measured clock text in fixed visual
   slots, with tighter generated battery/Wi-Fi/search/control/weather masks.
@@ -184,32 +185,34 @@ Meson startup smoke test for custom headless compositor arguments.
 
 ### Active Feature
 
-Project is renamed to Orange across source, public headers, Meson targets,
-local fallback themes, placeholder assets, docs, default config paths, and GTK
-app IDs. About Orange dark mode, red/gray/gray traffic-light controls with
-slightly wider spacing, fixed-center Dock magnification behavior, and tracked
-high-resolution light/dark Orange wallpapers are implemented.
+Theme and asset cleanup is implemented. `assets/` is wallpaper-only, GTK/icon
+theme names are config-driven, theme payloads are no longer stored under a repo
+`themes/` directory, icon loading follows freedesktop installed-theme lookup
+lazily, and wallpaper decode/scaling is cached to reduce shell redraw cost.
+The Dock app launcher regression is fixed: the built-in launcher now resolves
+the freedesktop `view-app-grid`/Launchpad-style icon from the installed
+MacTahoe icon theme before falling back to menu/start icons, while the menu bar
+system icon keeps the `start-here`/`application-menu` path.
 
 ### Progress
 
 Current validation passes:
 
-- `meson setup build --reconfigure`
 - `ninja -C build`
 - `meson test -C build --print-errorlogs`
-- `build/orange-render-shell /tmp/orange-shell.png`
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once`
+- `./build/test-assets`
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets
+  --config orange.conf /tmp/orange-shell.png`
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets
+  --config orange.conf --foreground-only /tmp/orange-shell-foreground.png`
+  passed.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once
+  --width 1440 --height 900 --assets assets --config orange.conf`
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
-  --width 1440 --height 900 --assets assets --config orange.conf
-  --desktop-dir assets/desktop --themes .`
+  --width 1440 --height 900 --assets assets --config orange.conf`
 
-The About app now uses the tall portrait reference proportions, shows real
-local chip and memory values without a serial-number row, follows the bundled
-MacTahoe dark GTK palette in dark mode, and uses 16px custom-drawn
-traffic-light controls with a 23px titlebutton step. The active state uses
-red/gray/gray, inactive/backdrop uses gray, and only the red close button shows
-a hover/press glyph. The portrait window is capped at 72% design scale so it
-stays skinny without dominating a 1440x900 desktop.
+MacTahoe remains the current local test theme by name in `orange.conf`, but the
+theme files are expected to be installed outside this repository.
 
 Major shell UI surfaces now share the 0.50-1.60 resolution scale used by the
 menu bar, Dock, desktop icons, system menu dropdowns, and context menus. Dock
@@ -244,11 +247,9 @@ animation, and full desktop services.
 ## Next Actions
 
 1. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/orange`.
-2. Replace generated Orange placeholder PNGs under `assets/icons/` and
-   `assets/status/` with final repo-safe GitHub-sourced Orange assets.
-3. Populate the GTK icon pack with
-   `./tools/populate_icon_theme.sh assets themes/OrangeIcons` after local
-   assets are present.
+2. Test Dock and desktop app launching interactively under WSLg/nested Wayland.
+3. Keep Orange GTK/icon theme assets in a separate project and install them
+   into normal user/system GTK and icon theme directories for testing.
 
 ---
 
@@ -317,6 +318,10 @@ build here. They remain conditional for systems without GTK4 development files.
 - **Output swapchain pressure reduced**: Output frames are not committed while
   a previous commit is still pending presentation; dirty shell updates schedule
   the next frame once the backend presents.
+- **Dock launcher icon regression fixed**: `view-app-grid` no longer aliases to
+  `start-here` first. The app launcher and the menu icon now use separate
+  freedesktop alias chains so local macOS-style icon themes can provide a
+  Launchpad-style Dock icon and a separate menu/start icon.
 
 ### Technical Concerns
 
@@ -336,7 +341,7 @@ depends on ignored asset overrides.
 ## Resume Instructions
 
 Continue from the committed implementation. Target wlroots 0.17.1, keep private
-assets and populated GTK icon PNGs ignored, validate with
+wallpapers and local theme experiments ignored, validate with
 `meson test -C build --print-errorlogs` and
 `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once`,
 plus the custom-size one-shot command documented in README, then test

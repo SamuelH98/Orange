@@ -13,7 +13,7 @@
 
 static void usage(const char *argv0) {
 	fprintf(stderr,
-		"usage: %s [--width N] [--height N] [--assets PATH] [--config PATH] [--desktop-dir PATH] [--timestamp N] [--foreground-only] [--context-menu KIND] [--context-index N] [--context-x N] [--context-y N] output.png\n",
+		"usage: %s [--width N] [--height N] [--assets PATH] [--config PATH] [--timestamp N] [--foreground-only] [--context-menu KIND] [--context-index N] [--context-x N] [--context-y N] output.png\n",
 		argv0);
 }
 
@@ -41,7 +41,6 @@ int main(int argc, char **argv) {
 	int height = 1800;
 	const char *asset_root = "assets";
 	const char *config_path = "orange.conf";
-	const char *desktop_dir = "assets/desktop";
 	time_t now = 1757638380;
 	bool foreground_only = false;
 	enum orange_context_menu_kind context_kind = ORANGE_CONTEXT_MENU_NONE;
@@ -59,8 +58,6 @@ int main(int argc, char **argv) {
 			asset_root = argv[++i];
 		} else if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
 			config_path = argv[++i];
-		} else if (strcmp(argv[i], "--desktop-dir") == 0 && i + 1 < argc) {
-			desktop_dir = argv[++i];
 		} else if (strcmp(argv[i], "--timestamp") == 0 && i + 1 < argc) {
 			now = (time_t)strtoll(argv[++i], NULL, 10);
 		} else if (strcmp(argv[i], "--foreground-only") == 0) {
@@ -111,13 +108,12 @@ int main(int argc, char **argv) {
 
 	struct orange_assets assets;
 	orange_assets_init(&assets);
-	orange_assets_load(&assets, asset_root);
 	struct orange_config config;
 	orange_config_load(&config, config_path);
+	orange_assets_load(&assets, asset_root, config.icon_theme);
 	struct orange_desktop_entry desktop_entries[ORANGE_DESKTOP_MAX];
-	size_t desktop_entry_count = 0;
-	orange_desktop_entry_load_all(desktop_dir, desktop_entries,
-		ORANGE_DESKTOP_MAX, &desktop_entry_count);
+	size_t desktop_entry_count = orange_desktop_entry_load_all_xdg(
+		desktop_entries, ORANGE_DESKTOP_MAX);
 
 	struct orange_shell_state state = {
 		.system_menu_open = false,
