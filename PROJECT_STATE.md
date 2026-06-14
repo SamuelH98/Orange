@@ -15,14 +15,13 @@ wlroots.
 
 ### Current Status
 
-Functional shell prototype is implemented and validated locally. It includes a
-wlroots compositor, reference-sized shell geometry, transparent menu bar,
-compact macOS-like Dock layout, scalable widgets, basic xdg-shell window
-management, Dock launchers, XDG `.desktop` desktop launchers with drag/context
-menus, keyboard shortcuts, cursor customization, local Orange asset sourcing,
-generic installed GTK/icon theme configuration, lazy freedesktop icon lookup,
-PNG render export, foreground-only visual smoke coverage, and headless one-shot
-validation including custom startup arguments.
+Functional macOS-like shell prototype with volume-based desktop icons (drives
+only, like macOS), grid layout with snap-to-grid positioning, translucent menu
+bar with dock-style glass effect, compact Dock with even glass transparency,
+wlroots compositor, scalable widgets, basic xdg-shell window management, Dock
+launchers, keyboard shortcuts, cursor customization, GTK/icon theme
+configuration, lazy freedesktop icon lookup, PNG render export, foreground-only
+visual smoke coverage, and headless one-shot validation.
 
 ---
 
@@ -194,12 +193,21 @@ Meson startup smoke test for custom headless compositor arguments.
 
 ### Active Feature
 
-macOS-like menu/status behavior is being tightened against current Apple menu
-bar, Apple menu, Control Center, and dark appearance guidance while preserving
-the Linux implementation boundary. `assets/` remains wallpaper-only, GTK/icon
-theme names are config-driven, theme payloads are not stored under a repo
-`themes/` directory, and shell icons continue to come from installed
-freedesktop icon themes.
+Desktop icons now show volumes (drives) instead of XDG `.desktop` entries,
+matching macOS Finder behavior: the root filesystem and `/home` are discovered
+from `/proc/mounts`, removable media and external volumes are monitored through
+`GVolumeMonitor`. Icons are laid out on a snap-to-grid with configurable
+spacing (`desktop_grid_spacing`) and per-volume visibility toggles in Settings.
+
+The menu bar has been given the same glass translucency as the Dock using the
+shared `draw_dock_glass` function, with the Apple icon enlarged to 40×40 and
+menu text baselines adjusted for a more macOS-like appearance. Status icons are
+drawn in original icon-theme colors (no tinting) and clicking them no longer
+opens any menu — each icon slot is reserved for its future feature.
+
+`assets/` remains wallpaper-only, GTK/icon theme names are config-driven, theme
+payloads are not stored under a repo `themes/` directory, and shell icons
+continue to come from installed freedesktop icon themes.
 
 ### Progress
 
@@ -208,8 +216,9 @@ Current validation passes:
 - `ninja -C build`
 - `meson test -C build --print-errorlogs`
 - `./build/test-assets`
-- `./build/test-shell-visual` covers dark context-menu material and missing
-  desktop icon fallback drawing.
+- `./build/test-shell-visual` covers volume desktop icon drawing.
+- `./build/test-shell-layout` covers snap-to-grid, minimum slots, volume
+  positioning, and resolution scaling.
 - `./build/orange-render-shell --width 1440 --height 900 --assets assets
   --config orange.conf /tmp/orange-shell.png`
 - `./build/orange-render-shell --width 1440 --height 900 --assets assets
@@ -220,20 +229,22 @@ Current validation passes:
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
   --width 1440 --height 900 --assets assets --config orange.conf`
 
-MacTahoe remains the current local test theme by name in `orange.conf`, but the
-theme files are expected to be installed outside this repository.
+Core desktop icons are now volume-driven with snap-to-grid, drag-to-reorder,
+and a macOS-style desktop icon context menu (Open, Get Info, Eject) plus
+background context menu (Clean Up, Sort By, Show View Options, etc.).
 
-Major shell UI surfaces now share the 0.50-1.60 resolution scale used by the
-menu bar, Dock, desktop icons, system menu dropdowns, and context menus. Dock
-hover feedback uses fixed-slot magnification plus a label bubble instead of a
-circular halo, so neighboring icons no longer slide sideways when one icon is
-hovered. Dock drag order normalizes invalid visible entries to avoid blank
-slots, and Dock context menus anchor above the Dock glass instead of overlapping
-it.
+Volume detection combines `/proc/mounts` for fixed filesystems with
+`GVolumeMonitor` for removable drives, deduplicating by mount path. The
+Settings app includes per-volume visibility toggles, Sort By dropdown, and
+Label Position dropdown. Grid layout respects `desktop_grid_spacing` and
+occupies a minimum 2×2 slot area even without volumes.
 
-Output rendering now throttles scene commits while a previous output commit is
-pending presentation, which prevents repeated wlroots swapchain-buffer
-exhaustion under high-frequency shell redraws.
+Menu bar and Dock share the same `draw_dock_glass` rendering path for
+consistent translucency. Dock outer padding = 16, corner radius = 44 × s,
+top padding = 16, bottom padding = 10, bottom margin = 8. Menu bar height =
+48px, Apple icon 40×40 at y = scaled_i(4, s), text baseline at
+scaled_i(36, s). Status icons render with original icon-theme colors
+(no white tinting) and no context menu on click.
 
 ### Remaining Work
 
@@ -251,13 +262,18 @@ coverage intentionally avoids checked-in reference-image comparison.
 More faithful behavior would require real app/menu integration, richer
 animation, and full desktop services.
 
+Individual status-icon features (Wi-Fi dropdown, volume slider, search, etc.)
+still need to be wired up.
+
 ---
 
 ## Next Actions
 
-1. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/orange`.
-2. Test Dock and desktop app launching interactively under WSLg/nested Wayland.
-3. Keep Orange GTK/icon theme assets in a separate project and install them
+1. Wire up individual status-icon features (Wi-Fi, Sound, Battery, Spotlight,
+   Control Center).
+2. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/orange`.
+3. Test Dock and desktop interactively under WSLg/nested Wayland.
+4. Keep Orange GTK/icon theme assets in a separate project and install them
    into normal user/system GTK and icon theme directories for testing.
 
 ---

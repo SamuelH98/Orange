@@ -9,7 +9,8 @@
 #include "orange/config.h"
 #include "orange/desktop_entry.h"
 
-#define ORANGE_DESKTOP_MAX 8
+#define ORANGE_DESKTOP_MAX 32
+#define ORANGE_DESKTOP_GRID_COLS 6
 #define ORANGE_MENU_ITEM_MAX 20
 #define ORANGE_WIDGET_MAX 16
 #define ORANGE_CONTEXT_MENU_ITEM_MAX 16
@@ -58,6 +59,7 @@ enum orange_context_menu_kind {
 	ORANGE_CONTEXT_MENU_WIDGET,
 	ORANGE_CONTEXT_MENU_DESKTOP,
 	ORANGE_CONTEXT_MENU_DESKTOP_ICON,
+	ORANGE_CONTEXT_MENU_DESKTOP_VOLUME,
 	ORANGE_CONTEXT_MENU_STATUS,
 };
 
@@ -79,6 +81,17 @@ struct orange_status_state {
 	int battery_percent;
 };
 
+/* Desktop item descriptor: either a .desktop entry index or a volume index. */
+enum orange_desktop_item_kind {
+	ORANGE_DESKTOP_ITEM_ENTRY,
+	ORANGE_DESKTOP_ITEM_VOLUME,
+};
+
+struct orange_desktop_item_info {
+	enum orange_desktop_item_kind kind;
+	int index;
+};
+
 struct orange_shell_layout {
 	int width;
 	int height;
@@ -98,6 +111,7 @@ struct orange_shell_layout {
 	int widget_count;
 
 	struct orange_rect desktop_items[ORANGE_DESKTOP_MAX];
+	struct orange_desktop_item_info desktop_item_info[ORANGE_DESKTOP_MAX];
 	int desktop_item_count;
 
 	struct orange_rect dock;
@@ -124,6 +138,9 @@ struct orange_shell_state {
 	struct orange_status_state status;
 	const struct orange_desktop_entry *desktop_entries;
 	int desktop_entry_count;
+	const struct orange_volume_info *volumes;
+	int volume_count;
+	int desktop_volume_count;
 	bool dock_open[ORANGE_DOCK_MAX];
 	int dock_drag_index;
 	int dock_drag_insert_before;
@@ -133,6 +150,8 @@ struct orange_shell_state {
 	int context_menu_index;
 	int context_menu_cursor_x;
 	int context_menu_cursor_y;
+	int desktop_drag_target_index;
+	bool desktop_drag_swap;
 };
 
 struct orange_shell_draw_options {
@@ -145,7 +164,25 @@ void orange_shell_layout_compute(
 	bool system_menu_open,
 	const struct orange_config *config,
 	int desktop_entry_count,
+	int desktop_volume_count,
 	struct orange_shell_layout *layout);
+void orange_shell_layout_clean_up(
+	struct orange_shell_layout *layout,
+	const struct orange_config *config);
+void orange_shell_layout_sort_by(
+	struct orange_shell_layout *layout,
+	enum orange_desktop_sort_by sort_by,
+	const struct orange_config *config,
+	const struct orange_desktop_entry *entries,
+	int entry_count,
+	const struct orange_volume_info *volumes,
+	int volume_count);
+void orange_shell_layout_snap_to_grid(
+	struct orange_shell_layout *layout,
+	int index,
+	int *x,
+	int *y,
+	const struct orange_config *config);
 void orange_shell_layout_set_context_menu(
 	struct orange_shell_layout *layout,
 	enum orange_context_menu_kind kind,
@@ -189,5 +226,9 @@ const char *orange_shell_context_menu_label(
 const char *orange_shell_context_menu_icon_name(
 	enum orange_context_menu_kind kind,
 	int index);
+const char *orange_shell_volume_label(const struct orange_volume_info *volumes,
+	int volume_count, int index);
+const char *orange_shell_volume_icon_name(const struct orange_volume_info *volumes,
+	int volume_count, int index);
 
 #endif

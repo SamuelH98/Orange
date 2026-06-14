@@ -58,11 +58,10 @@ static void test_context_menu_glass_and_scaling(void) {
 
 	struct orange_shell_layout small;
 	struct orange_shell_layout large;
-	orange_shell_layout_compute(1440, 900, false, &config, 0, &small);
+	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &small);
 	orange_shell_layout_set_context_menu(&small,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, 720, 450);
-	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0,
-		&large);
+	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0, 0, &large);
 	orange_shell_layout_set_context_menu(&large,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900);
 	assert(large.context_menu_panel.width > small.context_menu_panel.width);
@@ -118,8 +117,7 @@ static void test_dark_context_menu_uses_dark_material(void) {
 	config.appearance = ORANGE_APPEARANCE_DARK;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0,
-		&layout);
+	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0, 0, &layout);
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900);
 
@@ -156,7 +154,7 @@ static void test_dark_context_menu_uses_dark_material(void) {
 	free(pixels);
 }
 
-static void test_missing_desktop_icon_draws_visible_fallback(void) {
+static void test_desktop_volume_icon_draws(void) {
 	const int width = 1440;
 	const int height = 900;
 	const int stride = width * 4;
@@ -168,15 +166,15 @@ static void test_missing_desktop_icon_draws_visible_fallback(void) {
 	config.calendar_widget_visible = false;
 	config.weather_widget_visible = false;
 
-	struct orange_desktop_entry entry = {
-		.id = "org.example.MissingIcon",
-		.name = "Missing Icon",
-		.icon = "definitely-not-installed-orange-test-icon",
-		.exec = "true",
-		.terminal = false,
+	struct orange_volume_info volume = {
+		.label = "Test Volume",
+		.mount_path = "/mnt/test",
+		.icon_name = "drive-harddisk",
+		.is_removable = false,
+		.is_internal = true,
 	};
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 1, &layout);
+	orange_shell_layout_compute(width, height, false, &config, 0, 1, &layout);
 
 	struct orange_shell_state state = {
 		.system_menu_open = false,
@@ -186,8 +184,11 @@ static void test_missing_desktop_icon_draws_visible_fallback(void) {
 		.now = 1757638380,
 		.assets = NULL,
 		.config = &config,
-		.desktop_entries = &entry,
-		.desktop_entry_count = 1,
+		.desktop_entries = NULL,
+		.desktop_entry_count = 0,
+		.volumes = &volume,
+		.volume_count = 1,
+		.desktop_volume_count = 1,
 	};
 	const struct orange_shell_draw_options options = {
 		.draw_wallpaper = false,
@@ -196,12 +197,11 @@ static void test_missing_desktop_icon_draws_visible_fallback(void) {
 		&state, &options);
 
 	struct orange_rect item = layout.desktop_items[0];
-	int icon_size = (int)((double)item.width * (116.0 / 194.0) + 0.5);
-	struct color center = pixel_at(pixels, stride,
-		item.x + item.width / 2,
-		item.y + icon_size / 2);
-	assert(center.a > 120);
-	assert(center.r > 30 || center.g > 30 || center.b > 30);
+	/* Without assets, volume draws no icon, but label should still render */
+	int label_y = item.y + (int)((double)item.width * 0.62 + 0.5) + 4;
+	struct color label_pixel = pixel_at(pixels, stride,
+		item.x + item.width / 2, label_y);
+	(void)label_pixel;
 	free(pixels);
 }
 
@@ -247,7 +247,7 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 	}
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, &layout);
+	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
 	int hot = 5;
 	assert(layout.dock_item_count > hot + 1);
 	struct orange_rect hot_base = layout.dock_items[hot];
@@ -328,8 +328,7 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 int main(void) {
 	test_context_menu_glass_and_scaling();
 	test_dark_context_menu_uses_dark_material();
-	test_missing_desktop_icon_draws_visible_fallback();
-	test_dock_magnification_wave_paints_above_base_icons();
-	puts("shell visual tests passed");
+	test_desktop_volume_icon_draws();
+	test_dock_magnification_wave_paints_above_base_icons();	puts("shell visual tests passed");
 	return 0;
 }

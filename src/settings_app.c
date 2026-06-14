@@ -183,6 +183,57 @@ static void on_cursor_size(GtkRange *range, gpointer data) {
 	save_config(settings);
 }
 
+static void on_desktop_sort_by(GtkDropDown *widget, GParamSpec *pspec, gpointer data) {
+	(void)pspec;
+	struct settings_app *settings = data;
+	settings->config.desktop_sort_by = (enum orange_desktop_sort_by)
+		gtk_drop_down_get_selected(widget);
+	save_config(settings);
+}
+
+static void on_desktop_label_position(GtkDropDown *widget, GParamSpec *pspec, gpointer data) {
+	(void)pspec;
+	struct settings_app *settings = data;
+	settings->config.desktop_label_position = (enum orange_desktop_label_position)
+		gtk_drop_down_get_selected(widget);
+	save_config(settings);
+}
+
+static void on_desktop_show_hard_disks(GtkSwitch *widget, GParamSpec *pspec, gpointer data) {
+	(void)pspec;
+	struct settings_app *settings = data;
+	settings->config.desktop_show_hard_disks = gtk_switch_get_active(widget);
+	save_config(settings);
+}
+
+static void on_desktop_show_external(GtkSwitch *widget, GParamSpec *pspec, gpointer data) {
+	(void)pspec;
+	struct settings_app *settings = data;
+	settings->config.desktop_show_external_disks = gtk_switch_get_active(widget);
+	save_config(settings);
+}
+
+static void on_desktop_show_removable(GtkSwitch *widget, GParamSpec *pspec, gpointer data) {
+	(void)pspec;
+	struct settings_app *settings = data;
+	settings->config.desktop_show_removable_media = gtk_switch_get_active(widget);
+	save_config(settings);
+}
+
+static void on_desktop_show_servers(GtkSwitch *widget, GParamSpec *pspec, gpointer data) {
+	(void)pspec;
+	struct settings_app *settings = data;
+	settings->config.desktop_show_servers = gtk_switch_get_active(widget);
+	save_config(settings);
+}
+
+static GtkWidget *dropdown_new(GtkStringList *list, unsigned selected) {
+	GtkWidget *dd = gtk_drop_down_new(G_LIST_MODEL(list), NULL);
+	gtk_drop_down_set_selected(GTK_DROP_DOWN(dd), selected);
+	gtk_widget_set_size_request(dd, 220, -1);
+	return dd;
+}
+
 static void on_cursor_theme(GtkEditable *editable, gpointer data) {
 	struct settings_app *settings = data;
 	const char *text = gtk_editable_get_text(editable);
@@ -253,6 +304,59 @@ static void activate(GtkApplication *app, gpointer data) {
 	g_signal_connect(desktop_scale, "value-changed",
 		G_CALLBACK(on_desktop_scale), settings);
 	gtk_box_append(GTK_BOX(content), row_new("Shortcut Scale", desktop_scale));
+
+	{
+		const char *sort_names[] = {
+			"None", "Snap to Grid", "Name", "Date Added",
+			"Date Modified", "Size", "Kind",
+		};
+		GtkStringList *sort_list = gtk_string_list_new(sort_names);
+		GtkWidget *sort_by = dropdown_new(sort_list,
+			settings->config.desktop_sort_by);
+		g_signal_connect(sort_by, "notify::selected",
+			G_CALLBACK(on_desktop_sort_by), settings);
+		gtk_box_append(GTK_BOX(content), row_new("Sort By", sort_by));
+	}
+
+	{
+		const char *label_pos_names[] = {"Bottom", "Right"};
+		GtkStringList *label_pos_list = gtk_string_list_new(label_pos_names);
+		GtkWidget *label_pos = dropdown_new(label_pos_list,
+			settings->config.desktop_label_position);
+		g_signal_connect(label_pos, "notify::selected",
+			G_CALLBACK(on_desktop_label_position), settings);
+		gtk_box_append(GTK_BOX(content), row_new("Label Position", label_pos));
+	}
+
+	gtk_box_append(GTK_BOX(content), section_label("On Desktop"));
+
+	GtkWidget *show_hard = gtk_switch_new();
+	gtk_switch_set_active(GTK_SWITCH(show_hard),
+		settings->config.desktop_show_hard_disks);
+	g_signal_connect(show_hard, "notify::active",
+		G_CALLBACK(on_desktop_show_hard_disks), settings);
+	gtk_box_append(GTK_BOX(content), row_new("Hard Disks", show_hard));
+
+	GtkWidget *show_external = gtk_switch_new();
+	gtk_switch_set_active(GTK_SWITCH(show_external),
+		settings->config.desktop_show_external_disks);
+	g_signal_connect(show_external, "notify::active",
+		G_CALLBACK(on_desktop_show_external), settings);
+	gtk_box_append(GTK_BOX(content), row_new("External Disks", show_external));
+
+	GtkWidget *show_removable = gtk_switch_new();
+	gtk_switch_set_active(GTK_SWITCH(show_removable),
+		settings->config.desktop_show_removable_media);
+	g_signal_connect(show_removable, "notify::active",
+		G_CALLBACK(on_desktop_show_removable), settings);
+	gtk_box_append(GTK_BOX(content), row_new("Removable Media", show_removable));
+
+	GtkWidget *show_servers = gtk_switch_new();
+	gtk_switch_set_active(GTK_SWITCH(show_servers),
+		settings->config.desktop_show_servers);
+	g_signal_connect(show_servers, "notify::active",
+		G_CALLBACK(on_desktop_show_servers), settings);
+	gtk_box_append(GTK_BOX(content), row_new("Shared Servers", show_servers));
 
 	gtk_box_append(GTK_BOX(content), section_label("Widgets"));
 	GtkWidget *calendar_visible = gtk_switch_new();

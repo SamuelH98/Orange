@@ -35,6 +35,68 @@ static enum orange_widget_size parse_widget_size(const char *value) {
 	return ORANGE_WIDGET_SIZE_SMALL;
 }
 
+static enum orange_desktop_sort_by parse_sort_by(const char *value) {
+	if (value == NULL) {
+		return ORANGE_DESKTOP_SORT_NONE;
+	}
+	if (strcmp(value, "snap_to_grid") == 0) {
+		return ORANGE_DESKTOP_SORT_SNAP_TO_GRID;
+	}
+	if (strcmp(value, "name") == 0) {
+		return ORANGE_DESKTOP_SORT_NAME;
+	}
+	if (strcmp(value, "date_added") == 0) {
+		return ORANGE_DESKTOP_SORT_DATE_ADDED;
+	}
+	if (strcmp(value, "date_modified") == 0) {
+		return ORANGE_DESKTOP_SORT_DATE_MODIFIED;
+	}
+	if (strcmp(value, "size") == 0) {
+		return ORANGE_DESKTOP_SORT_SIZE;
+	}
+	if (strcmp(value, "kind") == 0) {
+		return ORANGE_DESKTOP_SORT_KIND;
+	}
+	return ORANGE_DESKTOP_SORT_NONE;
+}
+
+static const char *sort_by_name(enum orange_desktop_sort_by sort) {
+	switch (sort) {
+	case ORANGE_DESKTOP_SORT_NONE:
+		return "none";
+	case ORANGE_DESKTOP_SORT_SNAP_TO_GRID:
+		return "snap_to_grid";
+	case ORANGE_DESKTOP_SORT_NAME:
+		return "name";
+	case ORANGE_DESKTOP_SORT_DATE_ADDED:
+		return "date_added";
+	case ORANGE_DESKTOP_SORT_DATE_MODIFIED:
+		return "date_modified";
+	case ORANGE_DESKTOP_SORT_SIZE:
+		return "size";
+	case ORANGE_DESKTOP_SORT_KIND:
+		return "kind";
+	}
+	return "none";
+}
+
+static enum orange_desktop_label_position parse_label_pos(const char *value) {
+	if (value != NULL && strcmp(value, "right") == 0) {
+		return ORANGE_DESKTOP_LABEL_RIGHT;
+	}
+	return ORANGE_DESKTOP_LABEL_BOTTOM;
+}
+
+static const char *label_pos_name(enum orange_desktop_label_position pos) {
+	switch (pos) {
+	case ORANGE_DESKTOP_LABEL_RIGHT:
+		return "right";
+	case ORANGE_DESKTOP_LABEL_BOTTOM:
+	default:
+		return "bottom";
+	}
+}
+
 static const char *widget_size_name(enum orange_widget_size size) {
 	switch (size) {
 	case ORANGE_WIDGET_SIZE_MEDIUM:
@@ -117,6 +179,18 @@ static void apply_pair(struct orange_config *config,
 		config->desktop_label_size = clamp_int(atoi(value), 10, 28);
 	} else if (strcmp(key, "desktop_icon_scale") == 0) {
 		config->desktop_icon_scale = clamp_double(strtod(value, NULL), 0.60, 2.00);
+	} else if (strcmp(key, "desktop_sort_by") == 0) {
+		config->desktop_sort_by = parse_sort_by(value);
+	} else if (strcmp(key, "desktop_label_position") == 0) {
+		config->desktop_label_position = parse_label_pos(value);
+	} else if (strcmp(key, "desktop_show_hard_disks") == 0) {
+		config->desktop_show_hard_disks = parse_bool(value);
+	} else if (strcmp(key, "desktop_show_external_disks") == 0) {
+		config->desktop_show_external_disks = parse_bool(value);
+	} else if (strcmp(key, "desktop_show_removable_media") == 0) {
+		config->desktop_show_removable_media = parse_bool(value);
+	} else if (strcmp(key, "desktop_show_servers") == 0) {
+		config->desktop_show_servers = parse_bool(value);
 	} else if (parse_desktop_position_key(key, &desktop_index)) {
 		int x = 0;
 		int y = 0;
@@ -212,6 +286,12 @@ void orange_config_set_defaults(struct orange_config *config) {
 	config->desktop_grid_spacing = 24;
 	config->desktop_label_size = 15;
 	config->desktop_icon_scale = 1.0;
+	config->desktop_sort_by = ORANGE_DESKTOP_SORT_NONE;
+	config->desktop_label_position = ORANGE_DESKTOP_LABEL_BOTTOM;
+	config->desktop_show_hard_disks = true;
+	config->desktop_show_external_disks = true;
+	config->desktop_show_removable_media = true;
+	config->desktop_show_servers = true;
 	for (int i = 0; i < ORANGE_DESKTOP_POSITION_MAX; i++) {
 		config->desktop_positions[i] =
 			(struct orange_desktop_icon_position){false, 0, 0};
@@ -308,6 +388,18 @@ bool orange_config_save(const struct orange_config *config, const char *path) {
 	fprintf(file, "desktop_grid_spacing=%d\n", config->desktop_grid_spacing);
 	fprintf(file, "desktop_label_size=%d\n", config->desktop_label_size);
 	fprintf(file, "desktop_icon_scale=%.2f\n", config->desktop_icon_scale);
+	fprintf(file, "desktop_sort_by=%s\n",
+		sort_by_name(config->desktop_sort_by));
+	fprintf(file, "desktop_label_position=%s\n",
+		label_pos_name(config->desktop_label_position));
+	fprintf(file, "desktop_show_hard_disks=%s\n",
+		config->desktop_show_hard_disks ? "true" : "false");
+	fprintf(file, "desktop_show_external_disks=%s\n",
+		config->desktop_show_external_disks ? "true" : "false");
+	fprintf(file, "desktop_show_removable_media=%s\n",
+		config->desktop_show_removable_media ? "true" : "false");
+	fprintf(file, "desktop_show_servers=%s\n",
+		config->desktop_show_servers ? "true" : "false");
 	for (int i = 0; i < ORANGE_DESKTOP_POSITION_MAX; i++) {
 		if (config->desktop_positions[i].valid) {
 			fprintf(file, "desktop_icon_%d_position=%d,%d\n",

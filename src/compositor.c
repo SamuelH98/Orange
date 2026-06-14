@@ -183,6 +183,12 @@ struct orange_server {
 	int desktop_drag_offset_y;
 	int desktop_drag_start_x;
 	int desktop_drag_start_y;
+
+	struct orange_volume_info volumes[ORANGE_DESKTOP_VOLUME_MAX];
+	int volume_count;
+	int desktop_volume_count;
+	struct wl_event_source *volume_timer;
+
 	bool dock_drag_active;
 	bool dock_drag_moved;
 	int dock_drag_index;
@@ -360,6 +366,127 @@ static void update_battery_status(struct orange_status_state *status) {
 		snprintf(status->battery_label, sizeof(status->battery_label),
 			"%s", "Battery");
 	}
+}
+
+static bool has_mount_path(struct orange_volume_info *volumes, int count, const char *path) {
+	for (int i = 0; i < count; i++) {
+		if (strcmp(volumes[i].mount_path, path) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void add_volume(struct orange_volume_info *volumes, int *count, int *desktop_count,
+		const char *label, const char *mount_path, const char *icon_name,
+		bool is_removable, bool is_internal) {
+	if (*count >= ORANGE_DESKTOP_VOLUME_MAX) {
+		return;
+	}
+	if (has_mount_path(volumes, *count, mount_path)) {
+		return;
+	}
+	struct orange_volume_info *info = &volumes[*count];
+	memset(info, 0, sizeof(*info));
+	snprintf(info->label, sizeof(info->label), "%s", label);
+	snprintf(info->mount_path, sizeof(info->mount_path), "%s", mount_path);
+	snprintf(info->icon_name, sizeof(info->icon_name), "%s", icon_name);
+	info->is_removable = is_removable;
+	info->is_internal = is_internal;
+	(*count)++;
+	(*desktop_count)++;
+}
+
+static void update_volumes(struct orange_server *server) {
+	const struct orange_config *config = &server->config;
+	struct orange_volume_info volumes[ORANGE_DESKTOP_VOLUME_MAX];
+	int count = 0;
+	int desktop_count = 0;
+
+	/* Scan /proc/mounts for real disk-backed filesystems */
+	if (config->desktop_show_hard_disks) {
+		FILE *mounts_file = fopen("/proc/mounts", "r");
+		if (mounts_file != NULL) {
+			char buf[4096];
+			while (fgets(buf, sizeof(buf), mounts_file) != NULL &&
+					count < ORANGE_DESKTOP_VOLUME_MAX) {
+				char device[256], mount_point[256], fstype[64];
+				if (sscanf(buf, "%255s %255s %63s", device, mount_point, fstype) != 3) {
+					continue;
+				}
+				if (strncmp(device, "/dev/", 5) != 0) {
+					continue;
+				}
+				if (strcmp(mount_point, "/") == 0) {
+					add_volume(volumes, &count, &desktop_count,
+						"Macintosh HD", "/", "drive-harddisk",
+						false, true);
+				} else if (strcmp(mount_point, "/home") == 0) {
+					add_volume(volumes, &count, &desktop_count,
+						"Home", "/home", "drive-harddisk",
+						false, true);
+				}
+			}
+			fclose(mounts_file);
+		}
+	}
+
+	/* Check GVolumeMonitor for removable media and external drives */
+	GVolumeMonitor *monitor = g_volume_monitor_get();
+	if (monitor != NULL) {
+		GList *mounts = g_volume_monitor_get_mounts(monitor);
+		for (GList *l = mounts; l != NULL && count < ORANGE_DESKTOP_VOLUME_MAX; l = l->next) {
+			GMount *mount = G_MOUNT(l->data);
+
+			GVolume *volume = g_mount_get_volume(mount);
+			bool has_volume = volume != NULL;
+			bool can_eject = has_volume ? g_volume_can_eject(volume) : false;
+
+			bool show = false;
+			if (!can_eject && config->desktop_show_hard_disks) {
+				show = true;
+			} else if (can_eject && config->desktop_show_external_disks) {
+				show = true;
+			} else if (can_eject && config->desktop_show_removable_media) {
+				show = true;
+			}
+
+			if (has_volume) {
+				g_object_unref(volume);
+			}
+
+			if (!show) {
+				g_object_unref(mount);
+				continue;
+			}
+
+			char mount_path[ORANGE_VOLUME_PATH_MAX] = "";
+			GFile *root_file = g_mount_get_root(mount);
+			if (root_file != NULL) {
+				char *path = g_file_get_path(root_file);
+				if (path != NULL) {
+					snprintf(mount_path, sizeof(mount_path), "%s", path);
+					g_free(path);
+				}
+				g_object_unref(root_file);
+			}
+
+			const char *name = g_mount_get_name(mount);
+			add_volume(volumes, &count, &desktop_count,
+				name != NULL ? name : "Volume",
+				mount_path[0] != '\0' ? mount_path : name != NULL ? name : "volume",
+				can_eject ? "media-removable" : "drive-harddisk",
+				can_eject, !can_eject);
+
+			g_object_unref(mount);
+		}
+		g_list_free(mounts);
+		g_object_unref(monitor);
+	}
+
+	server->desktop_volume_count = desktop_count;
+	server->volume_count = count;
+	memcpy(server->volumes, volumes, sizeof(volumes[0]) * count);
 }
 
 static bool server_update_status(struct orange_server *server) {
@@ -705,6 +832,7 @@ static void compute_shell_layout_for_output(
 		server->system_menu_open,
 		&server->config,
 		(int)server->desktop_entry_count,
+		server->desktop_volume_count,
 		layout);
 	orange_shell_layout_set_context_menu(layout,
 		server->context_menu_kind,
@@ -850,6 +978,9 @@ static void output_redraw_shell(struct orange_output *output) {
 		.status = output->server->status,
 		.desktop_entries = output->server->desktop_entries,
 		.desktop_entry_count = (int)output->server->desktop_entry_count,
+		.volumes = output->server->volumes,
+		.volume_count = output->server->volume_count,
+		.desktop_volume_count = output->server->desktop_volume_count,
 		.context_menu_kind = output->server->context_menu_kind,
 		.context_menu_index = output->server->context_menu_index,
 		.context_menu_cursor_x = output->server->context_menu_cursor_x,
@@ -1287,6 +1418,31 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		default:
 			break;
 		}
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_VOLUME) {
+		if (target >= 0 && target < server->desktop_volume_count) {
+			const struct orange_volume_info *vol = &server->volumes[target];
+			switch (item_index) {
+			case 0: /* Open */
+				if (vol->mount_path[0] != '\0') {
+					char cmd[1024];
+					snprintf(cmd, sizeof(cmd), "xdg-open \"%s\" || true", vol->mount_path);
+					launch_command(cmd);
+				}
+				break;
+			case 1: /* Get Info */
+				launch_command("nautilus --properties \"$HOME\" || true");
+				break;
+			case 2: /* Eject */
+				if (vol->mount_path[0] != '\0') {
+					char cmd[1024];
+					snprintf(cmd, sizeof(cmd), "gio mount -u \"%s\" || true", vol->mount_path);
+					launch_command(cmd);
+				}
+				break;
+			default:
+				break;
+			}
+		}
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP) {
 		switch (item_index) {
 		case 0:
@@ -1439,8 +1595,13 @@ static void finish_desktop_drag(struct orange_server *server) {
 	if (moved) {
 		orange_config_save(&server->config, server->options->config_path);
 		server_mark_shell_dirty(server);
-	} else if (index >= 0 && index < (int)server->desktop_entry_count) {
-		launch_desktop_entry(&server->desktop_entries[index]);
+	} else if (index >= 0 && index < server->desktop_volume_count) {
+		const struct orange_volume_info *vol = &server->volumes[index];
+		if (vol->mount_path[0] != '\0') {
+			char cmd[1024];
+			snprintf(cmd, sizeof(cmd), "xdg-open \"%s\" || true", vol->mount_path);
+			launch_command(cmd);
+		}
 	}
 }
 
@@ -1581,10 +1742,6 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 	case ORANGE_HIT_STATUS_AREA:
 		clear_context_menu(server);
 		server->system_menu_open = false;
-		server->context_menu_kind = ORANGE_CONTEXT_MENU_STATUS;
-		server->context_menu_index = -1;
-		server->context_menu_cursor_x = local_x;
-		server->context_menu_cursor_y = local_y;
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_DOCK_ITEM:
@@ -1635,9 +1792,6 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 	if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK;
 		server->context_menu_index = hit.index;
-	} else if (hit.kind == ORANGE_HIT_STATUS_AREA) {
-		server->context_menu_kind = ORANGE_CONTEXT_MENU_STATUS;
-		server->context_menu_index = -1;
 	} else if (hit.kind == ORANGE_HIT_APP_MENU) {
 		int launcher_idx = dock_launcher_for_view(server, server->focused_view);
 		int visible_idx = dock_visible_index_for_launcher(server, launcher_idx);
@@ -1659,7 +1813,8 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_WIDGET;
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_DESKTOP_ITEM) {
-		server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_ICON;
+		/* Desktop items are volumes (macOS behavior) */
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_VOLUME;
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_DESKTOP) {
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP;
@@ -2330,6 +2485,7 @@ static int handle_clock_timer(void *data) {
 	struct orange_server *server = data;
 	if (!server->desktop_drag_active) {
 		server_load_config(server, false);
+		update_volumes(server);
 	}
 	bool status_changed = false;
 	if (server->status_poll_ticks <= 0) {
@@ -2382,6 +2538,9 @@ static bool server_init(struct orange_server *server,
 	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 	server->context_menu_index = -1;
 	server->desktop_drag_index = -1;
+	server->volume_count = 0;
+	server->desktop_volume_count = 0;
+	server->volume_timer = NULL;
 	server->cursor_mode = ORANGE_CURSOR_PASSTHROUGH;
 	wl_list_init(&server->outputs);
 	wl_list_init(&server->views);
@@ -2392,6 +2551,7 @@ static bool server_init(struct orange_server *server,
 	server_update_status(server);
 	server->desktop_entry_count = orange_desktop_entry_load_all_xdg(
 		server->desktop_entries, 1024);
+	update_volumes(server);
 	orange_assets_init(&server->assets);
 	orange_assets_load(&server->assets, options->asset_root,
 		server->config.icon_theme);

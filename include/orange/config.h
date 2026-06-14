@@ -13,6 +13,21 @@ enum orange_widget_size {
 	ORANGE_WIDGET_SIZE_LARGE,
 };
 
+enum orange_desktop_sort_by {
+	ORANGE_DESKTOP_SORT_NONE,
+	ORANGE_DESKTOP_SORT_SNAP_TO_GRID,
+	ORANGE_DESKTOP_SORT_NAME,
+	ORANGE_DESKTOP_SORT_DATE_ADDED,
+	ORANGE_DESKTOP_SORT_DATE_MODIFIED,
+	ORANGE_DESKTOP_SORT_SIZE,
+	ORANGE_DESKTOP_SORT_KIND,
+};
+
+enum orange_desktop_label_position {
+	ORANGE_DESKTOP_LABEL_BOTTOM,
+	ORANGE_DESKTOP_LABEL_RIGHT,
+};
+
 struct orange_desktop_icon_position {
 	bool valid;
 	int x;
@@ -24,6 +39,19 @@ enum orange_appearance {
 	ORANGE_APPEARANCE_DARK,
 };
 
+#define ORANGE_DESKTOP_VOLUME_MAX 12
+#define ORANGE_VOLUME_LABEL_MAX 256
+#define ORANGE_VOLUME_PATH_MAX 512
+#define ORANGE_VOLUME_ICON_MAX 128
+
+struct orange_volume_info {
+	char label[ORANGE_VOLUME_LABEL_MAX];
+	char mount_path[ORANGE_VOLUME_PATH_MAX];
+	char icon_name[ORANGE_VOLUME_ICON_MAX];
+	bool is_removable;
+	bool is_internal;
+};
+
 struct orange_config {
 	enum orange_appearance appearance;
 
@@ -31,7 +59,13 @@ struct orange_config {
 	int desktop_grid_spacing;
 	int desktop_label_size;
 	double desktop_icon_scale;
+	enum orange_desktop_sort_by desktop_sort_by;
+	enum orange_desktop_label_position desktop_label_position;
 	struct orange_desktop_icon_position desktop_positions[ORANGE_DESKTOP_POSITION_MAX];
+	bool desktop_show_hard_disks;
+	bool desktop_show_external_disks;
+	bool desktop_show_removable_media;
+	bool desktop_show_servers;
 
 	double dock_scale;
 	double dock_icon_scale;
