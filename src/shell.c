@@ -82,6 +82,31 @@ static const char *fallback_label(const char *app_id) {
 			app_id_matches(app_id, "weather")) {
 		return "Weather";
 	}
+	if (app_id_matches(app_id, "org.gnome.Calendar") ||
+			app_id_matches(app_id, "calendar")) {
+		return "Calendar";
+	}
+	if (app_id_matches(app_id, "org.gnome.Maps") ||
+			app_id_matches(app_id, "maps")) {
+		return "Maps";
+	}
+	if (app_id_matches(app_id, "org.gnome.Loupe") ||
+			app_id_matches(app_id, "loupe") ||
+			app_id_matches(app_id, "ImageViewer")) {
+		return "Image Viewer";
+	}
+	if (app_id_matches(app_id, "org.gnome.Contacts") ||
+			app_id_matches(app_id, "contacts")) {
+		return "Contacts";
+	}
+	if (app_id_matches(app_id, "org.gnome.Showtime") ||
+			app_id_matches(app_id, "showtime")) {
+		return "Video Player";
+	}
+	if (app_id_matches(app_id, "org.gnome.Decibels") ||
+			app_id_matches(app_id, "decibels")) {
+		return "Audio Player";
+	}
 	return NULL;
 }
 
@@ -118,6 +143,31 @@ static const char *fallback_icon(const char *app_id) {
 			app_id_matches(app_id, "weather")) {
 		return "weather-clear";
 	}
+	if (app_id_matches(app_id, "org.gnome.Calendar") ||
+			app_id_matches(app_id, "calendar")) {
+		return "x-office-calendar";
+	}
+	if (app_id_matches(app_id, "org.gnome.Maps") ||
+			app_id_matches(app_id, "maps")) {
+		return "maps-app";
+	}
+	if (app_id_matches(app_id, "org.gnome.Loupe") ||
+			app_id_matches(app_id, "loupe") ||
+			app_id_matches(app_id, "ImageViewer")) {
+		return "image-x-generic";
+	}
+	if (app_id_matches(app_id, "org.gnome.Contacts") ||
+			app_id_matches(app_id, "contacts")) {
+		return "x-office-address-book";
+	}
+	if (app_id_matches(app_id, "org.gnome.Showtime") ||
+			app_id_matches(app_id, "showtime")) {
+		return "video-display";
+	}
+	if (app_id_matches(app_id, "org.gnome.Decibels") ||
+			app_id_matches(app_id, "decibels")) {
+		return "audio-x-generic";
+	}
 	return NULL;
 }
 
@@ -153,6 +203,31 @@ static const char *fallback_command(const char *app_id) {
 	if (app_id_matches(app_id, "org.gnome.Weather") ||
 			app_id_matches(app_id, "weather")) {
 		return "gnome-weather || xdg-open \"https://weather.com\" || true";
+	}
+	if (app_id_matches(app_id, "org.gnome.Calendar") ||
+			app_id_matches(app_id, "calendar")) {
+		return "gnome-calendar || xdg-open \"https://calendar.google.com\" || true";
+	}
+	if (app_id_matches(app_id, "org.gnome.Maps") ||
+			app_id_matches(app_id, "maps")) {
+		return "gnome-maps || xdg-open \"https://openstreetmap.org\" || true";
+	}
+	if (app_id_matches(app_id, "org.gnome.Loupe") ||
+			app_id_matches(app_id, "loupe") ||
+			app_id_matches(app_id, "ImageViewer")) {
+		return "loupe || eog || gimp || xdg-open \"$HOME/Pictures\" || true";
+	}
+	if (app_id_matches(app_id, "org.gnome.Contacts") ||
+			app_id_matches(app_id, "contacts")) {
+		return "gnome-contacts || evolution || true";
+	}
+	if (app_id_matches(app_id, "org.gnome.Showtime") ||
+			app_id_matches(app_id, "showtime")) {
+		return "showtime || totem || vlc || xdg-open \"$HOME/Videos\" || true";
+	}
+	if (app_id_matches(app_id, "org.gnome.Decibels") ||
+			app_id_matches(app_id, "decibels")) {
+		return "decibels || totem || vlc || xdg-open \"$HOME/Music\" || true";
 	}
 	return NULL;
 }

@@ -235,17 +235,20 @@ void orange_config_set_defaults(struct orange_config *config) {
 		"%s", "MacTahoe-Light");
 	snprintf(config->gtk_theme_dark, sizeof(config->gtk_theme_dark),
 		"%s", "MacTahoe-Dark");
-	/* Default dock apps — users should customize these */
+	/* Default dock — macOS Golden Gate order hybridized with GNOME core apps */
 	const char *default_dock[] = {
 		"__launcher__",
 		"org.gnome.Nautilus.desktop",
 		"firefox.desktop",
-		"org.gnome.Calculator.desktop",
+		"org.gnome.Maps.desktop",
+		"org.gnome.Loupe.desktop",
+		"org.gnome.Calendar.desktop",
+		"org.gnome.Contacts.desktop",
 		"org.gnome.TextEditor.desktop",
-		"org.gnome.Settings.desktop",
+		"org.gnome.Showtime.desktop",
+		"org.gnome.Decibels.desktop",
 		"org.gnome.Software.desktop",
-		"org.gnome.Terminal.desktop",
-		"org.gnome.Weather.desktop",
+		"org.gnome.Settings.desktop",
 		"__trash__",
 	};
 	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
