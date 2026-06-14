@@ -166,6 +166,7 @@ struct orange_server {
 	uint32_t resize_edges;
 
 	bool system_menu_open;
+	bool notification_center_open;
 	struct orange_status_state status;
 	int status_poll_ticks;
 	int hot_dock_index;
@@ -205,6 +206,74 @@ static void start_dock_drag(struct orange_server *server,
 	const struct orange_shell_layout *layout, int index);
 static void process_dock_drag(struct orange_server *server);
 static void finish_dock_drag(struct orange_server *server);
+
+static const char *orange_settings_command =
+	"if [ -x build/orange-settings ]; then "
+	"GSK_RENDERER=cairo build/orange-settings orange.conf; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings; "
+	"elif command -v xfce4-settings-manager >/dev/null 2>&1; then "
+	"xfce4-settings-manager; "
+	"elif command -v mate-control-center >/dev/null 2>&1; then "
+	"mate-control-center; "
+	"fi; true";
+
+static const char *network_settings_command =
+	"if command -v nm-connection-editor >/dev/null 2>&1; then "
+	"nm-connection-editor; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings kcm_networkmanagement; "
+	"fi; true";
+
+static const char *bluetooth_settings_command =
+	"if command -v blueman-manager >/dev/null 2>&1; then "
+	"blueman-manager; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings kcm_bluetooth; "
+	"fi; true";
+
+static const char *notification_settings_command =
+	"if command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings kcm_notifications; "
+	"elif command -v xfce4-notifyd-config >/dev/null 2>&1; then "
+	"xfce4-notifyd-config; "
+	"elif [ -x build/orange-settings ]; then "
+	"GSK_RENDERER=cairo build/orange-settings orange.conf; "
+	"fi; true";
+
+static const char *sound_settings_command =
+	"if command -v pavucontrol >/dev/null 2>&1; then "
+	"pavucontrol; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings kcm_pulseaudio; "
+	"fi; true";
+
+static const char *display_settings_command =
+	"if command -v wdisplays >/dev/null 2>&1; then "
+	"wdisplays; "
+	"elif command -v arandr >/dev/null 2>&1; then "
+	"arandr; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings kcm_kscreen; "
+	"elif command -v xfce4-display-settings >/dev/null 2>&1; then "
+	"xfce4-display-settings; "
+	"fi; true";
+
+static const char *power_settings_command =
+	"if command -v xfce4-power-manager-settings >/dev/null 2>&1; then "
+	"xfce4-power-manager-settings; "
+	"elif command -v mate-power-preferences >/dev/null 2>&1; then "
+	"mate-power-preferences; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings powerdevilprofilesconfig; "
+	"fi; true";
+
+static const char *keyboard_settings_command =
+	"if command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings kcm_keyboard; "
+	"elif command -v xfce4-keyboard-settings >/dev/null 2>&1; then "
+	"xfce4-keyboard-settings; "
+	"fi; true";
 
 static void status_set_defaults(struct orange_status_state *status) {
 	memset(status, 0, sizeof(*status));
@@ -839,6 +908,9 @@ static void compute_shell_layout_for_output(
 		server->context_menu_index,
 		server->context_menu_cursor_x,
 		server->context_menu_cursor_y);
+	if (server->notification_center_open) {
+		orange_shell_layout_set_notification_center(layout);
+	}
 }
 
 static int dock_hover_index_for_pointer(
@@ -961,6 +1033,7 @@ static void output_redraw_shell(struct orange_output *output) {
 	server_update_dock_open(output->server);
 	struct orange_shell_state state = {
 		.system_menu_open = output->server->system_menu_open,
+		.notification_center_open = output->server->notification_center_open,
 		.hot_dock_index = output->server->hot_dock_index,
 		.dock_pointer_x = (int)cursor_x,
 		.dock_pointer_y = (int)cursor_y,
@@ -1294,7 +1367,7 @@ static void handle_shell_menu_action(struct orange_server *server, int index) {
 		launch_command("GSK_RENDERER=cairo build/orange-about || true");
 		break;
 	case 1:
-		launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
+		launch_command(orange_settings_command);
 		break;
 	case 2:
 		launch_command("gnome-software || plasma-discover || true");
@@ -1375,7 +1448,7 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			launch_command("xdg-open \"$HOME\" || true");
 			break;
 		case 4:
-			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
+			launch_command(orange_settings_command);
 			break;
 		default:
 			break;
@@ -1383,7 +1456,7 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 	} else if (kind == ORANGE_CONTEXT_MENU_WIDGET) {
 		switch (item_index) {
 		case 0:
-			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
+			launch_command(orange_settings_command);
 			break;
 		case 1:
 			set_widget_size(server, target, ORANGE_WIDGET_SIZE_SMALL);
@@ -1449,10 +1522,40 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			launch_command("xdg-open \"$HOME/Desktop\" || true");
 			break;
 		case 6:
-			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
+			launch_command(orange_settings_command);
 			break;
 		case 7:
-			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
+			launch_command(orange_settings_command);
+			break;
+		default:
+			break;
+		}
+	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_WIFI) {
+		switch (item_index) {
+		case 0:
+		case 1:
+		case 2:
+			launch_command(network_settings_command);
+			break;
+		default:
+			break;
+		}
+	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_SOUND) {
+		switch (item_index) {
+		case 0:
+		case 1:
+		case 2:
+			launch_command(sound_settings_command);
+			break;
+		default:
+			break;
+		}
+	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_BATTERY) {
+		switch (item_index) {
+		case 0:
+		case 1:
+		case 2:
+			launch_command(power_settings_command);
 			break;
 		default:
 			break;
@@ -1460,34 +1563,34 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 	} else if (kind == ORANGE_CONTEXT_MENU_STATUS) {
 		switch (item_index) {
 		case 0:
-			launch_command("nm-connection-editor || gnome-control-center wifi || true");
+			launch_command(network_settings_command);
 			break;
 		case 1:
-			launch_command("blueman-manager || gnome-control-center bluetooth || systemsettings kcm_bluetooth || true");
+			launch_command(bluetooth_settings_command);
 			break;
 		case 2:
-			launch_command("gnome-control-center sharing || true");
+			launch_command(orange_settings_command);
 			break;
 		case 3:
-			launch_command("gnome-control-center notifications || systemsettings kcm_notifications || true");
+			launch_command(notification_settings_command);
 			break;
 		case 4:
-			launch_command("pavucontrol || gnome-control-center sound || true");
+			launch_command(sound_settings_command);
 			break;
 		case 5:
-			launch_command("gnome-control-center display || systemsettings kcm_kscreen || true");
+			launch_command(display_settings_command);
 			break;
 		case 6:
-			launch_command("gnome-control-center display || systemsettings kcm_kscreen || true");
+			launch_command(display_settings_command);
 			break;
 		case 7:
-			launch_command("gnome-control-center power || true");
+			launch_command(power_settings_command);
 			break;
 		case 8:
-			launch_command("gnome-control-center keyboard || systemsettings kcm_keyboard || true");
+			launch_command(keyboard_settings_command);
 			break;
 		case 9:
-			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || gnome-control-center || systemsettings || true");
+			launch_command(orange_settings_command);
 			break;
 		default:
 			break;
@@ -1707,6 +1810,27 @@ static void finish_dock_drag(struct orange_server *server) {
 	}
 }
 
+static void open_status_menu(
+		struct orange_server *server,
+		enum orange_context_menu_kind kind,
+		int index,
+		int local_x,
+		int local_y) {
+	server->context_menu_kind = kind;
+	server->context_menu_index = index;
+	server->context_menu_cursor_x = local_x;
+	server->context_menu_cursor_y = local_y;
+	server->system_menu_open = false;
+	server->notification_center_open = false;
+}
+
+static void open_status_quick_controls(
+		struct orange_server *server,
+		int local_x,
+		int local_y) {
+	open_status_menu(server, ORANGE_CONTEXT_MENU_STATUS, -1, local_x, local_y);
+}
+
 static void handle_shell_click(struct orange_server *server, int x, int y) {
 	int local_x = 0;
 	int local_y = 0;
@@ -1726,36 +1850,91 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		handle_context_menu_action(server, hit.index);
 		break;
 	case ORANGE_HIT_SYSTEM_MENU:
+		server->notification_center_open = false;
 		clear_context_menu(server);
 		server->system_menu_open = !server->system_menu_open;
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_SYSTEM_MENU_ITEM:
+		server->notification_center_open = false;
 		clear_context_menu(server);
 		handle_shell_menu_action(server, hit.index);
 		break;
 	case ORANGE_HIT_APP_MENU:
+		server->notification_center_open = false;
 		clear_context_menu(server);
 		server->system_menu_open = false;
+		server_mark_shell_dirty(server);
+		break;
+	case ORANGE_HIT_STATUS_ITEM:
+		clear_context_menu(server);
+		server->system_menu_open = false;
+		if (hit.index == ORANGE_STATUS_ITEM_CLOCK) {
+			server->notification_center_open =
+				!server->notification_center_open;
+		} else {
+			server->notification_center_open = false;
+			switch (hit.index) {
+			case ORANGE_STATUS_ITEM_WIFI:
+				open_status_menu(server,
+					ORANGE_CONTEXT_MENU_STATUS_WIFI,
+					hit.index, local_x, local_y);
+				break;
+			case ORANGE_STATUS_ITEM_SOUND:
+				open_status_menu(server,
+					ORANGE_CONTEXT_MENU_STATUS_SOUND,
+					hit.index, local_x, local_y);
+				break;
+			case ORANGE_STATUS_ITEM_BATTERY:
+				open_status_menu(server,
+					ORANGE_CONTEXT_MENU_STATUS_BATTERY,
+					hit.index, local_x, local_y);
+				break;
+			case ORANGE_STATUS_ITEM_SEARCH:
+				launch_app_picker();
+				break;
+			case ORANGE_STATUS_ITEM_CONTROL_CENTER:
+				open_status_quick_controls(server, local_x, local_y);
+				break;
+			default:
+				break;
+			}
+		}
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_STATUS_AREA:
 		clear_context_menu(server);
 		server->system_menu_open = false;
+		open_status_quick_controls(server, local_x, local_y);
+		server_mark_shell_dirty(server);
+		break;
+	case ORANGE_HIT_NOTIFICATION_CENTER:
+		clear_context_menu(server);
+		server->system_menu_open = false;
+		server_mark_shell_dirty(server);
+		break;
+	case ORANGE_HIT_NOTIFICATION_CENTER_EDIT:
+		clear_context_menu(server);
+		server->system_menu_open = false;
+		server->notification_center_open = false;
+		launch_command(orange_settings_command);
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_DOCK_ITEM:
+		server->notification_center_open = false;
 		clear_context_menu(server);
 		server->system_menu_open = false;
 		start_dock_drag(server, &layout, hit.index);
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_WIDGET:
+		server->notification_center_open = false;
 		clear_context_menu(server);
 		server->system_menu_open = false;
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_DESKTOP_ITEM:
+		server->notification_center_open = false;
 		clear_context_menu(server);
 		server->system_menu_open = false;
 		start_desktop_drag(server, output, &layout, hit.index, local_x, local_y);
@@ -1764,6 +1943,10 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 	case ORANGE_HIT_DESKTOP:
 	case ORANGE_HIT_NONE:
 		clear_context_menu(server);
+		if (server->notification_center_open) {
+			server->notification_center_open = false;
+			server_mark_shell_dirty(server);
+		}
 		if (server->system_menu_open) {
 			server->system_menu_open = false;
 			server_mark_shell_dirty(server);
@@ -1787,11 +1970,46 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout, local_x, local_y);
 
 	server->system_menu_open = false;
+	server->notification_center_open = false;
 	server->context_menu_cursor_x = local_x;
 	server->context_menu_cursor_y = local_y;
 	if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK;
 		server->context_menu_index = hit.index;
+	} else if (hit.kind == ORANGE_HIT_STATUS_ITEM) {
+		switch (hit.index) {
+		case ORANGE_STATUS_ITEM_WIFI:
+			open_status_menu(server, ORANGE_CONTEXT_MENU_STATUS_WIFI,
+				hit.index, local_x, local_y);
+			break;
+		case ORANGE_STATUS_ITEM_SOUND:
+			open_status_menu(server, ORANGE_CONTEXT_MENU_STATUS_SOUND,
+				hit.index, local_x, local_y);
+			break;
+		case ORANGE_STATUS_ITEM_BATTERY:
+			open_status_menu(server, ORANGE_CONTEXT_MENU_STATUS_BATTERY,
+				hit.index, local_x, local_y);
+			break;
+		case ORANGE_STATUS_ITEM_SEARCH:
+			launch_app_picker();
+			server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
+			server->context_menu_index = -1;
+			break;
+		case ORANGE_STATUS_ITEM_CONTROL_CENTER:
+			open_status_quick_controls(server, local_x, local_y);
+			break;
+		case ORANGE_STATUS_ITEM_CLOCK:
+			server->notification_center_open = true;
+			server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
+			server->context_menu_index = -1;
+			break;
+		default:
+			server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
+			server->context_menu_index = -1;
+			break;
+		}
+	} else if (hit.kind == ORANGE_HIT_STATUS_AREA) {
+		open_status_quick_controls(server, local_x, local_y);
 	} else if (hit.kind == ORANGE_HIT_APP_MENU) {
 		int launcher_idx = dock_launcher_for_view(server, server->focused_view);
 		int visible_idx = dock_visible_index_for_launcher(server, launcher_idx);
@@ -1963,6 +2181,11 @@ static bool handle_keybinding(
 	case XKB_KEY_Escape:
 		if (server->system_menu_open) {
 			server->system_menu_open = false;
+			server_mark_shell_dirty(server);
+			return true;
+		}
+		if (server->notification_center_open) {
+			server->notification_center_open = false;
 			server_mark_shell_dirty(server);
 			return true;
 		}

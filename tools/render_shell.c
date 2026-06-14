@@ -13,7 +13,7 @@
 
 static void usage(const char *argv0) {
 	fprintf(stderr,
-		"usage: %s [--width N] [--height N] [--assets PATH] [--config PATH] [--timestamp N] [--foreground-only] [--context-menu KIND] [--context-index N] [--context-x N] [--context-y N] output.png\n",
+		"usage: %s [--width N] [--height N] [--assets PATH] [--config PATH] [--timestamp N] [--foreground-only] [--notification-center] [--context-menu KIND] [--context-index N] [--context-x N] [--context-y N] output.png\n",
 		argv0);
 }
 
@@ -32,6 +32,12 @@ static bool parse_context_menu_kind(
 		*kind = ORANGE_CONTEXT_MENU_DESKTOP_ICON;
 	} else if (strcmp(value, "status") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_STATUS;
+	} else if (strcmp(value, "status-wifi") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_STATUS_WIFI;
+	} else if (strcmp(value, "status-sound") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_STATUS_SOUND;
+	} else if (strcmp(value, "status-battery") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_STATUS_BATTERY;
 	} else {
 		return false;
 	}
@@ -45,6 +51,7 @@ int main(int argc, char **argv) {
 	const char *config_path = "orange.conf";
 	time_t now = 1757638380;
 	bool foreground_only = false;
+	bool notification_center = false;
 	enum orange_context_menu_kind context_kind = ORANGE_CONTEXT_MENU_NONE;
 	int context_index = -1;
 	int context_x = -1;
@@ -64,6 +71,8 @@ int main(int argc, char **argv) {
 			now = (time_t)strtoll(argv[++i], NULL, 10);
 		} else if (strcmp(argv[i], "--foreground-only") == 0) {
 			foreground_only = true;
+		} else if (strcmp(argv[i], "--notification-center") == 0) {
+			notification_center = true;
 		} else if (strcmp(argv[i], "--context-menu") == 0 && i + 1 < argc) {
 			if (!parse_context_menu_kind(argv[++i], &context_kind)) {
 				usage(argv[0]);
@@ -119,6 +128,7 @@ int main(int argc, char **argv) {
 
 	struct orange_shell_state state = {
 		.system_menu_open = false,
+		.notification_center_open = notification_center,
 		.hot_dock_index = -1,
 		.dock_drag_index = -1,
 		.dock_drag_insert_before = -1,

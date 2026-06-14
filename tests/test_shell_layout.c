@@ -69,6 +69,7 @@ static void test_default_dock_apps_have_fallback_commands(void) {
 			i, NULL, 0, &config);
 		assert(command != NULL);
 		assert(command[0] != '\0');
+		assert(strstr(command, "gnome-control-center") == NULL);
 	}
 }
 
@@ -166,10 +167,21 @@ static void test_status_area_hit_and_menu(void) {
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	struct orange_rect clock =
+		layout.status_items[ORANGE_STATUS_ITEM_CLOCK];
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
-		layout.status_area.x + layout.status_area.width / 2,
-		layout.status_area.y + layout.status_area.height / 2);
-	assert(hit.kind == ORANGE_HIT_STATUS_AREA);
+		clock.x + clock.width / 2,
+		clock.y + clock.height / 2);
+	assert(hit.kind == ORANGE_HIT_STATUS_ITEM);
+	assert(hit.index == ORANGE_STATUS_ITEM_CLOCK);
+
+	struct orange_rect control =
+		layout.status_items[ORANGE_STATUS_ITEM_CONTROL_CENTER];
+	hit = orange_shell_hit_test(&layout,
+		control.x + control.width / 2,
+		control.y + control.height / 2);
+	assert(hit.kind == ORANGE_HIT_STATUS_ITEM);
+	assert(hit.index == ORANGE_STATUS_ITEM_CONTROL_CENTER);
 
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_STATUS, -1, 0, 0);
@@ -181,6 +193,65 @@ static void test_status_area_hit_and_menu(void) {
 		ORANGE_CONTEXT_MENU_STATUS, 9), "Control Center Settings...") == 0);
 	assert(orange_shell_context_menu_icon_name(
 		ORANGE_CONTEXT_MENU_STATUS, 0) != NULL);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_STATUS_WIFI, ORANGE_STATUS_ITEM_WIFI, 0, 0);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_WIFI);
+	assert(layout.context_menu_item_count == 3);
+	assert(layout.context_menu_panel.y > layout.menu_bar.height);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_STATUS_WIFI, 2), "Network Settings...") == 0);
+	assert(orange_shell_context_menu_icon_name(
+		ORANGE_CONTEXT_MENU_STATUS_WIFI, 0) != NULL);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_STATUS_SOUND, ORANGE_STATUS_ITEM_SOUND, 0, 0);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_SOUND);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_STATUS_SOUND, 2), "Sound Settings...") == 0);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_STATUS_BATTERY, ORANGE_STATUS_ITEM_BATTERY, 0, 0);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_BATTERY);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_STATUS_BATTERY, 1), "Power Settings...") == 0);
+}
+
+static void test_notification_center_layout_and_hit(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920, 1080, false, &config, 0, 0, &layout);
+	orange_shell_layout_set_notification_center(&layout);
+
+	assert(layout.notification_center_panel.width > 0);
+	assert(layout.notification_center_panel.x >= 0);
+	assert(layout.notification_center_panel.x +
+		layout.notification_center_panel.width <= layout.width);
+	assert(layout.notification_center_panel.y > layout.menu_bar.height);
+	assert(layout.notification_center_card_count >= 4);
+	assert(layout.notification_center_edit_button.y >
+		layout.notification_center_cards[
+			layout.notification_center_card_count - 1].y);
+
+	struct orange_rect card = layout.notification_center_cards[0];
+	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
+		card.x + card.width / 2,
+		card.y + card.height / 2);
+	assert(hit.kind == ORANGE_HIT_NOTIFICATION_CENTER);
+
+	struct orange_rect edit = layout.notification_center_edit_button;
+	hit = orange_shell_hit_test(&layout,
+		edit.x + edit.width / 2,
+		edit.y + edit.height / 2);
+	assert(hit.kind == ORANGE_HIT_NOTIFICATION_CENTER_EDIT);
+
+	struct orange_rect clock = layout.status_items[ORANGE_STATUS_ITEM_CLOCK];
+	hit = orange_shell_hit_test(&layout,
+		clock.x + clock.width / 2,
+		clock.y + clock.height / 2);
+	assert(hit.kind == ORANGE_HIT_STATUS_ITEM);
+	assert(hit.index == ORANGE_STATUS_ITEM_CLOCK);
 }
 
 static void test_small_width_dock_fits(void) {
@@ -246,6 +317,10 @@ static void test_major_surfaces_scale_by_resolution(void) {
 		small.system_menu_panel.width);
 	assert_roughly_double(large.system_menu_items[0].height,
 		small.system_menu_items[0].height);
+	assert_roughly_double(large.status_items[ORANGE_STATUS_ITEM_WIFI].width,
+		small.status_items[ORANGE_STATUS_ITEM_WIFI].width);
+	assert_roughly_double(large.status_items[ORANGE_STATUS_ITEM_CLOCK].width,
+		small.status_items[ORANGE_STATUS_ITEM_CLOCK].width);
 	assert_roughly_double(large.desktop_items[0].width,
 		small.desktop_items[0].width);
 	assert_roughly_double(large.desktop_items[0].height,
@@ -264,6 +339,15 @@ static void test_major_surfaces_scale_by_resolution(void) {
 		small.context_menu_panel.height);
 	assert_roughly_double(large.context_menu_items[0].height,
 		small.context_menu_items[0].height);
+
+	orange_shell_layout_set_notification_center(&small);
+	orange_shell_layout_set_notification_center(&large);
+	assert_roughly_double(large.notification_center_panel.width,
+		small.notification_center_panel.width);
+	assert_roughly_double(large.notification_center_cards[0].height,
+		small.notification_center_cards[0].height);
+	assert_roughly_double(large.notification_center_edit_button.height,
+		small.notification_center_edit_button.height);
 }
 
 static void test_desktop_background_hit(void) {
@@ -430,6 +514,7 @@ int main(void) {
 	test_desktop_custom_position_clamps_to_visible_area();
 	test_system_menu_hit();
 	test_status_area_hit_and_menu();
+	test_notification_center_layout_and_hit();
 	test_small_width_dock_fits();
 	test_invalid_visible_dock_order_has_no_blank_slot();
 	test_resolution_scaling();

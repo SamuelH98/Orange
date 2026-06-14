@@ -154,6 +154,59 @@ static void test_dark_context_menu_uses_dark_material(void) {
 	free(pixels);
 }
 
+static void test_notification_center_renders_panel_cards_and_button(void) {
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *pixels = calloc((size_t)height, (size_t)stride);
+	assert(pixels != NULL);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_set_notification_center(&layout);
+	assert(layout.notification_center_card_count >= 4);
+
+	struct orange_shell_state state = {
+		.system_menu_open = false,
+		.notification_center_open = true,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1781451600,
+		.assets = NULL,
+		.config = &config,
+	};
+	const struct orange_shell_draw_options options = {
+		.draw_wallpaper = false,
+	};
+	orange_shell_draw_with_options(pixels, width, height, stride,
+		&state, &options);
+
+	struct orange_rect panel = layout.notification_center_panel;
+	struct color panel_pixel = pixel_at(pixels, stride,
+		panel.x + panel.width / 2,
+		panel.y + 12);
+	assert(panel_pixel.a > 30);
+
+	struct orange_rect card = layout.notification_center_cards[0];
+	struct color card_pixel = pixel_at(pixels, stride,
+		card.x + card.width / 2,
+		card.y + card.height / 2);
+	assert(card_pixel.a > 90);
+
+	struct orange_rect edit = layout.notification_center_edit_button;
+	struct color edit_pixel = pixel_at(pixels, stride,
+		edit.x + edit.width / 2,
+		edit.y + edit.height / 2);
+	assert(edit_pixel.a > 70);
+	free(pixels);
+}
+
 static void test_desktop_volume_icon_draws(void) {
 	const int width = 1440;
 	const int height = 900;
@@ -328,6 +381,7 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 int main(void) {
 	test_context_menu_glass_and_scaling();
 	test_dark_context_menu_uses_dark_material();
+	test_notification_center_renders_panel_cards_and_button();
 	test_desktop_volume_icon_draws();
 	test_dock_magnification_wave_paints_above_base_icons();	puts("shell visual tests passed");
 	return 0;

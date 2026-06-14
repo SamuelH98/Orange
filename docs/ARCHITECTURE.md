@@ -30,6 +30,7 @@ Responsibilities:
 - place desktop icons from persisted coordinates when the user drags them,
 - draw shell context menus for Dock items, widgets, desktop items, and empty
   desktop background,
+- draw a right-edge Notification Center overlay as transient shell chrome,
 - expose deterministic layout and hit-test math for tests,
 - maintain transient UI state such as the system menu popover.
 
@@ -153,6 +154,15 @@ Responsibilities:
    `orange.conf` on release.
 9. Right-click hit testing opens a shell context menu above a Dock item, near a
    widget, near a desktop item, or at the empty desktop cursor location.
+10. Left-clicking status items dispatches by item: Wi-Fi, Sound, Battery,
+    Search, Control Center, and Clock each have their own hit rectangle and
+    action. Wi-Fi, Sound, and Battery open item-specific status menus; Search
+    launches the app picker; Control Center opens quick controls; Clock toggles
+    Notification Center.
+11. Layout computes a right-edge Notification Center overlay after the base
+    shell geometry, hit testing treats the overlay and Edit Widgets button as
+    top-level shell targets, and the compositor maps Edit Widgets to Orange
+    Settings.
 
 ## Failure Modes
 
@@ -167,6 +177,9 @@ Responsibilities:
 - Vulkan unavailable: wlroots renderer creation may fail; the log identifies
   the selected renderer when it succeeds.
 - Launcher command missing: child exits; compositor remains running.
+- GNOME settings launcher unavailable or unsupported outside GNOME/Unity:
+  commands skip `gnome-control-center` and prefer Orange Settings or
+  desktop-neutral tools.
 - Input device absent in headless mode: shell still renders and exits in
   `--once` validation.
 - GTK missing at build time: Settings app target is skipped, compositor and

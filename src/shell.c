@@ -10,6 +10,7 @@
 #define REFERENCE_HEIGHT 1800.0
 #define MIN_UI_SCALE 0.50
 #define MAX_UI_SCALE 1.60
+#define ORANGE_SETTINGS_COMMAND "if [ -x build/orange-settings ]; then GSK_RENDERER=cairo build/orange-settings orange.conf; elif command -v systemsettings >/dev/null 2>&1; then systemsettings; elif command -v xfce4-settings-manager >/dev/null 2>&1; then xfce4-settings-manager; fi; true"
 
 /* Built-in dock entries (not from .desktop files) */
 static const char *builtin_label(const char *app_id) {
@@ -190,7 +191,7 @@ static const char *fallback_command(const char *app_id) {
 	}
 	if (app_id_matches(app_id, "org.gnome.Settings") ||
 			app_id_matches(app_id, "control-center")) {
-		return "GSK_RENDERER=cairo build/orange-settings orange.conf || gnome-control-center || systemsettings || true";
+		return ORANGE_SETTINGS_COMMAND;
 	}
 	if (app_id_matches(app_id, "org.gnome.Software") ||
 			app_id_matches(app_id, "discover")) {
@@ -390,6 +391,48 @@ static const char *status_context_icon_names[] = {
 };
 
 static const int status_context_separator_before[] = {4, 7, 9, -1};
+
+static const char *status_wifi_context_labels[] = {
+	"Wi-Fi",
+	"Other Networks...",
+	"Network Settings...",
+};
+
+static const char *status_wifi_context_icon_names[] = {
+	"network-wireless",
+	"network-workgroup",
+	"preferences-system-network",
+};
+
+static const int status_wifi_context_separator_before[] = {2, -1};
+
+static const char *status_sound_context_labels[] = {
+	"Sound",
+	"Output Settings...",
+	"Sound Settings...",
+};
+
+static const char *status_sound_context_icon_names[] = {
+	"audio-volume-high",
+	"audio-card",
+	"preferences-desktop-sound",
+};
+
+static const int status_sound_context_separator_before[] = {2, -1};
+
+static const char *status_battery_context_labels[] = {
+	"Battery",
+	"Power Settings...",
+	"Battery Health...",
+};
+
+static const char *status_battery_context_icon_names[] = {
+	"battery",
+	"preferences-system-power",
+	"battery-good",
+};
+
+static const int status_battery_context_separator_before[] = {1, -1};
 
 static bool rect_contains(const struct orange_rect *rect, int x, int y) {
 	return x >= rect->x && y >= rect->y &&
@@ -616,21 +659,32 @@ static void draw_status_battery(cairo_t *cr, struct orange_rect r) {
 	cairo_fill(cr);
 }
 
-static struct orange_rect status_rect_before(
+static struct orange_rect status_item_before(
 		int *right,
 		int width,
 		int height,
-		int center_y,
 		int gap) {
 	*right -= width;
 	struct orange_rect rect = {
 		*right,
-		center_y - height / 2,
+		0,
 		width,
 		height,
 	};
 	*right -= gap;
 	return rect;
+}
+
+static struct orange_rect centered_rect_in(
+		struct orange_rect bounds,
+		int width,
+		int height) {
+	return (struct orange_rect){
+		bounds.x + (bounds.width - width) / 2,
+		bounds.y + (bounds.height - height) / 2,
+		width,
+		height,
+	};
 }
 
 static void clamp_desktop_items_to_visible_area(
@@ -955,24 +1009,29 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 	cairo_set_font_size(cr, 28 * s);
 	cairo_text_extents_t clock_extents;
 	cairo_text_extents(cr, clock_text, &clock_extents);
-	double clock_x = layout->width - scaled_i(34, s) - clock_extents.x_advance;
+	struct orange_rect clock_rect =
+		layout->status_items[ORANGE_STATUS_ITEM_CLOCK];
+	double clock_x = clock_rect.x + clock_rect.width -
+		scaled_i(8, s) - clock_extents.x_advance;
 	draw_text(cr, clock_text, clock_x, scaled_i(36, s), 28 * s,
 		text_r, text_g, text_b, 0.95, true);
 
 	struct orange_assets *assets = state->assets;
-	int center_y = scaled_i(27, s);
-	int gap = scaled_i(16, s);
-	int status_right = (int)clock_x - scaled_i(28, s);
-	struct orange_rect control_rect = status_rect_before(&status_right,
-		scaled_i(32, s), scaled_i(30, s), center_y, gap);
-	struct orange_rect search_rect = status_rect_before(&status_right,
-		scaled_i(30, s), scaled_i(30, s), center_y, gap);
-	struct orange_rect battery_rect = status_rect_before(&status_right,
-		scaled_i(38, s), scaled_i(28, s), center_y, gap);
-	struct orange_rect sound_rect = status_rect_before(&status_right,
-		scaled_i(30, s), scaled_i(30, s), center_y, gap);
-	struct orange_rect wifi_rect = status_rect_before(&status_right,
-		scaled_i(34, s), scaled_i(30, s), center_y, gap);
+	struct orange_rect control_rect = centered_rect_in(
+		layout->status_items[ORANGE_STATUS_ITEM_CONTROL_CENTER],
+		scaled_i(32, s), scaled_i(30, s));
+	struct orange_rect search_rect = centered_rect_in(
+		layout->status_items[ORANGE_STATUS_ITEM_SEARCH],
+		scaled_i(30, s), scaled_i(30, s));
+	struct orange_rect battery_rect = centered_rect_in(
+		layout->status_items[ORANGE_STATUS_ITEM_BATTERY],
+		scaled_i(38, s), scaled_i(28, s));
+	struct orange_rect sound_rect = centered_rect_in(
+		layout->status_items[ORANGE_STATUS_ITEM_SOUND],
+		scaled_i(30, s), scaled_i(30, s));
+	struct orange_rect wifi_rect = centered_rect_in(
+		layout->status_items[ORANGE_STATUS_ITEM_WIFI],
+		scaled_i(34, s), scaled_i(30, s));
 
 	int variant = ORANGE_ASSET_ICON_LIGHT;
 	const char *wifi_name = state->status.network_icon[0] != '\0' ?
@@ -1766,6 +1825,312 @@ static void draw_context_menu(cairo_t *cr,
 	}
 }
 
+static void draw_notification_card_background(cairo_t *cr,
+		const struct orange_rect *rect,
+		double radius,
+		bool dark) {
+	set_source_rgba255(cr, 0, 0, 0, dark ? 0.22 : 0.12);
+	rounded_rect(cr, rect->x + 1.5, rect->y + 3.0,
+		rect->width, rect->height, radius);
+	cairo_fill(cr);
+	draw_liquid_panel(cr, rect, radius, dark ? 0.62 : 0.84, dark);
+}
+
+static void draw_notification_app_icon(cairo_t *cr,
+		const struct orange_shell_state *state,
+		const struct orange_config *config,
+		const char *icon_name,
+		const char *fallback_letter,
+		struct orange_rect rect,
+		int red,
+		int green,
+		int blue) {
+	double radius = rect.width * 0.24;
+	rounded_rect(cr, rect.x, rect.y, rect.width, rect.height, radius);
+	set_source_rgba255(cr, red, green, blue, 0.95);
+	cairo_fill(cr);
+
+	bool dark = is_dark_config(config);
+	cairo_surface_t *icon = state != NULL && state->assets != NULL ?
+		orange_assets_icon(state->assets,
+			dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT,
+			icon_name) : NULL;
+	if (icon != NULL) {
+		draw_image_fit(cr, icon,
+			(struct orange_rect){
+				rect.x + rect.width / 5,
+				rect.y + rect.height / 5,
+				rect.width * 3 / 5,
+				rect.height * 3 / 5,
+			},
+			0.92);
+		return;
+	}
+
+	cairo_text_extents_t extents;
+	cairo_select_font_face(cr, "Sans",
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+	cairo_set_font_size(cr, rect.height * 0.48);
+	cairo_text_extents(cr, fallback_letter, &extents);
+	draw_text(cr, fallback_letter,
+		rect.x + (rect.width - extents.width) / 2.0 - extents.x_bearing,
+		rect.y + (rect.height - extents.height) / 2.0 - extents.y_bearing,
+		rect.height * 0.48, 255, 255, 255, 0.96, true);
+}
+
+static void draw_notification_message_card(cairo_t *cr,
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		const struct orange_config *config,
+		struct orange_rect r) {
+	double s = layout_scale(layout);
+	bool dark = is_dark_config(config);
+	int primary = dark ? 244 : 28;
+	int secondary = dark ? 190 : 88;
+
+	draw_notification_card_background(cr, &r, 23 * s, dark);
+	draw_notification_app_icon(cr, state, config, "mail-message-new", "M",
+		(struct orange_rect){
+			r.x + scaled_i(18, s), r.y + scaled_i(18, s),
+			scaled_i(44, s), scaled_i(44, s),
+		},
+		57, 198, 94);
+	draw_text(cr, "Messages", r.x + scaled_i(76, s), r.y + scaled_i(33, s),
+		17 * s, secondary, secondary, secondary, 0.86, true);
+	draw_text(cr, "now", r.x + r.width - scaled_i(54, s),
+		r.y + scaled_i(33, s), 15 * s, secondary, secondary, secondary, 0.78, false);
+	draw_text(cr, "Foodie Friends", r.x + scaled_i(76, s),
+		r.y + scaled_i(57, s), 23 * s, primary, primary, primary, 0.96, true);
+	draw_text(cr, "Brunch after soccer Saturday;",
+		r.x + scaled_i(76, s), r.y + scaled_i(84, s),
+		18 * s, primary, primary, primary, 0.88, false);
+	draw_text(cr, "host or restaurant suggested.",
+		r.x + scaled_i(76, s), r.y + scaled_i(107, s),
+		18 * s, primary, primary, primary, 0.88, false);
+}
+
+static void draw_notification_calendar_card(cairo_t *cr,
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		const struct orange_config *config,
+		struct orange_rect r) {
+	double s = layout_scale(layout);
+	bool dark = is_dark_config(config);
+	int primary = dark ? 244 : 28;
+	int secondary = dark ? 190 : 88;
+
+	draw_notification_card_background(cr, &r, 23 * s, dark);
+	draw_notification_app_icon(cr, state, config, "x-office-calendar", "C",
+		(struct orange_rect){
+			r.x + scaled_i(18, s), r.y + scaled_i(18, s),
+			scaled_i(44, s), scaled_i(44, s),
+		},
+		242, 78, 79);
+	draw_text(cr, "Calendar", r.x + scaled_i(76, s), r.y + scaled_i(33, s),
+		17 * s, secondary, secondary, secondary, 0.86, true);
+	draw_text(cr, "4m ago", r.x + r.width - scaled_i(72, s),
+		r.y + scaled_i(33, s), 15 * s, secondary, secondary, secondary, 0.78, false);
+	draw_text(cr, "Bicycle tune-up", r.x + scaled_i(76, s),
+		r.y + scaled_i(58, s), 23 * s, primary, primary, primary, 0.96, true);
+	draw_text(cr, "Today at 1:30 PM",
+		r.x + scaled_i(76, s), r.y + scaled_i(88, s),
+		18 * s, primary, primary, primary, 0.82, false);
+}
+
+static void draw_notification_calendar_widget(cairo_t *cr,
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		const struct orange_config *config,
+		struct orange_rect r) {
+	double s = layout_scale(layout);
+	bool dark = is_dark_config(config);
+	int primary = dark ? 244 : 28;
+	int secondary = dark ? 188 : 88;
+	time_t now = state != NULL && state->now != 0 ? state->now : time(NULL);
+	struct tm local;
+	localtime_r(&now, &local);
+
+	draw_notification_card_background(cr, &r, 24 * s, dark);
+	draw_text(cr, "Calendar", r.x + scaled_i(20, s), r.y + scaled_i(36, s),
+		22 * s, primary, primary, primary, 0.96, true);
+	draw_text(cr, "Today", r.x + scaled_i(20, s), r.y + scaled_i(63, s),
+		17 * s, 238, 70, 76, 0.95, true);
+	draw_text(cr, "1:30  Bicycle tune-up", r.x + scaled_i(20, s),
+		r.y + scaled_i(96, s), 18 * s, primary, primary, primary, 0.90, false);
+	draw_text(cr, "3:30  Girls coding club", r.x + scaled_i(20, s),
+		r.y + scaled_i(124, s), 18 * s, primary, primary, primary, 0.86, false);
+
+	int mini_w = scaled_i(156, s);
+	int mini_x = r.x + r.width - mini_w - scaled_i(18, s);
+	int mini_y = r.y + scaled_i(42, s);
+	char month[24];
+	strftime(month, sizeof(month), "%b", &local);
+	for (char *p = month; *p != '\0'; p++) {
+		if (*p >= 'a' && *p <= 'z') {
+			*p = (char)(*p - 'a' + 'A');
+		}
+	}
+	draw_text(cr, month, mini_x, r.y + scaled_i(35, s),
+		14 * s, 238, 70, 76, 0.95, true);
+	int cell = scaled_i(20, s);
+	for (int day = 1; day <= 30; day++) {
+		int col = (day - 1) % 7;
+		int row = (day - 1) / 7;
+		int cx = mini_x + col * cell + cell / 2;
+		int cy = mini_y + row * cell;
+		if (day == local.tm_mday) {
+			set_source_rgba255(cr, 242, 78, 79, 1.0);
+			cairo_arc(cr, cx, cy, scaled_i(8, s), 0, 2.0 * M_PI);
+			cairo_fill(cr);
+		}
+		char text[8];
+		snprintf(text, sizeof(text), "%d", day);
+		draw_text(cr, text, cx - scaled_i(day < 10 ? 3 : 7, s),
+			cy + scaled_i(5, s), 10 * s,
+			day == local.tm_mday ? 255 : secondary,
+			day == local.tm_mday ? 255 : secondary,
+			day == local.tm_mday ? 255 : secondary,
+			0.90, true);
+	}
+}
+
+static void draw_notification_screen_time_widget(cairo_t *cr,
+		const struct orange_shell_layout *layout,
+		const struct orange_config *config,
+		struct orange_rect r) {
+	double s = layout_scale(layout);
+	bool dark = is_dark_config(config);
+	int primary = dark ? 244 : 28;
+	int secondary = dark ? 188 : 88;
+
+	draw_notification_card_background(cr, &r, 24 * s, dark);
+	draw_text(cr, "Screen Time", r.x + scaled_i(20, s), r.y + scaled_i(34, s),
+		19 * s, secondary, secondary, secondary, 0.84, true);
+	draw_text(cr, "1h 20m", r.x + scaled_i(20, s), r.y + scaled_i(78, s),
+		40 * s, primary, primary, primary, 0.96, false);
+	int graph_x = r.x + scaled_i(174, s);
+	int graph_y = r.y + scaled_i(34, s);
+	int graph_w = r.width - scaled_i(194, s);
+	int graph_h = scaled_i(82, s);
+	set_source_rgba255(cr, dark ? 255 : 30, dark ? 255 : 34,
+		dark ? 255 : 38, dark ? 0.10 : 0.08);
+	for (int i = 0; i < 4; i++) {
+		cairo_rectangle(cr, graph_x, graph_y + i * graph_h / 3,
+			graph_w, 1);
+		cairo_fill(cr);
+	}
+	const double bars[] = {0.22, 0.36, 0.30, 0.62, 0.88, 0.56};
+	int bar_w = graph_w / 10;
+	for (int i = 0; i < 6; i++) {
+		int bh = (int)lrint(graph_h * bars[i]);
+		int bx = graph_x + scaled_i(14, s) + i * graph_w / 7;
+		set_source_rgba255(cr, i >= 3 ? 31 : 80,
+			i >= 3 ? 138 : 172,
+			i >= 3 ? 255 : 242, 0.92);
+		rounded_rect(cr, bx, graph_y + graph_h - bh, bar_w, bh, 2 * s);
+		cairo_fill(cr);
+	}
+}
+
+static void draw_notification_weather_widget(cairo_t *cr,
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		const struct orange_config *config,
+		struct orange_rect r) {
+	double s = layout_scale(layout);
+	bool dark = is_dark_config(config);
+	int primary = dark ? 255 : 255;
+
+	draw_notification_card_background(cr, &r, 24 * s, true);
+	cairo_pattern_t *shade = cairo_pattern_create_linear(r.x, r.y, r.x, r.y + r.height);
+	cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.16, 0.45, 0.83, 0.86);
+	cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.05, 0.11, 0.32, 0.82);
+	rounded_rect(cr, r.x, r.y, r.width, r.height, 24 * s);
+	cairo_set_source(cr, shade);
+	cairo_fill(cr);
+	cairo_pattern_destroy(shade);
+
+	draw_text(cr, "Weather", r.x + scaled_i(20, s), r.y + scaled_i(35, s),
+		18 * s, primary, primary, primary, 0.78, true);
+	draw_text(cr, "Memphis", r.x + scaled_i(20, s), r.y + scaled_i(66, s),
+		25 * s, primary, primary, primary, 0.96, true);
+	draw_text(cr, "79°", r.x + scaled_i(20, s), r.y + scaled_i(125, s),
+		56 * s, primary, primary, primary, 0.97, false);
+	cairo_surface_t *weather_icon = state != NULL && state->assets != NULL ?
+		orange_assets_icon(state->assets, ORANGE_ASSET_ICON_LIGHT, "weather-clear") : NULL;
+	if (weather_icon != NULL) {
+		draw_image_fit(cr, weather_icon,
+			(struct orange_rect){
+				r.x + r.width - scaled_i(82, s),
+				r.y + scaled_i(42, s),
+				scaled_i(52, s),
+				scaled_i(52, s),
+			},
+			0.95);
+	} else {
+		draw_weather_crescent(cr,
+			r.x + r.width - scaled_i(55, s),
+			r.y + scaled_i(70, s),
+			scaled_i(19, s));
+	}
+	draw_text(cr, "Air quality alert", r.x + r.width - scaled_i(156, s),
+		r.y + r.height - scaled_i(26, s), 17 * s,
+		primary, primary, primary, 0.84, true);
+	(void)dark;
+}
+
+static void draw_notification_center(cairo_t *cr,
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		const struct orange_config *config) {
+	if (layout->notification_center_panel.width <= 0) {
+		return;
+	}
+
+	double s = layout_scale(layout);
+	bool dark = is_dark_config(config);
+	struct orange_rect panel = layout->notification_center_panel;
+	set_source_rgba255(cr, 0, 0, 0, dark ? 0.22 : 0.13);
+	rounded_rect(cr, panel.x + scaled_i(4, s), panel.y + scaled_i(7, s),
+		panel.width, panel.height, 31 * s);
+	cairo_fill(cr);
+
+	int primary = dark ? 246 : 26;
+
+	for (int i = 0; i < layout->notification_center_card_count; i++) {
+		struct orange_rect card = layout->notification_center_cards[i];
+		switch (i) {
+		case 0:
+			draw_notification_message_card(cr, layout, state, config, card);
+			break;
+		case 1:
+			draw_notification_calendar_card(cr, layout, state, config, card);
+			break;
+		case 2:
+			draw_notification_calendar_widget(cr, layout, state, config, card);
+			break;
+		case 3:
+			draw_notification_screen_time_widget(cr, layout, config, card);
+			break;
+		default:
+			draw_notification_weather_widget(cr, layout, state, config, card);
+			break;
+		}
+	}
+
+	struct orange_rect edit = layout->notification_center_edit_button;
+	set_source_rgba255(cr, 0, 0, 0, dark ? 0.25 : 0.10);
+	rounded_rect(cr, edit.x, edit.y + scaled_i(2, s),
+		edit.width, edit.height, edit.height / 2.0);
+	cairo_fill(cr);
+	draw_liquid_panel(cr, &edit, edit.height / 2.0, dark ? 0.54 : 0.78, dark);
+	draw_text(cr, "Edit Widgets",
+		edit.x + scaled_i(29, s),
+		edit.y + scaled_i(27, s),
+		17 * s,
+		primary, primary, primary, 0.92, true);
+}
+
 static int desktop_sort_entry_name(const void *a, const void *b) {
 	const struct orange_desktop_entry *ea = (const struct orange_desktop_entry *)a;
 	const struct orange_desktop_entry *eb = (const struct orange_desktop_entry *)b;
@@ -1830,10 +2195,37 @@ void orange_shell_layout_compute(
 		scaled_i(31, s), 0, scaled_i(52, s), layout->menu_bar.height};
 	layout->app_menu_button = (struct orange_rect){
 		scaled_i(95, s), 0, scaled_i(116, s), layout->menu_bar.height};
-	layout->status_area = (struct orange_rect){
-		width - scaled_i(558, s),
+	int clock_w = scaled_i(320, s);
+	int status_right = width - scaled_i(30, s);
+	layout->status_items[ORANGE_STATUS_ITEM_CLOCK] = (struct orange_rect){
+		status_right - clock_w,
 		0,
-		scaled_i(524, s),
+		clock_w,
+		layout->menu_bar.height,
+	};
+	status_right = layout->status_items[ORANGE_STATUS_ITEM_CLOCK].x -
+		scaled_i(10, s);
+	int status_gap = scaled_i(8, s);
+	layout->status_items[ORANGE_STATUS_ITEM_CONTROL_CENTER] =
+		status_item_before(&status_right, scaled_i(42, s),
+			layout->menu_bar.height, status_gap);
+	layout->status_items[ORANGE_STATUS_ITEM_SEARCH] =
+		status_item_before(&status_right, scaled_i(40, s),
+			layout->menu_bar.height, status_gap);
+	layout->status_items[ORANGE_STATUS_ITEM_BATTERY] =
+		status_item_before(&status_right, scaled_i(50, s),
+			layout->menu_bar.height, status_gap);
+	layout->status_items[ORANGE_STATUS_ITEM_SOUND] =
+		status_item_before(&status_right, scaled_i(40, s),
+			layout->menu_bar.height, status_gap);
+	layout->status_items[ORANGE_STATUS_ITEM_WIFI] =
+		status_item_before(&status_right, scaled_i(44, s),
+			layout->menu_bar.height, status_gap);
+	layout->status_area = (struct orange_rect){
+		layout->status_items[ORANGE_STATUS_ITEM_WIFI].x,
+		0,
+		width - scaled_i(30, s) -
+			layout->status_items[ORANGE_STATUS_ITEM_WIFI].x,
 		layout->menu_bar.height,
 	};
 
@@ -2152,6 +2544,21 @@ void orange_shell_layout_set_context_menu(
 		item_count = (int)(sizeof(status_context_labels) /
 			sizeof(status_context_labels[0]));
 		separator_before = status_context_separator_before;
+	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_WIFI) {
+		anchor = layout->status_items[ORANGE_STATUS_ITEM_WIFI];
+		item_count = (int)(sizeof(status_wifi_context_labels) /
+			sizeof(status_wifi_context_labels[0]));
+		separator_before = status_wifi_context_separator_before;
+	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_SOUND) {
+		anchor = layout->status_items[ORANGE_STATUS_ITEM_SOUND];
+		item_count = (int)(sizeof(status_sound_context_labels) /
+			sizeof(status_sound_context_labels[0]));
+		separator_before = status_sound_context_separator_before;
+	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_BATTERY) {
+		anchor = layout->status_items[ORANGE_STATUS_ITEM_BATTERY];
+		item_count = (int)(sizeof(status_battery_context_labels) /
+			sizeof(status_battery_context_labels[0]));
+		separator_before = status_battery_context_separator_before;
 	} else {
 		return;
 	}
@@ -2169,6 +2576,10 @@ void orange_shell_layout_set_context_menu(
 		panel_width_base = 366;
 	} else if (kind == ORANGE_CONTEXT_MENU_STATUS) {
 		panel_width_base = 370;
+	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_WIFI ||
+			kind == ORANGE_CONTEXT_MENU_STATUS_SOUND ||
+			kind == ORANGE_CONTEXT_MENU_STATUS_BATTERY) {
+		panel_width_base = 284;
 	}
 	int panel_w = scaled_i(panel_width_base, s);
 	int panel_h = scaled_i(12, s) + item_count * item_h;
@@ -2185,6 +2596,11 @@ void orange_shell_layout_set_context_menu(
 		y = cursor_y - scaled_i(8, s);
 	} else if (kind == ORANGE_CONTEXT_MENU_STATUS) {
 		x = anchor.x + anchor.width - panel_w;
+		y = layout->menu_bar.height + scaled_i(6, s);
+	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_WIFI ||
+			kind == ORANGE_CONTEXT_MENU_STATUS_SOUND ||
+			kind == ORANGE_CONTEXT_MENU_STATUS_BATTERY) {
+		x = anchor.x + anchor.width / 2 - panel_w / 2;
 		y = layout->menu_bar.height + scaled_i(6, s);
 	} else {
 		x = anchor.x + anchor.width / 2 - panel_w / 2;
@@ -2236,6 +2652,76 @@ void orange_shell_layout_set_context_menu(
 	}
 }
 
+void orange_shell_layout_set_notification_center(
+		struct orange_shell_layout *layout) {
+	if (layout == NULL) {
+		return;
+	}
+
+	double s = layout_scale(layout);
+	int margin = scaled_i(24, s);
+	int panel_w = scaled_i(510, s);
+	int max_w = layout->width - margin * 2;
+	if (panel_w > max_w) {
+		panel_w = max_w;
+	}
+	if (panel_w <= scaled_i(180, s)) {
+		return;
+	}
+
+	int panel_x = layout->width - panel_w - margin;
+	int panel_y = layout->menu_bar.height + scaled_i(18, s);
+	int panel_bottom = layout->height - scaled_i(24, s);
+	if (panel_bottom - panel_y <= scaled_i(160, s)) {
+		return;
+	}
+
+	int pad = scaled_i(18, s);
+	int gap = scaled_i(14, s);
+	int edit_h = scaled_i(42, s);
+	int edit_w = scaled_i(168, s);
+	if (edit_w > panel_w - pad * 2) {
+		edit_w = panel_w - pad * 2;
+	}
+
+	int card_x = panel_x + pad;
+	int card_w = panel_w - pad * 2;
+	int y = panel_y + pad;
+	int limit = panel_bottom - edit_h - gap - pad;
+	const int card_heights[] = {126, 116, 196, 142, 154};
+	layout->notification_center_card_count = 0;
+	for (size_t i = 0; i < sizeof(card_heights) / sizeof(card_heights[0]) &&
+			layout->notification_center_card_count <
+				ORANGE_NOTIFICATION_CENTER_CARD_MAX; i++) {
+		int card_h = scaled_i(card_heights[i], s);
+		if (y + card_h > limit) {
+			break;
+		}
+		layout->notification_center_cards[layout->notification_center_card_count++] =
+			(struct orange_rect){card_x, y, card_w, card_h};
+		y += card_h + gap;
+	}
+	if (layout->notification_center_card_count > 0) {
+		y -= gap;
+	}
+	int edit_y = y + gap;
+	if (edit_y + edit_h > panel_bottom - pad) {
+		edit_y = panel_bottom - pad - edit_h;
+	}
+	layout->notification_center_edit_button = (struct orange_rect){
+		panel_x + (panel_w - edit_w) / 2,
+		edit_y,
+		edit_w,
+		edit_h,
+	};
+	layout->notification_center_panel = (struct orange_rect){
+		panel_x,
+		panel_y,
+		panel_w,
+		layout->notification_center_edit_button.y + edit_h + pad - panel_y,
+	};
+}
+
 struct orange_shell_hit orange_shell_hit_test(
 		const struct orange_shell_layout *layout,
 		int x,
@@ -2258,11 +2744,24 @@ struct orange_shell_hit orange_shell_hit_test(
 		}
 		return (struct orange_shell_hit){ORANGE_HIT_SYSTEM_MENU, -1};
 	}
+	if (layout->notification_center_panel.width > 0 &&
+			rect_contains(&layout->notification_center_panel, x, y)) {
+		if (rect_contains(&layout->notification_center_edit_button, x, y)) {
+			return (struct orange_shell_hit){
+				ORANGE_HIT_NOTIFICATION_CENTER_EDIT, -1};
+		}
+		return (struct orange_shell_hit){ORANGE_HIT_NOTIFICATION_CENTER, -1};
+	}
 	if (rect_contains(&layout->system_menu_button, x, y)) {
 		return (struct orange_shell_hit){ORANGE_HIT_SYSTEM_MENU, -1};
 	}
 	if (rect_contains(&layout->app_menu_button, x, y)) {
 		return (struct orange_shell_hit){ORANGE_HIT_APP_MENU, -1};
+	}
+	for (int i = 0; i < ORANGE_STATUS_ITEM_COUNT; i++) {
+		if (rect_contains(&layout->status_items[i], x, y)) {
+			return (struct orange_shell_hit){ORANGE_HIT_STATUS_ITEM, i};
+		}
 	}
 	if (rect_contains(&layout->status_area, x, y)) {
 		return (struct orange_shell_hit){ORANGE_HIT_STATUS_AREA, -1};
@@ -2345,6 +2844,9 @@ void orange_shell_draw_with_options(
 		state->context_menu_index,
 		state->context_menu_cursor_x,
 		state->context_menu_cursor_y);
+	if (state->notification_center_open) {
+		orange_shell_layout_set_notification_center(&layout);
+	}
 
 	if (options == NULL || options->draw_wallpaper) {
 		draw_wallpaper(cr, width, height, state->assets, config);
@@ -2353,6 +2855,9 @@ void orange_shell_draw_with_options(
 	draw_widget_layer(cr, &layout, state, config);
 	draw_desktop_items(cr, &layout, state, config);
 	draw_dock(cr, &layout, state, config);
+	if (state->notification_center_open) {
+		draw_notification_center(cr, &layout, state, config);
+	}
 	if (state->system_menu_open) {
 		draw_system_menu(cr, &layout, state, config);
 	}
@@ -2489,6 +2994,27 @@ const char *orange_shell_menu_label(int index) {
 			return status_context_labels[index];
 		}
 		break;
+	case ORANGE_CONTEXT_MENU_STATUS_WIFI:
+		if (index >= 0 &&
+				index < (int)(sizeof(status_wifi_context_labels) /
+					sizeof(status_wifi_context_labels[0]))) {
+			return status_wifi_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_STATUS_SOUND:
+		if (index >= 0 &&
+				index < (int)(sizeof(status_sound_context_labels) /
+					sizeof(status_sound_context_labels[0]))) {
+			return status_sound_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_STATUS_BATTERY:
+		if (index >= 0 &&
+				index < (int)(sizeof(status_battery_context_labels) /
+					sizeof(status_battery_context_labels[0]))) {
+			return status_battery_context_labels[index];
+		}
+		break;
 	case ORANGE_CONTEXT_MENU_NONE:
 	default:
 		break;
@@ -2561,6 +3087,27 @@ const char *orange_shell_volume_icon_name(const struct orange_volume_info *volum
 				index < (int)(sizeof(status_context_icon_names) /
 					sizeof(status_context_icon_names[0]))) {
 			return status_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_STATUS_WIFI:
+		if (index >= 0 &&
+				index < (int)(sizeof(status_wifi_context_icon_names) /
+					sizeof(status_wifi_context_icon_names[0]))) {
+			return status_wifi_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_STATUS_SOUND:
+		if (index >= 0 &&
+				index < (int)(sizeof(status_sound_context_icon_names) /
+					sizeof(status_sound_context_icon_names[0]))) {
+			return status_sound_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_STATUS_BATTERY:
+		if (index >= 0 &&
+				index < (int)(sizeof(status_battery_context_icon_names) /
+					sizeof(status_battery_context_icon_names[0]))) {
+			return status_battery_context_icon_names[index];
 		}
 		break;
 	case ORANGE_CONTEXT_MENU_NONE:

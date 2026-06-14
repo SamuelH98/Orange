@@ -14,6 +14,8 @@
 #define ORANGE_MENU_ITEM_MAX 20
 #define ORANGE_WIDGET_MAX 16
 #define ORANGE_CONTEXT_MENU_ITEM_MAX 16
+#define ORANGE_NOTIFICATION_CENTER_CARD_MAX 8
+#define ORANGE_STATUS_ITEM_COUNT 6
 #define ORANGE_STATUS_TEXT_MAX 64
 
 struct orange_rect {
@@ -29,6 +31,9 @@ enum orange_shell_hit_kind {
 	ORANGE_HIT_SYSTEM_MENU_ITEM,
 	ORANGE_HIT_APP_MENU,
 	ORANGE_HIT_STATUS_AREA,
+	ORANGE_HIT_STATUS_ITEM,
+	ORANGE_HIT_NOTIFICATION_CENTER,
+	ORANGE_HIT_NOTIFICATION_CENTER_EDIT,
 	ORANGE_HIT_DOCK_ITEM,
 	ORANGE_HIT_WIDGET,
 	ORANGE_HIT_DESKTOP_ITEM,
@@ -61,6 +66,18 @@ enum orange_context_menu_kind {
 	ORANGE_CONTEXT_MENU_DESKTOP_ICON,
 	ORANGE_CONTEXT_MENU_DESKTOP_VOLUME,
 	ORANGE_CONTEXT_MENU_STATUS,
+	ORANGE_CONTEXT_MENU_STATUS_WIFI,
+	ORANGE_CONTEXT_MENU_STATUS_SOUND,
+	ORANGE_CONTEXT_MENU_STATUS_BATTERY,
+};
+
+enum orange_status_item {
+	ORANGE_STATUS_ITEM_WIFI,
+	ORANGE_STATUS_ITEM_SOUND,
+	ORANGE_STATUS_ITEM_BATTERY,
+	ORANGE_STATUS_ITEM_SEARCH,
+	ORANGE_STATUS_ITEM_CONTROL_CENTER,
+	ORANGE_STATUS_ITEM_CLOCK,
 };
 
 struct orange_status_state {
@@ -100,6 +117,11 @@ struct orange_shell_layout {
 	struct orange_rect system_menu_button;
 	struct orange_rect app_menu_button;
 	struct orange_rect status_area;
+	struct orange_rect status_items[ORANGE_STATUS_ITEM_COUNT];
+	struct orange_rect notification_center_panel;
+	struct orange_rect notification_center_cards[ORANGE_NOTIFICATION_CENTER_CARD_MAX];
+	int notification_center_card_count;
+	struct orange_rect notification_center_edit_button;
 	struct orange_rect system_menu_panel;
 	struct orange_rect system_menu_items[ORANGE_MENU_ITEM_MAX];
 	bool system_menu_separator[ORANGE_MENU_ITEM_MAX];
@@ -129,6 +151,7 @@ struct orange_shell_layout {
 
 struct orange_shell_state {
 	bool system_menu_open;
+	bool notification_center_open;
 	int hot_dock_index;
 	int dock_pointer_x;
 	int dock_pointer_y;
@@ -189,6 +212,8 @@ void orange_shell_layout_set_context_menu(
 	int index,
 	int cursor_x,
 	int cursor_y);
+void orange_shell_layout_set_notification_center(
+	struct orange_shell_layout *layout);
 
 struct orange_shell_hit orange_shell_hit_test(
 	const struct orange_shell_layout *layout,

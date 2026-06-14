@@ -106,10 +106,39 @@ and time on the right. Status icons are interactive: clicking a status item
 opens details and quick controls such as Wi-Fi options. Orange should preserve
 that user-facing shape while resolving images and launch targets through
 freedesktop desktop entries, icon themes, and standard Linux control commands.
+This requires separate hit targets for Wi-Fi, sound, battery, search, Control
+Center, and date/time rather than a single generic status-area button.
+The closest Linux prototype behavior is: Wi-Fi opens a network status menu with
+network settings actions; Sound opens a sound status menu with output/settings
+actions; Battery opens a power status menu; Spotlight maps to Orange's app
+picker; Control Center maps to Orange's quick-control menu; date/time maps to
+Notification Center.
 The same guide describes Control Center as a menu-bar entry that exposes common
 settings such as Wi-Fi, AirDrop, Focus, Sound, Screen Mirroring, Display, and
 related customization. Orange models the status-area menu as this
 Control-Center-style grouping while launching Linux settings panes and tools.
+
+Apple's Notification Centre guide says the surface opens from the menu-bar
+date/time area, closes when the user clicks the desktop or the date/time area
+again, and combines missed notifications with widgets. It also describes
+grouped notification stacks, notification actions, clear actions, and app
+notification settings. For Orange's current shell prototype, the implementable
+core is a right-edge overlay opened from the date/time/status area, closed from
+outside clicks or Escape, with notification-style cards above widgets.
+
+Apple's widget guide says Notification Centre widgets are added from the Edit
+Widgets button at the bottom of Notification Centre, can be rearranged within
+Notification Centre, and can be resized or removed from widget shortcut menus.
+Orange already has desktop widget shortcut menus for resize/remove and maps
+Edit Widgets to the local Settings app until a dedicated widget gallery exists.
+
+`gnome-control-center` is not a general freedesktop settings launcher: when run
+outside GNOME or Unity it exits with "Running gnome-control-center is only
+supported under GNOME and Unity". Orange therefore should not use it as a
+fallback inside its own compositor session. Fallback actions should launch
+Orange's own GTK settings app first, then standalone tools (`pavucontrol`,
+`nm-connection-editor`, `blueman-manager`, `wdisplays`, etc.) or desktop-neutral
+settings shells that tolerate non-GNOME sessions.
 
 Apple's current appearance documentation says light/dark appearance applies to
 the menu bar, Dock, windows, and built-in apps. For Orange this means context
@@ -176,12 +205,16 @@ plus a compact label bubble for hover feedback.
   menu/action component guidance.
 - Apple Support, "Add and customize widgets on Mac":
   https://support.apple.com/guide/mac-help/add-and-customize-widgets-mchl52be5da5/mac
+- Apple Support, "Use Notification Centre on Mac":
+  https://support.apple.com/guide/mac-help/mchl2fb1258f/mac
 - Apple Support, "What’s in the menu bar on Mac?":
   https://support.apple.com/guide/mac-help/whats-in-the-menu-bar-mchlp1446/mac
 - Apple Support, "What’s in the Apple menu on Mac?":
   https://support.apple.com/guide/mac-help/whats-in-the-apple-menu-mchlp1130/mac
 - Apple Support, "Use Control Center on Mac":
   https://support.apple.com/guide/mac-help/quickly-change-settings-mchl50f94f8f/mac
+- Apple Support, "Search for anything with Spotlight on Mac":
+  https://support.apple.com/guide/mac-help/search-with-spotlight-mchlp1008/mac
 - Apple Support, "Use a light or dark appearance on your Mac":
   https://support.apple.com/guide/mac-help/use-a-light-or-dark-appearance-mchl52e1c2d2/mac
 - Apple Support, "Find out which macOS your Mac is using":

@@ -65,6 +65,17 @@ macOS-like shell prototype.
   and app menus on the left, status menu icons and clock on the right, with
   status icons opening quick controls; implement those controls with Linux
   launch commands, DBus-readable system state, and freedesktop icon names.
+- Clicking the date/time/status area opens a macOS-like Notification Center
+  overlay from the right edge; clicking outside it or pressing Escape closes it.
+- Individual status items expose distinct actions: Wi-Fi, Sound, and Battery
+  open item-specific status menus with settings actions; Search opens the app
+  picker; Control Center opens quick controls; and the clock/date opens
+  Notification Center.
+- Notification Center renders missed-notification cards, widget cards, and an
+  Edit Widgets affordance that opens Orange Settings for widget preferences.
+- Avoid launching `gnome-control-center` from Orange fallback actions because
+  it exits outside GNOME/Unity sessions; prefer Orange Settings, freedesktop,
+  KDE, Xfce, or standalone Linux tools that do not require a GNOME session.
 - Match macOS dark appearance behavior for menus: system menu and context menu
   panels must switch to a dark translucent material when global appearance is
   dark.

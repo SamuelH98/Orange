@@ -347,6 +347,32 @@ build here. They remain conditional for systems without GTK4 development files.
   `start-here` first. The app launcher and the menu icon now use separate
   freedesktop alias chains so local macOS-style icon themes can provide a
   Launchpad-style Dock icon and a separate menu/start icon.
+- **GNOME-only settings fallback removed**: Orange no longer launches
+  `gnome-control-center` from shell fallback commands, avoiding the
+  "only supported under GNOME and Unity" exit path when running inside Orange.
+  Settings fallbacks now prefer `orange-settings`, KDE/Xfce/MATE settings
+  shells, or standalone tools such as `nm-connection-editor`, `pavucontrol`,
+  `blueman-manager`, `wdisplays`, and `arandr`.
+- **macOS-like Notification Center and status item behavior added**: The
+  date/time item opens a right-edge Notification Center card stack with missed
+  notification cards, Calendar/Screen Time/Weather widget cards, and an Edit
+  Widgets button that opens Orange Settings. Wi-Fi, Sound, and Battery now have
+  separate hit targets and item-specific status menus; Search opens the app
+  picker; Control Center opens the existing quick-control menu.
+- **Notification/status validation added**: `test-shell-layout` covers status
+  item hit targets, item-specific status menus, Notification Center layout,
+  Edit Widgets hit testing, scaling, and the absence of
+  `gnome-control-center` in Dock fallback commands. `test-shell-visual` checks
+  Notification Center panel/card/button rendering. `orange-render-shell` now
+  supports `--notification-center` and `status-wifi` context-menu rendering.
+
+#### Latest Validation
+
+- `ninja -C build` passed.
+- `meson test -C build --print-errorlogs` passed.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once --width 1440 --height 900 --assets assets --config orange.conf` passed; DBus status probes logged sandbox connection errors but did not fail startup.
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf --notification-center /tmp/orange-notification-center.png` passed and was visually inspected.
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf --foreground-only --context-menu status-wifi /tmp/orange-status-wifi.png` passed and was visually inspected.
 
 ### Technical Concerns
 

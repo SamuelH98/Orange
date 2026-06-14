@@ -97,6 +97,12 @@ Desktop icons can be dragged; custom positions are persisted in `orange.conf` as
 their shell context menus. Right-click Calendar or Weather widgets for
 widget-specific edit, size, and remove actions.
 
+Click the date/time text to open the right-edge Notification Center overlay.
+Click it again, click the desktop, or press Escape to close it. Wi-Fi, sound,
+and battery open item-specific status menus; search opens the app picker; and
+Control Center opens quick controls. The Edit Widgets button opens Orange
+Settings for widget preferences.
+
 Theme names are config-driven:
 
 ```ini
@@ -125,7 +131,16 @@ foreground-only output to measure shell geometry without wallpaper differences:
 ./build/orange-render-shell --foreground-only /tmp/orange-foreground.png
 ```
 
-Context menus can be rendered directly for glass/text checks:
+Notification Center and context menus can be rendered directly for glass/text
+checks:
+
+```sh
+./build/orange-render-shell --notification-center /tmp/orange-notification-center.png
+```
+
+```sh
+./build/orange-render-shell --foreground-only --context-menu status-wifi /tmp/orange-status-wifi.png
+```
 
 ```sh
 ./build/orange-render-shell --foreground-only --context-menu desktop --context-x 1440 --context-y 900 /tmp/orange-menu.png
