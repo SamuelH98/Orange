@@ -125,6 +125,20 @@ static void test_desktop_custom_position(void) {
 	assert(layout.desktop_items[1].y == 144);
 }
 
+static void test_desktop_custom_position_clamps_to_visible_area(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.desktop_positions[0] =
+		(struct orange_desktop_icon_position){true, 50000, 50000};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920, 1080, false, &config, 1, &layout);
+	struct orange_rect item = layout.desktop_items[0];
+	assert(item.x >= 0);
+	assert(item.y >= layout.menu_bar.height);
+	assert(item.x + item.width <= layout.width);
+	assert(item.y + item.height <= layout.dock.y);
+}
+
 static void test_system_menu_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
@@ -160,9 +174,11 @@ static void test_status_area_hit_and_menu(void) {
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_STATUS, -1, 0, 0);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS);
-	assert(layout.context_menu_item_count == 6);
+	assert(layout.context_menu_item_count == 10);
 	assert(orange_shell_context_menu_label(
 		ORANGE_CONTEXT_MENU_STATUS, 0) != NULL);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_STATUS, 9), "Control Center Settings...") == 0);
 	assert(orange_shell_context_menu_icon_name(
 		ORANGE_CONTEXT_MENU_STATUS, 0) != NULL);
 }
@@ -412,6 +428,7 @@ int main(void) {
 	test_desktop_hit();
 	test_desktop_requires_entries();
 	test_desktop_custom_position();
+	test_desktop_custom_position_clamps_to_visible_area();
 	test_system_menu_hit();
 	test_status_area_hit_and_menu();
 	test_small_width_dock_fits();

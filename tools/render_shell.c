@@ -30,6 +30,8 @@ static bool parse_context_menu_kind(
 		*kind = ORANGE_CONTEXT_MENU_DESKTOP;
 	} else if (strcmp(value, "desktop-icon") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_DESKTOP_ICON;
+	} else if (strcmp(value, "status") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_STATUS;
 	} else {
 		return false;
 	}

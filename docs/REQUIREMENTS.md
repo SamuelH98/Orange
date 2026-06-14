@@ -65,6 +65,9 @@ macOS-like shell prototype.
   and app menus on the left, status menu icons and clock on the right, with
   status icons opening quick controls; implement those controls with Linux
   launch commands, DBus-readable system state, and freedesktop icon names.
+- Match macOS dark appearance behavior for menus: system menu and context menu
+  panels must switch to a dark translucent material when global appearance is
+  dark.
 - Disable server-side compositor decorations and prefer client-side window
   decorations for xdg-decoration and KDE server-decoration protocols.
 - Replace static desktop shortcut placeholders with XDG `.desktop` entries.
@@ -77,6 +80,8 @@ macOS-like shell prototype.
   - calendar header padding and centered day grid,
   - weather-condition icon sourced from the configured icon theme,
   - desktop label wrapping and centering,
+  - desktop shortcuts remaining visible when a theme icon is missing or a saved
+    desktop position is outside the current output,
   - Dock indicator dot bottom padding,
   - Dock Calendar icon day/date sync,
   - Dock active indicators showing only mapped/open applications,
@@ -142,4 +147,5 @@ macOS-like shell prototype.
 - Shell render tests cover both light and dark appearance.
 - Shell render tests cover light/dark rendering and foreground context-menu
   glass/scaling without requiring a checked-in visual reference image.
+- Shell render tests cover missing desktop shortcut icon fallback drawing.
 - `PROJECT_STATE.md` documents status, risks, and continuation steps.

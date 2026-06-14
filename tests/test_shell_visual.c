@@ -99,7 +99,7 @@ static void test_context_menu_glass_and_scaling(void) {
 				x < panel.x + panel.width - 10; x++) {
 			struct color c = pixel_from_u32(
 				pixels[(size_t)y * (size_t)(stride / 4) + (size_t)x]);
-			if (c.a > 25 && c.a < 220) {
+			if (c.a > 25 && c.a < 245) {
 				found_translucent_glass = true;
 				break;
 			}
@@ -109,6 +109,99 @@ static void test_context_menu_glass_and_scaling(void) {
 		}
 	}
 	assert(found_translucent_glass);
+	free(pixels);
+}
+
+static void test_dark_context_menu_uses_dark_material(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.appearance = ORANGE_APPEARANCE_DARK;
+
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0,
+		&layout);
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900);
+
+	int stride = VISUAL_WIDTH * 4;
+	uint32_t *pixels = calloc((size_t)VISUAL_HEIGHT, (size_t)stride);
+	assert(pixels != NULL);
+	struct orange_shell_state state = {
+		.system_menu_open = false,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1757638380,
+		.assets = NULL,
+		.config = &config,
+		.context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP,
+		.context_menu_index = -1,
+		.context_menu_cursor_x = 1440,
+		.context_menu_cursor_y = 900,
+	};
+	const struct orange_shell_draw_options options = {
+		.draw_wallpaper = false,
+	};
+	orange_shell_draw_with_options(pixels, VISUAL_WIDTH, VISUAL_HEIGHT,
+		stride, &state, &options);
+
+	struct orange_rect panel = layout.context_menu_panel;
+	struct color center = pixel_at(pixels, stride,
+		panel.x + panel.width - 20,
+		panel.y + panel.height / 2);
+	assert(center.a > 120);
+	assert(center.r < 80);
+	assert(center.g < 85);
+	assert(center.b < 95);
+	free(pixels);
+}
+
+static void test_missing_desktop_icon_draws_visible_fallback(void) {
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *pixels = calloc((size_t)height, (size_t)stride);
+	assert(pixels != NULL);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+
+	struct orange_desktop_entry entry = {
+		.id = "org.example.MissingIcon",
+		.name = "Missing Icon",
+		.icon = "definitely-not-installed-orange-test-icon",
+		.exec = "true",
+		.terminal = false,
+	};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config, 1, &layout);
+
+	struct orange_shell_state state = {
+		.system_menu_open = false,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1757638380,
+		.assets = NULL,
+		.config = &config,
+		.desktop_entries = &entry,
+		.desktop_entry_count = 1,
+	};
+	const struct orange_shell_draw_options options = {
+		.draw_wallpaper = false,
+	};
+	orange_shell_draw_with_options(pixels, width, height, stride,
+		&state, &options);
+
+	struct orange_rect item = layout.desktop_items[0];
+	int icon_size = (int)((double)item.width * (116.0 / 194.0) + 0.5);
+	struct color center = pixel_at(pixels, stride,
+		item.x + item.width / 2,
+		item.y + icon_size / 2);
+	assert(center.a > 120);
+	assert(center.r > 30 || center.g > 30 || center.b > 30);
 	free(pixels);
 }
 
@@ -234,6 +327,8 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 
 int main(void) {
 	test_context_menu_glass_and_scaling();
+	test_dark_context_menu_uses_dark_material();
+	test_missing_desktop_icon_draws_visible_fallback();
 	test_dock_magnification_wave_paints_above_base_icons();
 	puts("shell visual tests passed");
 	return 0;

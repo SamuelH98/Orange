@@ -119,7 +119,8 @@ Meson startup smoke test for custom headless compositor arguments.
   `orange-menu` equivalent.
 - Appearance-aware status icon tinting; status glyphs render light in dark mode.
 - Status strip icons now pack leftward from measured clock text in fixed visual
-  slots, with tighter generated battery/Wi-Fi/search/control/weather masks.
+  slots, including Wi-Fi, Sound, Battery, Spotlight/Search, and Control Center
+  glyphs sourced from the configured icon theme.
 - Tighter menu bar spacing.
 - Compact Dock icon sizing and spacing to better match the latest Dock crop.
 - Dock active indicators now reflect mapped/open client windows only.
@@ -148,7 +149,7 @@ Meson startup smoke test for custom headless compositor arguments.
 #### Implemented
 
 - Full macOS-like system menu for Orange (10 items) with separator lines between groups:
-  About Orange, System Settings..., Software..., Recent Items,
+  About Orange, System Settings..., App Store..., Recent Items,
   Force Quit..., Sleep, Restart..., Shut Down..., Lock Screen, Log Out.
 - System actions: `systemctl suspend/reboot/poweroff`,
   `xdg-screensaver lock` for Lock Screen, `wl_display_terminate` for Log Out.
@@ -170,6 +171,14 @@ Meson startup smoke test for custom headless compositor arguments.
 - Cursor-position-driven desktop background menu placement.
 - Context menus and the system menu use the same glass material family as the
   Dock, with text and item geometry scaled from output resolution.
+- Context menus and the system menu switch to a dark translucent material and
+  light text in dark appearance mode.
+- Status-area menu is modeled as a Control Center-style quick-control list:
+  Wi-Fi, Bluetooth, AirDrop, Focus, Sound, Screen Mirroring, Display, Battery,
+  Keyboard Brightness, and Control Center Settings.
+- Desktop shortcuts clamp saved positions into the visible desktop and draw a
+  visible generated fallback tile if the installed icon theme cannot resolve a
+  usable icon.
 
 #### Tests Added
 
@@ -185,14 +194,12 @@ Meson startup smoke test for custom headless compositor arguments.
 
 ### Active Feature
 
-Theme and asset cleanup is implemented. `assets/` is wallpaper-only, GTK/icon
-theme names are config-driven, theme payloads are no longer stored under a repo
-`themes/` directory, icon loading follows freedesktop installed-theme lookup
-lazily, and wallpaper decode/scaling is cached to reduce shell redraw cost.
-The Dock app launcher regression is fixed: the built-in launcher now resolves
-the freedesktop `view-app-grid`/Launchpad-style icon from the installed
-MacTahoe icon theme before falling back to menu/start icons, while the menu bar
-system icon keeps the `start-here`/`application-menu` path.
+macOS-like menu/status behavior is being tightened against current Apple menu
+bar, Apple menu, Control Center, and dark appearance guidance while preserving
+the Linux implementation boundary. `assets/` remains wallpaper-only, GTK/icon
+theme names are config-driven, theme payloads are not stored under a repo
+`themes/` directory, and shell icons continue to come from installed
+freedesktop icon themes.
 
 ### Progress
 
@@ -201,6 +208,8 @@ Current validation passes:
 - `ninja -C build`
 - `meson test -C build --print-errorlogs`
 - `./build/test-assets`
+- `./build/test-shell-visual` covers dark context-menu material and missing
+  desktop icon fallback drawing.
 - `./build/orange-render-shell --width 1440 --height 900 --assets assets
   --config orange.conf /tmp/orange-shell.png`
 - `./build/orange-render-shell --width 1440 --height 900 --assets assets

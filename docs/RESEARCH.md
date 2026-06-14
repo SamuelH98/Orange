@@ -106,6 +106,20 @@ and time on the right. Status icons are interactive: clicking a status item
 opens details and quick controls such as Wi-Fi options. Orange should preserve
 that user-facing shape while resolving images and launch targets through
 freedesktop desktop entries, icon themes, and standard Linux control commands.
+The same guide describes Control Center as a menu-bar entry that exposes common
+settings such as Wi-Fi, AirDrop, Focus, Sound, Screen Mirroring, Display, and
+related customization. Orange models the status-area menu as this
+Control-Center-style grouping while launching Linux settings panes and tools.
+
+Apple's current appearance documentation says light/dark appearance applies to
+the menu bar, Dock, windows, and built-in apps. For Orange this means context
+menus and the system menu must use the dark material palette when
+`appearance=dark`, not only the Dock/widgets.
+
+Apple's Apple-menu documentation lists About, System Settings, App Store,
+Recent Items, Force Quit, Sleep, Restart, Shut Down, Lock Screen, and Log Out.
+Orange keeps those visible menu labels but maps actions to local Orange apps,
+standard Linux power commands, and installed software-center tools.
 
 GTK's `GtkIconTheme` documentation describes a named icon theme as a shared
 database and notes that direct lookup takes an icon name, size, and scale.
@@ -162,8 +176,14 @@ plus a compact label bubble for hover feedback.
   menu/action component guidance.
 - Apple Support, "Add and customize widgets on Mac":
   https://support.apple.com/guide/mac-help/add-and-customize-widgets-mchl52be5da5/mac
-- Apple Support, "What's in the menu bar on Mac?":
+- Apple Support, "What’s in the menu bar on Mac?":
   https://support.apple.com/guide/mac-help/whats-in-the-menu-bar-mchlp1446/mac
+- Apple Support, "What’s in the Apple menu on Mac?":
+  https://support.apple.com/guide/mac-help/whats-in-the-apple-menu-mchlp1130/mac
+- Apple Support, "Use Control Center on Mac":
+  https://support.apple.com/guide/mac-help/quickly-change-settings-mchl50f94f8f/mac
+- Apple Support, "Use a light or dark appearance on your Mac":
+  https://support.apple.com/guide/mac-help/use-a-light-or-dark-appearance-mchl52e1c2d2/mac
 - Apple Support, "Find out which macOS your Mac is using":
   https://support.apple.com/109033
 - Apple Support, macOS update notes:

@@ -1166,7 +1166,7 @@ static void handle_shell_menu_action(struct orange_server *server, int index) {
 		launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || true");
 		break;
 	case 2:
-		launch_app_picker();
+		launch_command("gnome-software || plasma-discover || true");
 		break;
 	case 4:
 		close_focused_view(server);
@@ -1307,19 +1307,31 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			launch_command("nm-connection-editor || gnome-control-center wifi || true");
 			break;
 		case 1:
-			launch_command("pavucontrol || gnome-control-center sound || true");
+			launch_command("blueman-manager || gnome-control-center bluetooth || systemsettings kcm_bluetooth || true");
 			break;
 		case 2:
-			launch_command("gnome-control-center power || true");
+			launch_command("gnome-control-center sharing || true");
 			break;
 		case 3:
-			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || gnome-control-center || systemsettings || true");
+			launch_command("gnome-control-center notifications || systemsettings kcm_notifications || true");
 			break;
 		case 4:
-			launch_command("xdg-screensaver lock || gnome-screensaver-command -l || true");
+			launch_command("pavucontrol || gnome-control-center sound || true");
 			break;
 		case 5:
-			launch_command("systemctl poweroff || true");
+			launch_command("gnome-control-center display || systemsettings kcm_kscreen || true");
+			break;
+		case 6:
+			launch_command("gnome-control-center display || systemsettings kcm_kscreen || true");
+			break;
+		case 7:
+			launch_command("gnome-control-center power || true");
+			break;
+		case 8:
+			launch_command("gnome-control-center keyboard || systemsettings kcm_keyboard || true");
+			break;
+		case 9:
+			launch_command("GSK_RENDERER=cairo build/orange-settings orange.conf || gnome-control-center || systemsettings || true");
 			break;
 		default:
 			break;
@@ -1391,8 +1403,22 @@ static void process_desktop_drag(struct orange_server *server) {
 	if (next_x + item.width > output->width) {
 		next_x = output->width - item.width;
 	}
-	if (next_y + item.height > output->height) {
-		next_y = output->height - item.height;
+	int max_y = output->height - item.height;
+	if (layout.dock.width > 0 && layout.dock.y > layout.menu_bar.height) {
+		int dock_margin = layout.menu_bar.height / 6;
+		if (dock_margin < 6) {
+			dock_margin = 6;
+		}
+		int dock_max_y = layout.dock.y - dock_margin - item.height;
+		if (dock_max_y < max_y) {
+			max_y = dock_max_y;
+		}
+	}
+	if (max_y < layout.menu_bar.height) {
+		max_y = layout.menu_bar.height;
+	}
+	if (next_y > max_y) {
+		next_y = max_y;
 	}
 	server->config.desktop_positions[index].valid = true;
 	server->config.desktop_positions[index].x = next_x;

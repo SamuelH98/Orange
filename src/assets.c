@@ -677,6 +677,38 @@ static const char *const aliases_settings[] = {
 	"preferences-system", "org.gnome.Settings", "settings",
 	"control-center", NULL,
 };
+static const char *const aliases_control_center[] = {
+	"control-center", "preferences-system", "settings",
+	"view-grid-symbolic", NULL,
+};
+static const char *const aliases_bluetooth[] = {
+	"network-bluetooth", "bluetooth-active", "bluetooth",
+	"preferences-system-bluetooth", NULL,
+};
+static const char *const aliases_airdrop[] = {
+	"folder-publicshare", "folder-remote", "network-workgroup",
+	"emblem-shared", NULL,
+};
+static const char *const aliases_focus[] = {
+	"preferences-system-notifications", "preferences-desktop-notification",
+	"notification-active", "notification-disabled", NULL,
+};
+static const char *const aliases_sound[] = {
+	"audio-volume-high", "audio-volume-high-symbolic",
+	"multimedia-volume-control", "audio-card", NULL,
+};
+static const char *const aliases_display[] = {
+	"preferences-desktop-display", "video-display", "display",
+	"screen", NULL,
+};
+static const char *const aliases_keyboard[] = {
+	"input-keyboard", "keyboard-brightness", "preferences-desktop-keyboard",
+	"keyboard", NULL,
+};
+static const char *const aliases_generic_app[] = {
+	"application-x-executable", "application-default-icon",
+	"application", "exec", NULL,
+};
 static const char *const aliases_weather[] = {
 	"weather-clear", "weather-clear-symbolic", "weather-few-clouds",
 	"weather", NULL,
@@ -734,6 +766,16 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"system-search", aliases_search},
 	{"preferences-system", aliases_settings},
 	{"org.gnome.Settings", aliases_settings},
+	{"control-center", aliases_control_center},
+	{"network-bluetooth", aliases_bluetooth},
+	{"folder-publicshare", aliases_airdrop},
+	{"preferences-system-notifications", aliases_focus},
+	{"audio-volume-high", aliases_sound},
+	{"preferences-desktop-display", aliases_display},
+	{"video-display", aliases_display},
+	{"input-keyboard", aliases_keyboard},
+	{"application-x-executable", aliases_generic_app},
+	{"application-default-icon", aliases_generic_app},
 	{"weather-clear", aliases_weather},
 	{"org.gnome.Weather", aliases_weather},
 	{"view-app-grid", aliases_app_grid},
