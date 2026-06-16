@@ -257,6 +257,73 @@ Validation:
 - `ninja -C build orange-render-shell`
 - `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf /tmp/orange-assets-icons-check.png`
 
+### Orange Settings App
+
+Reworked `orange-settings` from a single scrolling form into a macOS-like
+System Settings shell: full-height translucent rounded sidebar well with drop
+shadow, About-style Cairo-drawn traffic-light window controls, rounded/clipped
+resizable app frame, rounded back/forward arrow capsule, searchable local
+account
+sidebar, Appearance-first landing pane, grouped rounded settings cards, and
+separate panels for the visible macOS-style categories. The Appearance pane now
+persists accent color, text highlight mode, icon/widget style, folder color
+mode, sidebar icon size, wallpaper tinting, and scroll-bar visibility alongside
+the existing light/dark, GTK theme, icon theme, desktop, Dock, widget, and
+cursor settings. Settings now applies the same dark-mode detection order as
+About Orange (`ORANGE_APPEARANCE`, `GTK_THEME`, GTK dark preference, then local
+config) and uses dark colors from the About palette.
+
+The launcher argument warning is fixed by keeping `orange.conf` as the app's
+own config-path argument while only passing the executable name through
+`g_application_run()`, so GTK no longer treats the config file as a document to
+open.
+
+Validation:
+
+- `ninja -C build orange-settings test-config`
+- `./build/test-config`
+- `git diff --check`
+- `ninja -C build`
+- `meson test -C build --print-errorlogs` still reaches the same two known
+  non-settings failures listed below.
+
+Known local validation issue:
+
+- `meson test -C build --print-errorlogs` currently fails in `shell-layout` and
+  `shell-visual` on Dock/default icon assertions from the pre-existing local
+  Dock icon/default-order worktree changes, not from the Settings app rewrite.
+
+### GTK Theme Rounding, Files Icons, And Cursors
+
+About Orange and Orange Settings no longer hardcode a top-level app-window
+corner radius. Their custom root widgets inherit the GTK window theme's
+computed radius while keeping transparent app windows and clipped custom
+content.
+
+The compositor now propagates the configured GTK theme, icon theme, cursor
+theme, and cursor size to `org.gnome.desktop.interface` when a GNOME settings
+schema and session bus are available, so GTK apps such as Files can pick up the
+same theme/icon/cursor settings. Orange still exports `GTK_THEME`,
+`GTK_ICON_THEME`, `XCURSOR_THEME`, and `XCURSOR_SIZE` for launched clients.
+If `cursor_theme` is empty, Orange now falls back to the configured
+`icon_theme` as the cursor theme, which lets local icon themes such as
+MacTahoe provide their bundled `cursors/` directory without duplicating config.
+`XCURSOR_PATH` is initialized to the standard user and system icon roots when
+unset.
+
+Orange's own icon cache is reloaded when `icon_theme` changes. Asset coverage
+now includes resolving folder icons from a theme `places/scalable` directory,
+matching where themes commonly store Files/folder artwork.
+
+Validation:
+
+- `ninja -C build orange orange-about orange-settings test-assets test-config`
+- `./build/test-assets`
+- `./build/test-config`
+- `git diff --check`
+- `meson test -C build --print-errorlogs` still reaches the same two known
+  local failures in `shell-layout` and `shell-visual`.
+
 Menu bar and Dock share the same `draw_dock_glass` rendering path for
 consistent translucency. Dock outer padding = 16, corner radius = 44 × s,
 top padding = 16, bottom padding = 10, bottom margin = 8. Menu bar height =
@@ -383,6 +450,16 @@ build here. They remain conditional for systems without GTK4 development files.
   `gnome-control-center` in Dock fallback commands. `test-shell-visual` checks
   Notification Center panel/card/button rendering. `orange-render-shell` now
   supports `--notification-center` and `status-wifi` context-menu rendering.
+- **Settings theme dropdowns and themed sidebar icons added**: Orange Settings
+  now uses dropdowns for installed GTK, icon, and cursor themes, preserving a
+  saved custom value when it is not discoverable. The Settings sidebar renders
+  direct `GtkImage` icons from the active GTK icon theme instead of local
+  color-backed symbolic tiles, with fallback names for common freedesktop and
+  Adwaita/MacTahoe icon names. Cursor theme discovery now also normalizes
+  `XCURSOR_PATH` entries that point directly at a theme directory or its
+  `cursors/` directory, expands `~/...` entries, and checks local cursor roots
+  such as `~/.local/share/icons`, `~/.icons`, `~/.local/share/cursors`, and
+  `~/.cursors`.
 
 #### Latest Validation
 
@@ -391,6 +468,21 @@ build here. They remain conditional for systems without GTK4 development files.
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once --width 1440 --height 900 --assets assets --config orange.conf` passed; DBus status probes logged sandbox connection errors but did not fail startup.
 - `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf --notification-center /tmp/orange-notification-center.png` passed and was visually inspected.
 - `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf --foreground-only --context-menu status-wifi /tmp/orange-status-wifi.png` passed and was visually inspected.
+
+#### Current GTK Settings Validation
+
+- `ninja -C build orange-settings orange-about` passed for GTK theme dropdown,
+  icon theme, and CSD/icon changes.
+- `ninja -C build orange-settings` passed after switching the Settings sidebar
+  to direct icon-theme images.
+- `ninja -C build orange-settings` passed after tightening local cursor theme
+  discovery.
+- `ninja -C build` passed.
+- `git diff --check -- src/settings_app.c` passed.
+- A current `meson test -C build --print-errorlogs` attempt failed in existing
+  shell Dock/icon assertions (`test_reordered_dock_hit_resolves_launcher` and
+  `test_default_dock_prefers_app_identity_theme_icons`), not in the GTK utility
+  app targets changed here.
 
 ### Technical Concerns
 

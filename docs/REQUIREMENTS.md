@@ -49,6 +49,9 @@ macOS-like shell prototype.
 - Provide a native GTK Settings application source that controls this
   configuration and uses the configured GTK theme when GTK development libraries
   are available at build time.
+- Settings must expose installed GTK theme, icon theme, and cursor theme names
+  as dropdown choices while preserving any saved custom value that is not
+  currently installed.
 - Provide a native GTK About Orange application source that opens from the
   system menu About Orange item when GTK development libraries are available
   at build time. It should present a compact Orange model/version summary

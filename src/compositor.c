@@ -131,6 +131,7 @@ struct orange_server {
 	struct wlr_xcursor_manager *xcursor_manager;
 	struct orange_assets assets;
 	struct orange_config config;
+	bool interface_settings_applied;
 	struct orange_desktop_entry desktop_entries[1024];
 	size_t desktop_entry_count;
 
@@ -569,39 +570,145 @@ static bool server_update_status(struct orange_server *server) {
 	return changed;
 }
 
+static const char *config_resolved_cursor_theme(
+		const struct orange_config *config) {
+	if (config->cursor_theme[0] != '\0') {
+		return config->cursor_theme;
+	}
+	if (config->icon_theme[0] != '\0') {
+		return config->icon_theme;
+	}
+	return NULL;
+}
+
+static bool nullable_strings_equal(const char *a, const char *b) {
+	if (a == NULL || b == NULL) {
+		return a == b;
+	}
+	return strcmp(a, b) == 0;
+}
+
+static int config_resolved_cursor_size(const struct orange_config *config) {
+	return config->cursor_size > 0 ? config->cursor_size : 28;
+}
+
+static void set_env_or_unset(const char *name, const char *value) {
+	if (value != NULL && value[0] != '\0') {
+		setenv(name, value, true);
+	} else {
+		unsetenv(name);
+	}
+}
+
+static void set_gsettings_string_if_writable(GSettings *settings,
+		GSettingsSchema *schema,
+		const char *key,
+		const char *value) {
+	if (value == NULL || value[0] == '\0' ||
+			!g_settings_schema_has_key(schema, key) ||
+			!g_settings_is_writable(settings, key)) {
+		return;
+	}
+	g_settings_set_string(settings, key, value);
+}
+
+static void set_gsettings_int_if_writable(GSettings *settings,
+		GSettingsSchema *schema,
+		const char *key,
+		int value) {
+	if (!g_settings_schema_has_key(schema, key) ||
+			!g_settings_is_writable(settings, key)) {
+		return;
+	}
+	g_settings_set_int(settings, key, value);
+}
+
+static void server_apply_interface_settings(struct orange_server *server) {
+	server->interface_settings_applied = true;
+	const char *session_bus = getenv("DBUS_SESSION_BUS_ADDRESS");
+	if (session_bus == NULL || session_bus[0] == '\0') {
+		return;
+	}
+
+	GSettingsSchemaSource *source = g_settings_schema_source_get_default();
+	if (source == NULL) {
+		return;
+	}
+
+	GSettingsSchema *schema = g_settings_schema_source_lookup(source,
+		"org.gnome.desktop.interface", true);
+	if (schema == NULL) {
+		return;
+	}
+
+	GSettings *settings = g_settings_new_full(schema, NULL, NULL);
+	if (settings != NULL) {
+		const char *gtk_theme =
+			server->config.appearance == ORANGE_APPEARANCE_DARK ?
+			server->config.gtk_theme_dark : server->config.gtk_theme_light;
+		set_gsettings_string_if_writable(settings, schema, "gtk-theme",
+			gtk_theme);
+		set_gsettings_string_if_writable(settings, schema, "icon-theme",
+			server->config.icon_theme);
+		set_gsettings_string_if_writable(settings, schema, "cursor-theme",
+			config_resolved_cursor_theme(&server->config));
+		set_gsettings_int_if_writable(settings, schema, "cursor-size",
+			config_resolved_cursor_size(&server->config));
+		g_settings_sync();
+		g_object_unref(settings);
+	}
+	g_settings_schema_unref(schema);
+}
+
+static void server_ensure_xcursor_path(void) {
+	const char *current = getenv("XCURSOR_PATH");
+	if (current != NULL && current[0] != '\0') {
+		return;
+	}
+
+	char path[4096] = "";
+	const char *home = getenv("HOME");
+	const char *xdg_data_home = getenv("XDG_DATA_HOME");
+	if (xdg_data_home != NULL && xdg_data_home[0] != '\0') {
+		snprintf(path, sizeof(path), "%s/icons", xdg_data_home);
+	} else if (home != NULL && home[0] != '\0') {
+		snprintf(path, sizeof(path), "%s/.local/share/icons", home);
+	}
+	if (home != NULL && home[0] != '\0') {
+		size_t len = strlen(path);
+		snprintf(path + len, sizeof(path) - len, "%s%s/.icons",
+			len > 0 ? ":" : "", home);
+	}
+
+	size_t len = strlen(path);
+	snprintf(path + len, sizeof(path) - len,
+		"%s/usr/local/share/icons:/usr/share/icons",
+		len > 0 ? ":" : "");
+	setenv("XCURSOR_PATH", path, true);
+}
+
 static void server_apply_theme_env(struct orange_server *server) {
 	const char *theme = server->config.appearance == ORANGE_APPEARANCE_DARK ?
 		server->config.gtk_theme_dark : server->config.gtk_theme_light;
-	if (theme[0] != '\0') {
-		setenv("GTK_THEME", theme, true);
-	} else {
-		unsetenv("GTK_THEME");
-	}
-	if (server->config.icon_theme[0] != '\0') {
-		setenv("GTK_ICON_THEME", server->config.icon_theme, true);
-	} else {
-		unsetenv("GTK_ICON_THEME");
-	}
+	set_env_or_unset("GTK_THEME", theme);
+	set_env_or_unset("GTK_ICON_THEME", server->config.icon_theme);
 	setenv("ORANGE_APPEARANCE",
 		orange_config_appearance_name(server->config.appearance), true);
 	setenv("GTK_CSD", "1", true);
 }
 
 static void server_apply_cursor_config(struct orange_server *server) {
+	const char *theme = config_resolved_cursor_theme(&server->config);
+	int size = config_resolved_cursor_size(&server->config);
+	char size_text[16];
+	snprintf(size_text, sizeof(size_text), "%d", size);
+	set_env_or_unset("XCURSOR_THEME", theme);
+	setenv("XCURSOR_SIZE", size_text, true);
+	server_ensure_xcursor_path();
+
 	if (server->cursor == NULL) {
 		return;
 	}
-	const char *theme = server->config.cursor_theme[0] != '\0' ?
-		server->config.cursor_theme : NULL;
-	int size = server->config.cursor_size > 0 ? server->config.cursor_size : 28;
-	char size_text[16];
-	snprintf(size_text, sizeof(size_text), "%d", size);
-	if (theme != NULL) {
-		setenv("XCURSOR_THEME", theme, true);
-	} else {
-		unsetenv("XCURSOR_THEME");
-	}
-	setenv("XCURSOR_SIZE", size_text, true);
 
 	if (server->xcursor_manager != NULL) {
 		wlr_xcursor_manager_destroy(server->xcursor_manager);
@@ -612,21 +719,49 @@ static void server_apply_cursor_config(struct orange_server *server) {
 		wlr_log(WLR_ERROR, "failed to create xcursor manager");
 		return;
 	}
-	wlr_xcursor_manager_load(server->xcursor_manager, 1.0);
+	if (!wlr_xcursor_manager_load(server->xcursor_manager, 1.0)) {
+		wlr_log(WLR_ERROR, "failed to load cursor theme %s at size %d",
+			theme != NULL ? theme : "(default)", size);
+	}
 	wlr_cursor_set_xcursor(server->cursor, server->xcursor_manager, "default");
+}
+
+static void server_reload_assets_if_ready(struct orange_server *server) {
+	if (server->assets.asset_root[0] == '\0') {
+		return;
+	}
+	char asset_root[4096];
+	snprintf(asset_root, sizeof(asset_root), "%s", server->assets.asset_root);
+	orange_assets_finish(&server->assets);
+	orange_assets_init(&server->assets);
+	orange_assets_load(&server->assets, asset_root, server->config.icon_theme);
 }
 
 static void server_load_config(struct orange_server *server, bool force_dirty) {
 	struct orange_config next;
 	orange_config_load(&next, server->options->config_path);
 	bool changed = memcmp(&server->config, &next, sizeof(next)) != 0;
+	bool appearance_changed = server->config.appearance != next.appearance ||
+		strcmp(server->config.gtk_theme_light, next.gtk_theme_light) != 0 ||
+		strcmp(server->config.gtk_theme_dark, next.gtk_theme_dark) != 0;
+	bool icon_theme_changed =
+		strcmp(server->config.icon_theme, next.icon_theme) != 0;
 	bool cursor_changed =
-		strcmp(server->config.cursor_theme, next.cursor_theme) != 0 ||
+		!nullable_strings_equal(
+			config_resolved_cursor_theme(&server->config),
+			config_resolved_cursor_theme(&next)) ||
 		server->config.cursor_size != next.cursor_size;
 	server->config = next;
 	server_apply_theme_env(server);
-	if (cursor_changed || force_dirty) {
+	if (!server->interface_settings_applied || appearance_changed ||
+			icon_theme_changed || cursor_changed || force_dirty) {
+		server_apply_interface_settings(server);
+	}
+	if (cursor_changed || icon_theme_changed || force_dirty) {
 		server_apply_cursor_config(server);
+	}
+	if (icon_theme_changed || force_dirty) {
+		server_reload_assets_if_ready(server);
 	}
 	if (changed || force_dirty) {
 		server_mark_shell_dirty(server);

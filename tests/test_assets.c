@@ -55,13 +55,20 @@ static void write_index(const char *path, const char *inherits) {
 		"[Icon Theme]\n"
 		"Name=Test\n"
 		"Comment=Test\n"
-		"Directories=128x128/apps\n"
+		"Directories=128x128/apps,places/scalable\n"
 		"%s%s"
 		"\n"
 		"[128x128/apps]\n"
 		"Size=128\n"
 		"Type=Fixed\n"
-		"Context=Applications\n",
+		"Context=Applications\n"
+		"\n"
+		"[places/scalable]\n"
+		"Size=64\n"
+		"Type=Scalable\n"
+		"MinSize=16\n"
+		"MaxSize=512\n"
+		"Context=Places\n",
 		inherits != NULL ? "Inherits=" : "",
 		inherits != NULL ? inherits : "");
 	fclose(file);
@@ -70,12 +77,15 @@ static void write_index(const char *path, const char *inherits) {
 int main(void) {
 	mkdir_p("/tmp/orange-assets-test/assets");
 	mkdir_p("/tmp/orange-assets-test/data/icons/TestTheme/128x128/apps");
+	mkdir_p("/tmp/orange-assets-test/data/icons/TestTheme/places/scalable");
 	mkdir_p("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps");
 	assert(setenv("XDG_DATA_HOME", "/tmp/orange-assets-test/data", 1) == 0);
 	write_index("/tmp/orange-assets-test/data/icons/TestTheme/index.theme", NULL);
 	write_index("/tmp/orange-assets-test/data/icons/hicolor/index.theme", NULL);
 	write_png("/tmp/orange-assets-test/data/icons/TestTheme/128x128/apps/test-app.png",
 		1.0, 0.2, 0.1);
+	write_png("/tmp/orange-assets-test/data/icons/TestTheme/places/scalable/folder.png",
+		0.2, 0.6, 0.9);
 	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/fallback-app.png",
 		0.1, 0.2, 1.0);
 	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/start-here.png",
@@ -119,6 +129,11 @@ int main(void) {
 		ORANGE_ASSET_ICON_LIGHT, "fallback-app");
 	assert(fallback != NULL);
 	assert(fallback != icon);
+
+	cairo_surface_t *folder = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "folder");
+	assert(folder != NULL);
+	assert_pixel_rgb(folder, 51, 153, 230);
 
 	cairo_surface_t *menu = orange_assets_icon(&assets,
 		ORANGE_ASSET_ICON_LIGHT, "orange-menu");

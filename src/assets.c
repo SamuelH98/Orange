@@ -704,12 +704,14 @@ static const char *const aliases_display[] = {
 static const char *const aliases_showtime[] = {
 	"org.gnome.Showtime", "Showtime",
 	"video-player", "multimedia-video-player",
-	"applications-multimedia", "video", "video-display", NULL,
+	"applications-multimedia", "video", "video-display",
+	"multimedia-player", NULL,
 };
 static const char *const aliases_video_player[] = {
 	"video-player", "multimedia-video-player",
 	"org.gnome.Showtime", "Showtime",
-	"applications-multimedia", "video", "video-display", NULL,
+	"applications-multimedia", "video", "video-display",
+	"multimedia-player", NULL,
 };
 static const char *const aliases_keyboard[] = {
 	"input-keyboard", "keyboard-brightness", "preferences-desktop-keyboard",
@@ -762,6 +764,9 @@ static const char *const aliases_software[] = {
 static const char *const aliases_terminal[] = {
 	"org.gnome.Terminal", "utilities-terminal", "terminal", NULL,
 };
+static const char *const aliases_folder[] = {
+	"folder", "inode-directory", "folder-new", "directory", NULL,
+};
 static const char *const aliases_folder_new[] = {
 	"folder-new", "folder", NULL,
 };
@@ -771,12 +776,14 @@ static const char *const aliases_maps[] = {
 static const char *const aliases_loupe[] = {
 	"org.gnome.Loupe", "image-viewer",
 	"accessories-image-viewer", "graphics-image-viewer",
-	"org.gnome.eog", "eog", "image-x-generic", NULL,
+	"org.gnome.eog", "eog", "image-x-generic",
+	"applications-graphics", "photo", NULL,
 };
 static const char *const aliases_image_ext[] = {
 	"image-viewer", "accessories-image-viewer",
 	"org.gnome.Loupe", "graphics-image-viewer",
-	"image-x-generic", "image", "photo", "applications-graphics", NULL,
+	"image-x-generic", "image", "photo",
+	"applications-graphics", NULL,
 };
 static const char *const aliases_address_book[] = {
 	"x-office-address-book", "org.gnome.Contacts", "contacts",
@@ -841,6 +848,9 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"system-software-install", aliases_software},
 	{"org.gnome.Terminal", aliases_terminal},
 	{"utilities-terminal", aliases_terminal},
+	{"folder", aliases_folder},
+	{"inode-directory", aliases_folder},
+	{"directory", aliases_folder},
 	{"folder-new", aliases_folder_new},
 	{"maps-app", aliases_maps},
 	{"image-x-generic", aliases_image_ext},

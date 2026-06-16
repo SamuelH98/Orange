@@ -97,6 +97,135 @@ static const char *label_pos_name(enum orange_desktop_label_position pos) {
 	}
 }
 
+static enum orange_accent_color parse_accent_color(const char *value) {
+	if (value == NULL) {
+		return ORANGE_ACCENT_MULTICOLOR;
+	}
+	if (strcmp(value, "blue") == 0) {
+		return ORANGE_ACCENT_BLUE;
+	}
+	if (strcmp(value, "purple") == 0) {
+		return ORANGE_ACCENT_PURPLE;
+	}
+	if (strcmp(value, "pink") == 0) {
+		return ORANGE_ACCENT_PINK;
+	}
+	if (strcmp(value, "red") == 0) {
+		return ORANGE_ACCENT_RED;
+	}
+	if (strcmp(value, "orange") == 0) {
+		return ORANGE_ACCENT_ORANGE;
+	}
+	if (strcmp(value, "yellow") == 0) {
+		return ORANGE_ACCENT_YELLOW;
+	}
+	if (strcmp(value, "green") == 0) {
+		return ORANGE_ACCENT_GREEN;
+	}
+	if (strcmp(value, "graphite") == 0) {
+		return ORANGE_ACCENT_GRAPHITE;
+	}
+	return ORANGE_ACCENT_MULTICOLOR;
+}
+
+static const char *accent_color_name(enum orange_accent_color color) {
+	switch (color) {
+	case ORANGE_ACCENT_BLUE:
+		return "blue";
+	case ORANGE_ACCENT_PURPLE:
+		return "purple";
+	case ORANGE_ACCENT_PINK:
+		return "pink";
+	case ORANGE_ACCENT_RED:
+		return "red";
+	case ORANGE_ACCENT_ORANGE:
+		return "orange";
+	case ORANGE_ACCENT_YELLOW:
+		return "yellow";
+	case ORANGE_ACCENT_GREEN:
+		return "green";
+	case ORANGE_ACCENT_GRAPHITE:
+		return "graphite";
+	case ORANGE_ACCENT_MULTICOLOR:
+	default:
+		return "multicolor";
+	}
+}
+
+static enum orange_icon_widget_style parse_icon_widget_style(const char *value) {
+	if (value == NULL) {
+		return ORANGE_ICON_WIDGET_STYLE_DEFAULT;
+	}
+	if (strcmp(value, "dark") == 0) {
+		return ORANGE_ICON_WIDGET_STYLE_DARK;
+	}
+	if (strcmp(value, "clear") == 0) {
+		return ORANGE_ICON_WIDGET_STYLE_CLEAR;
+	}
+	if (strcmp(value, "tinted") == 0) {
+		return ORANGE_ICON_WIDGET_STYLE_TINTED;
+	}
+	return ORANGE_ICON_WIDGET_STYLE_DEFAULT;
+}
+
+static const char *icon_widget_style_name(enum orange_icon_widget_style style) {
+	switch (style) {
+	case ORANGE_ICON_WIDGET_STYLE_DARK:
+		return "dark";
+	case ORANGE_ICON_WIDGET_STYLE_CLEAR:
+		return "clear";
+	case ORANGE_ICON_WIDGET_STYLE_TINTED:
+		return "tinted";
+	case ORANGE_ICON_WIDGET_STYLE_DEFAULT:
+	default:
+		return "default";
+	}
+}
+
+static enum orange_sidebar_icon_size parse_sidebar_icon_size(const char *value) {
+	if (value != NULL && strcmp(value, "small") == 0) {
+		return ORANGE_SIDEBAR_ICON_SIZE_SMALL;
+	}
+	if (value != NULL && strcmp(value, "large") == 0) {
+		return ORANGE_SIDEBAR_ICON_SIZE_LARGE;
+	}
+	return ORANGE_SIDEBAR_ICON_SIZE_MEDIUM;
+}
+
+static const char *sidebar_icon_size_name(enum orange_sidebar_icon_size size) {
+	switch (size) {
+	case ORANGE_SIDEBAR_ICON_SIZE_SMALL:
+		return "small";
+	case ORANGE_SIDEBAR_ICON_SIZE_LARGE:
+		return "large";
+	case ORANGE_SIDEBAR_ICON_SIZE_MEDIUM:
+	default:
+		return "medium";
+	}
+}
+
+static enum orange_scroll_bar_visibility parse_scroll_bar_visibility(const char *value) {
+	if (value != NULL && strcmp(value, "when_scrolling") == 0) {
+		return ORANGE_SCROLL_BARS_WHEN_SCROLLING;
+	}
+	if (value != NULL && strcmp(value, "always") == 0) {
+		return ORANGE_SCROLL_BARS_ALWAYS;
+	}
+	return ORANGE_SCROLL_BARS_AUTOMATIC;
+}
+
+static const char *scroll_bar_visibility_name(enum orange_scroll_bar_visibility value) {
+	switch (value) {
+	case ORANGE_SCROLL_BARS_WHEN_SCROLLING:
+		return "when_scrolling";
+	case ORANGE_SCROLL_BARS_ALWAYS:
+		return "always";
+	case ORANGE_SCROLL_BARS_AUTOMATIC:
+	default:
+		return "automatic";
+	}
+}
+
 static const char *widget_size_name(enum orange_widget_size size) {
 	switch (size) {
 	case ORANGE_WIDGET_SIZE_MEDIUM:
@@ -171,6 +300,20 @@ static void apply_pair(struct orange_config *config,
 	int desktop_index = -1;
 	if (strcmp(key, "appearance") == 0) {
 		config->appearance = orange_config_parse_appearance(value);
+	} else if (strcmp(key, "accent_color") == 0) {
+		config->accent_color = parse_accent_color(value);
+	} else if (strcmp(key, "text_highlight_automatic") == 0) {
+		config->text_highlight_automatic = parse_bool(value);
+	} else if (strcmp(key, "icon_widget_style") == 0) {
+		config->icon_widget_style = parse_icon_widget_style(value);
+	} else if (strcmp(key, "folder_color_automatic") == 0) {
+		config->folder_color_automatic = parse_bool(value);
+	} else if (strcmp(key, "sidebar_icon_size") == 0) {
+		config->sidebar_icon_size = parse_sidebar_icon_size(value);
+	} else if (strcmp(key, "tint_window_background") == 0) {
+		config->tint_window_background = parse_bool(value);
+	} else if (strcmp(key, "show_scroll_bars") == 0) {
+		config->show_scroll_bars = parse_scroll_bar_visibility(value);
 	} else if (strcmp(key, "desktop_icons_visible") == 0) {
 		config->desktop_icons_visible = parse_bool(value);
 	} else if (strcmp(key, "desktop_grid_spacing") == 0) {
@@ -282,6 +425,13 @@ static void apply_pair(struct orange_config *config,
 void orange_config_set_defaults(struct orange_config *config) {
 	memset(config, 0, sizeof(*config));
 	config->appearance = ORANGE_APPEARANCE_LIGHT;
+	config->accent_color = ORANGE_ACCENT_MULTICOLOR;
+	config->text_highlight_automatic = true;
+	config->icon_widget_style = ORANGE_ICON_WIDGET_STYLE_DEFAULT;
+	config->folder_color_automatic = true;
+	config->sidebar_icon_size = ORANGE_SIDEBAR_ICON_SIZE_MEDIUM;
+	config->tint_window_background = false;
+	config->show_scroll_bars = ORANGE_SCROLL_BARS_AUTOMATIC;
 	config->desktop_icons_visible = true;
 	config->desktop_grid_spacing = 24;
 	config->desktop_label_size = 15;
@@ -383,6 +533,20 @@ bool orange_config_save(const struct orange_config *config, const char *path) {
 
 	fprintf(file, "appearance=%s\n",
 		orange_config_appearance_name(config->appearance));
+	fprintf(file, "accent_color=%s\n",
+		accent_color_name(config->accent_color));
+	fprintf(file, "text_highlight_automatic=%s\n",
+		config->text_highlight_automatic ? "true" : "false");
+	fprintf(file, "icon_widget_style=%s\n",
+		icon_widget_style_name(config->icon_widget_style));
+	fprintf(file, "folder_color_automatic=%s\n",
+		config->folder_color_automatic ? "true" : "false");
+	fprintf(file, "sidebar_icon_size=%s\n",
+		sidebar_icon_size_name(config->sidebar_icon_size));
+	fprintf(file, "tint_window_background=%s\n",
+		config->tint_window_background ? "true" : "false");
+	fprintf(file, "show_scroll_bars=%s\n",
+		scroll_bar_visibility_name(config->show_scroll_bars));
 	fprintf(file, "desktop_icons_visible=%s\n",
 		config->desktop_icons_visible ? "true" : "false");
 	fprintf(file, "desktop_grid_spacing=%d\n", config->desktop_grid_spacing);

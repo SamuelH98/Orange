@@ -158,6 +158,14 @@ compositor path, so Orange implements the same practical model locally: parse
 lookup, cache successful surfaces, and cache misses. This avoids rendering
 hundreds of theme icons during startup or every shell redraw.
 
+GTK4 utility apps can still use GTK's own theme machinery. The local GTK 4.14
+headers expose `gtk_window_set_icon_name`, `gtk_window_set_default_icon_name`,
+and `gtk-icon-theme-name` through `GtkSettings`. Installed MacTahoe GTK4 CSS
+sets the outer CSD window radius on `window.csd`, so Orange Settings and About
+mark their undecorated custom windows with `background` and `csd` classes and
+let their root widgets inherit that radius instead of hardcoding a separate
+corner value.
+
 Freedesktop's StatusNotifierItem family is the DBus tray/status-area protocol:
 a StatusNotifierHost represents graphical StatusNotifierItem instances and is
 registered on the session bus. Orange's current menu-bar status strip is still
@@ -178,6 +186,18 @@ app icon. Dock behavior references also describe dynamic resizing to fit and
 labels appearing on pointer hover. The shell Dock therefore avoids a circular
 hover halo, keeps the small running indicator dot, and uses icon magnification
 plus a compact label bubble for hover feedback.
+
+Apple's System Settings guide shows the current System Settings interaction
+shape: launchable from the Dock or Apple menu, a searchable sidebar, and grouped
+setting panes such as Appearance, Menu Bar, General, Accessibility, Desktop &
+Dock, Displays, and Spotlight. Orange's GTK Settings app follows that structure
+with a local config-backed Appearance panel instead of delegating to GNOME
+Control Center.
+
+The public GNOME Settings source is useful as a Linux settings-panel taxonomy
+reference, but it is GPL-2.0 and uses GNOME-specific panel/back-end code.
+Orange therefore keeps the implementation original and GTK4-only while using
+GNOME's broad categories as inspiration for sidebar grouping.
 
 ## Risks
 
@@ -239,6 +259,10 @@ plus a compact label bubble for hover feedback.
   https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/
 - Apple Support, "Change Desktop & Dock settings on Mac":
   https://support.apple.com/guide/mac-help/change-desktop-dock-settings-mchlp1119/mac
+- Apple Support, "System Settings on your Mac":
+  https://support.apple.com/guide/imac/system-settings-apda966cb8af/mac
+- GNOME Settings source mirror:
+  https://github.com/GNOME/gnome-control-center
 - Dock (macOS) behavior reference:
   https://en.wikipedia.org/wiki/Dock_(macOS)
 - Apple Human Interface Guidelines, "Liquid Glass":

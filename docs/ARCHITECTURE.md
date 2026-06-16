@@ -87,19 +87,22 @@ GTK application sources that are conditionally built when GTK development
 libraries are present.
 
 Settings app responsibilities include appearance, desktop icon, widget, Dock,
-cursor theme, and cursor size controls, writing config changes without a
-compositor restart.
+installed GTK/icon/cursor theme dropdowns, and cursor size controls, writing
+config changes without a compositor restart.
 
 About app responsibilities include showing the Orange version/build
 affordance, model, real chip and memory values, and theme-style window
-controls, launched from the system menu.
+controls, launched from the system menu. Both GTK utility apps set themed
+window icon names and use GTK CSD classes so the active GTK theme controls the
+outer window radius.
 
 ### GTK Themes
 
 Launched GTK clients receive `GTK_THEME` from `gtk_theme_light` or
 `gtk_theme_dark` in `orange.conf`, depending on the current appearance.
 MacTahoe is the current test default, but any installed GTK theme name can be
-used.
+used. Settings discovers GTK4 themes from standard user and system theme
+directories and includes the current saved name even when it is missing.
 
 ### Icon Theme
 
@@ -108,6 +111,8 @@ shell and launched GTK clients. The asset loader checks standard user icon
 directories, `$XDG_DATA_DIRS/icons`, inherited themes, `hicolor`, and
 `/usr/share/pixmaps`. It caches both successful lookups and missing icon names
 so normal redraws do not scan or render whole icon themes.
+Settings discovers icon and cursor theme directories from the same XDG icon
+roots, plus `XCURSOR_PATH` for cursor themes.
 
 ### View Management And Input
 

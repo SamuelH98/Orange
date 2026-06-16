@@ -8,6 +8,13 @@ int main(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	config.appearance = ORANGE_APPEARANCE_DARK;
+	config.accent_color = ORANGE_ACCENT_GREEN;
+	config.text_highlight_automatic = false;
+	config.icon_widget_style = ORANGE_ICON_WIDGET_STYLE_TINTED;
+	config.folder_color_automatic = false;
+	config.sidebar_icon_size = ORANGE_SIDEBAR_ICON_SIZE_LARGE;
+	config.tint_window_background = true;
+	config.show_scroll_bars = ORANGE_SCROLL_BARS_ALWAYS;
 	config.desktop_icons_visible = false;
 	config.desktop_grid_spacing = 40;
 	config.desktop_label_size = 18;
@@ -37,6 +44,13 @@ int main(void) {
 	struct orange_config loaded;
 	assert(orange_config_load(&loaded, path));
 	assert(loaded.appearance == ORANGE_APPEARANCE_DARK);
+	assert(loaded.accent_color == ORANGE_ACCENT_GREEN);
+	assert(!loaded.text_highlight_automatic);
+	assert(loaded.icon_widget_style == ORANGE_ICON_WIDGET_STYLE_TINTED);
+	assert(!loaded.folder_color_automatic);
+	assert(loaded.sidebar_icon_size == ORANGE_SIDEBAR_ICON_SIZE_LARGE);
+	assert(loaded.tint_window_background);
+	assert(loaded.show_scroll_bars == ORANGE_SCROLL_BARS_ALWAYS);
 	assert(!loaded.desktop_icons_visible);
 	assert(loaded.desktop_grid_spacing == 40);
 	assert(loaded.desktop_label_size == 18);

@@ -87,10 +87,16 @@ The GTK About Orange app source is included and will build as
 the system menu > About Orange and shows model, real chip and memory values, and
 Orange version/build details.
 
-Settings currently covers appearance, desktop icon visibility/scale/labels,
-widget visibility/size, Dock size/icon/magnification/indicator controls, and
-cursor theme/size. Cursor settings write `cursor_theme=` and `cursor_size=` to
-`orange.conf`.
+Settings uses a macOS-like full-height translucent sidebar, custom
+traffic-light controls, rounded back/forward arrow capsule, and
+Appearance-first panel layout. It covers appearance, accent color,
+highlight/folder color modes, icon/widget style, sidebar icon size, window
+tinting, scroll-bar visibility, installed GTK/icon theme selection, desktop icon
+visibility/scale/labels, widget visibility/size, Dock
+size/icon/magnification/indicator controls, and installed cursor theme/size.
+Theme dropdowns include a System Default choice plus installed themes discovered
+from standard user and system theme directories. Cursor settings write
+`cursor_theme=` and `cursor_size=` to `orange.conf`.
 
 Desktop icons can be dragged; custom positions are persisted in `orange.conf` as
 `desktop_icon_N_position=x,y`. Right-click desktop icons or Dock items to open
@@ -112,7 +118,8 @@ gtk_theme_dark=MacTahoe-Dark
 ```
 
 Any installed GTK/icon theme can be used by changing those values in
-`orange.conf`. MacTahoe is only the current test default.
+`orange.conf` or through the Settings dropdowns. MacTahoe is only the current
+test default.
 
 Install or develop GTK/icon themes outside this repository, then set the theme
 names in `orange.conf`. The compositor exports `GTK_THEME`, `GTK_ICON_THEME`,

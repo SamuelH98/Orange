@@ -105,6 +105,26 @@ static bool about_should_use_dark(void) {
 	return false;
 }
 
+static void set_gtk_setting_string_from_env(GtkSettings *settings,
+		const char *property,
+		const char *env_name) {
+	const char *value = g_getenv(env_name);
+	if (settings == NULL || value == NULL || value[0] == '\0' ||
+			g_object_class_find_property(G_OBJECT_GET_CLASS(settings),
+				property) == NULL) {
+		return;
+	}
+	g_object_set(settings, property, value, NULL);
+}
+
+static void apply_env_gtk_settings(void) {
+	GtkSettings *settings = gtk_settings_get_default();
+	set_gtk_setting_string_from_env(settings, "gtk-theme-name", "GTK_THEME");
+	set_gtk_setting_string_from_env(settings,
+		"gtk-icon-theme-name",
+		"GTK_ICON_THEME");
+}
+
 static void apply_css(double scale, bool dark) {
 	GtkCssProvider *provider = gtk_css_provider_new();
 	const char *root_bg = dark ? "#333333" : "#fbfbfb";
@@ -116,11 +136,11 @@ static void apply_css(double scale, bool dark) {
 	const char *button_hover = dark ? "#3d3d3d" : "#e7e7e8";
 	const char *button_fg = dark ? "#dadada" : "#272729";
 	char *css = g_strdup_printf(
-		"window { background: transparent; }"
+		"window.orange-about-window { background: transparent; }"
 		".about-root {"
 		"  background: %s;"
 		"  color: %s;"
-		"  border-radius: 22px;"
+		"  border-radius: inherit;"
 		"  overflow: hidden;"
 		"}"
 		".model-title {"
@@ -691,10 +711,15 @@ static void activate(GtkApplication *app, gpointer data) {
 	(void)data;
 	struct about_metrics metrics = about_metrics_for_display();
 	bool dark = about_should_use_dark();
+	apply_env_gtk_settings();
 	apply_css(metrics.scale, dark);
 
 	GtkWidget *window = gtk_application_window_new(app);
+	gtk_widget_add_css_class(window, "background");
+	gtk_widget_add_css_class(window, "csd");
+	gtk_widget_add_css_class(window, "orange-about-window");
 	gtk_window_set_title(GTK_WINDOW(window), "About Orange");
+	gtk_window_set_icon_name(GTK_WINDOW(window), "help-about");
 	gtk_window_set_default_size(GTK_WINDOW(window), metrics.width, metrics.height);
 	gtk_window_set_resizable(GTK_WINDOW(window), false);
 
@@ -812,6 +837,7 @@ int main(int argc, char **argv) {
 		.app = gtk_application_new("dev.orange.About",
 			G_APPLICATION_DEFAULT_FLAGS),
 	};
+	gtk_window_set_default_icon_name("help-about");
 	g_signal_connect(about.app, "activate", G_CALLBACK(activate), &about);
 	int status = g_application_run(G_APPLICATION(about.app), argc, argv);
 	g_object_unref(about.app);

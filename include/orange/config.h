@@ -28,6 +28,39 @@ enum orange_desktop_label_position {
 	ORANGE_DESKTOP_LABEL_RIGHT,
 };
 
+enum orange_accent_color {
+	ORANGE_ACCENT_MULTICOLOR,
+	ORANGE_ACCENT_BLUE,
+	ORANGE_ACCENT_PURPLE,
+	ORANGE_ACCENT_PINK,
+	ORANGE_ACCENT_RED,
+	ORANGE_ACCENT_ORANGE,
+	ORANGE_ACCENT_YELLOW,
+	ORANGE_ACCENT_GREEN,
+	ORANGE_ACCENT_GRAPHITE,
+	ORANGE_ACCENT_COLOR_COUNT,
+};
+
+enum orange_icon_widget_style {
+	ORANGE_ICON_WIDGET_STYLE_DEFAULT,
+	ORANGE_ICON_WIDGET_STYLE_DARK,
+	ORANGE_ICON_WIDGET_STYLE_CLEAR,
+	ORANGE_ICON_WIDGET_STYLE_TINTED,
+	ORANGE_ICON_WIDGET_STYLE_COUNT,
+};
+
+enum orange_sidebar_icon_size {
+	ORANGE_SIDEBAR_ICON_SIZE_SMALL,
+	ORANGE_SIDEBAR_ICON_SIZE_MEDIUM,
+	ORANGE_SIDEBAR_ICON_SIZE_LARGE,
+};
+
+enum orange_scroll_bar_visibility {
+	ORANGE_SCROLL_BARS_AUTOMATIC,
+	ORANGE_SCROLL_BARS_WHEN_SCROLLING,
+	ORANGE_SCROLL_BARS_ALWAYS,
+};
+
 struct orange_desktop_icon_position {
 	bool valid;
 	int x;
@@ -54,6 +87,13 @@ struct orange_volume_info {
 
 struct orange_config {
 	enum orange_appearance appearance;
+	enum orange_accent_color accent_color;
+	bool text_highlight_automatic;
+	enum orange_icon_widget_style icon_widget_style;
+	bool folder_color_automatic;
+	enum orange_sidebar_icon_size sidebar_icon_size;
+	bool tint_window_background;
+	enum orange_scroll_bar_visibility show_scroll_bars;
 
 	bool desktop_icons_visible;
 	int desktop_grid_spacing;
