@@ -701,9 +701,15 @@ static const char *const aliases_display[] = {
 	"preferences-desktop-display", "display",
 	"screen", NULL,
 };
+static const char *const aliases_showtime[] = {
+	"org.gnome.Showtime", "Showtime",
+	"video-player", "multimedia-video-player",
+	"applications-multimedia", "video", "video-display", NULL,
+};
 static const char *const aliases_video_player[] = {
-	"multimedia-video-player", "video-display", "video",
-	"media-playback-starting", NULL,
+	"video-player", "multimedia-video-player",
+	"org.gnome.Showtime", "Showtime",
+	"applications-multimedia", "video", "video-display", NULL,
 };
 static const char *const aliases_keyboard[] = {
 	"input-keyboard", "keyboard-brightness", "preferences-desktop-keyboard",
@@ -739,9 +745,15 @@ static const char *const aliases_browser[] = {
 static const char *const aliases_calculator[] = {
 	"org.gnome.Calculator", "accessories-calculator", "calculator", NULL,
 };
+static const char *const aliases_notes_app[] = {
+	"org.gnome.Notes", "Gnome-notes", "Gnome-Notes",
+	"notes", "accessories-notes", "stock_notes",
+	"utilities-notes", NULL,
+};
 static const char *const aliases_text_editor[] = {
-	"org.gnome.TextEditor", "accessories-text-editor",
-	"text-editor", "notes", NULL,
+	"org.gnome.TextEditor", "gnome-text-editor",
+	"text-editor", "accessories-text-editor",
+	"utilities-text-editor", NULL,
 };
 static const char *const aliases_software[] = {
 	"org.gnome.Software", "system-software-install",
@@ -756,15 +768,24 @@ static const char *const aliases_folder_new[] = {
 static const char *const aliases_maps[] = {
 	"maps-app", "org.gnome.Maps", "maps", "gnome-maps", NULL,
 };
+static const char *const aliases_loupe[] = {
+	"org.gnome.Loupe", "image-viewer",
+	"accessories-image-viewer", "graphics-image-viewer",
+	"org.gnome.eog", "eog", "image-x-generic", NULL,
+};
 static const char *const aliases_image_ext[] = {
-	"image-x-generic", "image", "photo", "image-x-generic-symbolic", NULL,
+	"image-viewer", "accessories-image-viewer",
+	"org.gnome.Loupe", "graphics-image-viewer",
+	"image-x-generic", "image", "photo", "applications-graphics", NULL,
 };
 static const char *const aliases_address_book[] = {
-	"x-office-address-book", "contacts", "address-book",
-	"x-office-contact", NULL,
+	"x-office-address-book", "org.gnome.Contacts", "contacts",
+	"address-book", "x-office-contact", NULL,
 };
 static const char *const aliases_audio_generic[] = {
-	"audio-x-generic", "audio", "music", "audio-x-generic-symbolic", NULL,
+	"multimedia-audio-player", "audio-player",
+	"org.gnome.Decibels", "applications-multimedia",
+	"audio-x-generic", "audio", "music", NULL,
 };
 
 struct icon_alias_set {
@@ -790,6 +811,9 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"audio-volume-high", aliases_sound},
 	{"preferences-desktop-display", aliases_display},
 	{"video-display", aliases_video_player},
+	{"org.gnome.Showtime", aliases_showtime},
+	{"video-player", aliases_video_player},
+	{"multimedia-video-player", aliases_video_player},
 	{"input-keyboard", aliases_keyboard},
 	{"application-x-executable", aliases_generic_app},
 	{"application-default-icon", aliases_generic_app},
@@ -809,6 +833,10 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"accessories-calculator", aliases_calculator},
 	{"org.gnome.TextEditor", aliases_text_editor},
 	{"accessories-text-editor", aliases_text_editor},
+	{"text-editor", aliases_text_editor},
+	{"org.gnome.Notes", aliases_notes_app},
+	{"accessories-notes", aliases_notes_app},
+	{"notes", aliases_notes_app},
 	{"org.gnome.Software", aliases_software},
 	{"system-software-install", aliases_software},
 	{"org.gnome.Terminal", aliases_terminal},
@@ -816,6 +844,9 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"folder-new", aliases_folder_new},
 	{"maps-app", aliases_maps},
 	{"image-x-generic", aliases_image_ext},
+	{"org.gnome.Loupe", aliases_loupe},
+	{"image-viewer", aliases_image_ext},
+	{"accessories-image-viewer", aliases_image_ext},
 	{"x-office-address-book", aliases_address_book},
 	{"audio-x-generic", aliases_audio_generic},
 };

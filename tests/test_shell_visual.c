@@ -39,6 +39,30 @@ static cairo_surface_t *solid_icon_surface(void) {
 	return surface;
 }
 
+static cairo_surface_t *colored_icon_surface(double r, double g, double b) {
+	cairo_surface_t *surface = cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, 64, 64);
+	cairo_t *cr = cairo_create(surface);
+	cairo_set_source_rgba(cr, r, g, b, 1.0);
+	cairo_paint(cr);
+	cairo_destroy(cr);
+	cairo_surface_flush(surface);
+	return surface;
+}
+
+static void add_test_icon(
+		struct orange_assets *assets,
+		const char *name,
+		cairo_surface_t *surface) {
+	assert(assets->icon_count < ORANGE_ASSET_ICON_MAX);
+	struct orange_named_icon *icon = &assets->icons[assets->icon_count++];
+	snprintf(icon->name, sizeof(icon->name), "%s", name);
+	icon->surface[ORANGE_ASSET_ICON_LIGHT] = cairo_surface_reference(surface);
+	icon->surface[ORANGE_ASSET_ICON_DARK] = cairo_surface_reference(surface);
+	icon->resolved[ORANGE_ASSET_ICON_LIGHT] = true;
+	icon->resolved[ORANGE_ASSET_ICON_DARK] = true;
+}
+
 static struct color pixel_at(
 		uint32_t *pixels,
 		int stride,
@@ -50,6 +74,13 @@ static struct color pixel_at(
 
 static bool is_solid_icon_pixel(struct color color) {
 	return color.a > 220 && color.r > 200 && color.g < 80 && color.b < 100;
+}
+
+static bool color_close(struct color color, int r, int g, int b) {
+	return color.a > 220 &&
+		abs(color.r - r) <= 4 &&
+		abs(color.g - g) <= 4 &&
+		abs(color.b - b) <= 4;
 }
 
 static void test_context_menu_glass_and_scaling(void) {
@@ -378,11 +409,105 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 	free(pixels);
 }
 
+static void test_default_dock_prefers_app_identity_theme_icons(void) {
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *pixels = calloc((size_t)height, (size_t)stride);
+	assert(pixels != NULL);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+	config.dock_magnification = false;
+
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	assert(layout.dock_item_count > 8);
+
+	cairo_surface_t *generic = colored_icon_surface(0.95, 0.12, 0.18);
+	cairo_surface_t *loupe = colored_icon_surface(0.65, 0.22, 0.92);
+	cairo_surface_t *notes = colored_icon_surface(1.00, 0.78, 0.10);
+	cairo_surface_t *video = colored_icon_surface(0.10, 0.80, 0.30);
+	struct orange_assets assets = {0};
+	orange_assets_init(&assets);
+	add_test_icon(&assets, "image-x-generic", generic);
+	add_test_icon(&assets, "image-viewer", generic);
+	add_test_icon(&assets, "org.gnome.Loupe", loupe);
+	add_test_icon(&assets, "accessories-text-editor", generic);
+	add_test_icon(&assets, "org.gnome.TextEditor", generic);
+	add_test_icon(&assets, "notes", generic);
+	add_test_icon(&assets, "org.gnome.Notes", notes);
+	add_test_icon(&assets, "video-display", generic);
+	add_test_icon(&assets, "video-player", generic);
+	add_test_icon(&assets, "org.gnome.Showtime", video);
+
+	const struct orange_desktop_entry entries[] = {
+		{
+			.id = "org.gnome.Loupe",
+			.name = "Image Viewer",
+			.icon = "image-x-generic",
+			.exec = "loupe",
+		},
+		{
+			.id = "org.gnome.TextEditor",
+			.name = "Notes",
+			.icon = "org.gnome.TextEditor",
+			.exec = "gnome-text-editor",
+		},
+		{
+			.id = "org.gnome.Showtime",
+			.name = "Video Player",
+			.icon = "video-display",
+			.exec = "showtime",
+		},
+	};
+	struct orange_shell_state state = {
+		.system_menu_open = false,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1757638380,
+		.assets = &assets,
+		.config = &config,
+		.desktop_entries = entries,
+		.desktop_entry_count = (int)(sizeof(entries) / sizeof(entries[0])),
+	};
+	const struct orange_shell_draw_options options = {
+		.draw_wallpaper = false,
+	};
+	orange_shell_draw_with_options(pixels, width, height, stride,
+		&state, &options);
+
+	struct orange_rect loupe_item = layout.dock_items[4];
+	struct orange_rect notes_item = layout.dock_items[7];
+	struct orange_rect video_item = layout.dock_items[8];
+	assert(color_close(pixel_at(pixels, stride,
+		loupe_item.x + loupe_item.width / 2,
+		loupe_item.y + loupe_item.height / 2), 166, 56, 235));
+	assert(color_close(pixel_at(pixels, stride,
+		notes_item.x + notes_item.width / 2,
+		notes_item.y + notes_item.height / 2), 255, 199, 26));
+	assert(color_close(pixel_at(pixels, stride,
+		video_item.x + video_item.width / 2,
+		video_item.y + video_item.height / 2), 26, 204, 77));
+
+	cairo_surface_destroy(generic);
+	cairo_surface_destroy(loupe);
+	cairo_surface_destroy(notes);
+	cairo_surface_destroy(video);
+	orange_assets_finish(&assets);
+	free(pixels);
+}
+
 int main(void) {
 	test_context_menu_glass_and_scaling();
 	test_dark_context_menu_uses_dark_material();
 	test_notification_center_renders_panel_cards_and_button();
 	test_desktop_volume_icon_draws();
-	test_dock_magnification_wave_paints_above_base_icons();	puts("shell visual tests passed");
+	test_dock_magnification_wave_paints_above_base_icons();
+	test_default_dock_prefers_app_identity_theme_icons();
+	puts("shell visual tests passed");
 	return 0;
 }

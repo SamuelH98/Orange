@@ -82,6 +82,26 @@ int main(void) {
 		0.2, 0.8, 0.2);
 	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/view-app-grid.png",
 		0.8, 0.1, 0.2);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/accessories-text-editor.png",
+		0.9, 0.1, 0.1);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/org.gnome.TextEditor.png",
+		0.2, 0.2, 0.2);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/org.gnome.Notes.png",
+		1.0, 0.8, 0.1);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/notes.png",
+		0.1, 0.4, 0.9);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/org.gnome.Showtime.png",
+		0.1, 0.4, 0.9);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/video-display.png",
+		0.9, 0.1, 0.1);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/video-player.png",
+		0.1, 0.8, 0.3);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/applications-graphics.png",
+		0.9, 0.1, 0.1);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/org.gnome.Loupe.png",
+		0.1, 0.7, 0.8);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/image-viewer.png",
+		0.7, 0.2, 0.9);
 
 	struct orange_assets assets;
 	orange_assets_init(&assets);
@@ -110,6 +130,36 @@ int main(void) {
 		ORANGE_ASSET_ICON_LIGHT, "view-app-grid");
 	assert(launcher != NULL);
 	assert_pixel_rgb(launcher, 204, 26, 51);
+
+	cairo_surface_t *notes = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "org.gnome.Notes");
+	assert(notes != NULL);
+	assert_pixel_rgb(notes, 255, 204, 26);
+
+	cairo_surface_t *text_editor = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "org.gnome.TextEditor");
+	assert(text_editor != NULL);
+	assert_pixel_rgb(text_editor, 51, 51, 51);
+
+	cairo_surface_t *showtime = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "org.gnome.Showtime");
+	assert(showtime != NULL);
+	assert_pixel_rgb(showtime, 26, 102, 230);
+
+	cairo_surface_t *video = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "video-display");
+	assert(video != NULL);
+	assert_pixel_rgb(video, 26, 204, 77);
+
+	cairo_surface_t *loupe = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "org.gnome.Loupe");
+	assert(loupe != NULL);
+	assert_pixel_rgb(loupe, 26, 179, 204);
+
+	cairo_surface_t *image_viewer = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "image-x-generic");
+	assert(image_viewer != NULL);
+	assert_pixel_rgb(image_viewer, 179, 51, 230);
 
 	assert(orange_assets_icon(&assets,
 		ORANGE_ASSET_ICON_LIGHT, "missing-app") == NULL);

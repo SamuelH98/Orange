@@ -126,7 +126,7 @@ static const char *fallback_icon(const char *app_id) {
 	}
 	if (app_id_matches(app_id, "org.gnome.TextEditor") ||
 			app_id_matches(app_id, "gedit")) {
-		return "accessories-text-editor";
+		return "org.gnome.Notes";
 	}
 	if (app_id_matches(app_id, "org.gnome.Settings") ||
 			app_id_matches(app_id, "control-center")) {
@@ -155,7 +155,7 @@ static const char *fallback_icon(const char *app_id) {
 	if (app_id_matches(app_id, "org.gnome.Loupe") ||
 			app_id_matches(app_id, "loupe") ||
 			app_id_matches(app_id, "ImageViewer")) {
-		return "image-x-generic";
+		return "org.gnome.Loupe";
 	}
 	if (app_id_matches(app_id, "org.gnome.Contacts") ||
 			app_id_matches(app_id, "contacts")) {
@@ -163,11 +163,28 @@ static const char *fallback_icon(const char *app_id) {
 	}
 	if (app_id_matches(app_id, "org.gnome.Showtime") ||
 			app_id_matches(app_id, "showtime")) {
-		return "video-display";
+		return "org.gnome.Showtime";
 	}
 	if (app_id_matches(app_id, "org.gnome.Decibels") ||
 			app_id_matches(app_id, "decibels")) {
 		return "audio-x-generic";
+	}
+	return NULL;
+}
+
+static const char *dock_role_icon(const char *app_id) {
+	if (app_id_matches(app_id, "org.gnome.TextEditor") ||
+			app_id_matches(app_id, "gedit")) {
+		return "org.gnome.Notes";
+	}
+	if (app_id_matches(app_id, "org.gnome.Loupe") ||
+			app_id_matches(app_id, "loupe") ||
+			app_id_matches(app_id, "ImageViewer")) {
+		return "org.gnome.Loupe";
+	}
+	if (app_id_matches(app_id, "org.gnome.Showtime") ||
+			app_id_matches(app_id, "showtime")) {
+		return "org.gnome.Showtime";
 	}
 	return NULL;
 }
@@ -746,6 +763,10 @@ static const char *dock_icon_name(int launcher_idx,
 	const char *bi = builtin_icon(app_id);
 	if (bi != NULL) {
 		return bi;
+	}
+	const char *role_icon = dock_role_icon(app_id);
+	if (role_icon != NULL) {
+		return role_icon;
 	}
 	/* Look up in scanned .desktop entries */
 	const struct orange_desktop_entry *entry = lookup_entry(app_id, entries, entry_count);

@@ -239,6 +239,24 @@ Settings app includes per-volume visibility toggles, Sort By dropdown, and
 Label Position dropdown. Grid layout respects `desktop_grid_spacing` and
 occupies a minimum 2×2 slot area even without volumes.
 
+### Dock Icon Alias Fix
+
+Completed a focused Dock icon fix for the default Image Viewer, Notes, and
+Video Player launchers. The Dock now requests app-identity theme icons
+(`org.gnome.Loupe`, `org.gnome.Notes`, `org.gnome.Showtime`) before scanned
+`.desktop` icon fields, and asset aliases no longer route those exact app IDs
+through generic `image-viewer`, `notes`, or `video-player` aliases. Generic
+image/video/text aliases continue to resolve through their own fallback lists.
+
+Validation:
+
+- `ninja -C build test-assets test-shell-visual`
+- `./build/test-assets`
+- `./build/test-shell-visual`
+- `meson test -C build --print-errorlogs`
+- `ninja -C build orange-render-shell`
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf /tmp/orange-assets-icons-check.png`
+
 Menu bar and Dock share the same `draw_dock_glass` rendering path for
 consistent translucency. Dock outer padding = 16, corner radius = 44 × s,
 top padding = 16, bottom padding = 10, bottom margin = 8. Menu bar height =
