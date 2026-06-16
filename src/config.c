@@ -467,8 +467,8 @@ void orange_config_set_defaults(struct orange_config *config) {
 		"%s", "MacTahoe-Dark");
 	/* Default dock — macOS Golden Gate order hybridized with GNOME core apps */
 	const char *default_dock[] = {
-		"__launcher__",
 		"org.gnome.Nautilus.desktop",
+		"__launcher__",
 		"firefox.desktop",
 		"org.gnome.Maps.desktop",
 		"org.gnome.Loupe.desktop",

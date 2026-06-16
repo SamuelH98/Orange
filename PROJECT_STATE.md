@@ -242,11 +242,11 @@ occupies a minimum 2×2 slot area even without volumes.
 ### Dock Icon Alias Fix
 
 Completed a focused Dock icon fix for the default Image Viewer, Notes, and
-Video Player launchers. The Dock now requests app-identity theme icons
-(`org.gnome.Loupe`, `org.gnome.Notes`, `org.gnome.Showtime`) before scanned
-`.desktop` icon fields, and asset aliases no longer route those exact app IDs
-through generic `image-viewer`, `notes`, or `video-player` aliases. Generic
-image/video/text aliases continue to resolve through their own fallback lists.
+Video Player launchers. The Dock now requests configured role icons before
+scanned `.desktop` icon fields, using `image-viewer` and `video-player` for
+MacTahoe-style Image Viewer/Video Player artwork while keeping `org.gnome.Notes`
+for the Notes role. Generic image/video/text aliases continue to resolve
+through their own fallback lists.
 
 Validation:
 
@@ -287,12 +287,6 @@ Validation:
 - `meson test -C build --print-errorlogs` still reaches the same two known
   non-settings failures listed below.
 
-Known local validation issue:
-
-- `meson test -C build --print-errorlogs` currently fails in `shell-layout` and
-  `shell-visual` on Dock/default icon assertions from the pre-existing local
-  Dock icon/default-order worktree changes, not from the Settings app rewrite.
-
 ### GTK Theme Rounding, Files Icons, And Cursors
 
 About Orange and Orange Settings no longer hardcode a top-level app-window
@@ -324,8 +318,17 @@ Validation:
 - `meson test -C build --print-errorlogs` still reaches the same two known
   local failures in `shell-layout` and `shell-visual`.
 
+### Dock Glass And Files-First Defaults
+
+The Dock now defaults to Files first and Launchpad second, matching the checked
+in `orange.conf` order. Dock glass samples and scales the existing framebuffer
+behind the Dock before applying a lighter translucent shade, with tighter
+horizontal padding, a slimmer trash separator, larger running indicators, and
+updated tests for the reordered Launchpad hit target and role-icon lookup.
+Light/dark wallpapers were regenerated for the new default appearance pass.
+
 Menu bar and Dock share the same `draw_dock_glass` rendering path for
-consistent translucency. Dock outer padding = 16, corner radius = 44 × s,
+consistent translucency. Dock outer padding = 22, corner radius = 44 × s,
 top padding = 16, bottom padding = 10, bottom margin = 8. Menu bar height =
 48px, Apple icon 40×40 at y = scaled_i(4, s), text baseline at
 scaled_i(36, s). Status icons render with original icon-theme colors
@@ -460,6 +463,11 @@ build here. They remain conditional for systems without GTK4 development files.
   `cursors/` directory, expands `~/...` entries, and checks local cursor roots
   such as `~/.local/share/icons`, `~/.icons`, `~/.local/share/cursors`, and
   `~/.cursors`.
+- **Dock glass and default order tuned**: Dock rendering now includes a
+  downsampled framebuffer backdrop behind the translucent shade, the checked-in
+  defaults place Files before Launchpad, role icons are preferred before
+  `.desktop` icon fields for Image Viewer and Video Player, and shell layout
+  and visual tests cover the updated behavior.
 
 #### Latest Validation
 
@@ -479,10 +487,8 @@ build here. They remain conditional for systems without GTK4 development files.
   discovery.
 - `ninja -C build` passed.
 - `git diff --check -- src/settings_app.c` passed.
-- A current `meson test -C build --print-errorlogs` attempt failed in existing
-  shell Dock/icon assertions (`test_reordered_dock_hit_resolves_launcher` and
-  `test_default_dock_prefers_app_identity_theme_icons`), not in the GTK utility
-  app targets changed here.
+- A later Dock/default-order validation pass updates the stale shell assertions
+  and returns the full Meson suite to green.
 
 ### Technical Concerns
 

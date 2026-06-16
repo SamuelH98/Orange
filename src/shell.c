@@ -155,7 +155,7 @@ static const char *fallback_icon(const char *app_id) {
 	if (app_id_matches(app_id, "org.gnome.Loupe") ||
 			app_id_matches(app_id, "loupe") ||
 			app_id_matches(app_id, "ImageViewer")) {
-		return "org.gnome.Loupe";
+		return "image-viewer";
 	}
 	if (app_id_matches(app_id, "org.gnome.Contacts") ||
 			app_id_matches(app_id, "contacts")) {
@@ -163,7 +163,7 @@ static const char *fallback_icon(const char *app_id) {
 	}
 	if (app_id_matches(app_id, "org.gnome.Showtime") ||
 			app_id_matches(app_id, "showtime")) {
-		return "org.gnome.Showtime";
+		return "video-player";
 	}
 	if (app_id_matches(app_id, "org.gnome.Decibels") ||
 			app_id_matches(app_id, "decibels")) {
@@ -180,11 +180,11 @@ static const char *dock_role_icon(const char *app_id) {
 	if (app_id_matches(app_id, "org.gnome.Loupe") ||
 			app_id_matches(app_id, "loupe") ||
 			app_id_matches(app_id, "ImageViewer")) {
-		return "org.gnome.Loupe";
+		return "image-viewer";
 	}
 	if (app_id_matches(app_id, "org.gnome.Showtime") ||
 			app_id_matches(app_id, "showtime")) {
-		return "org.gnome.Showtime";
+		return "video-player";
 	}
 	return NULL;
 }
@@ -902,6 +902,33 @@ static void draw_liquid_panel(cairo_t *cr, const struct orange_rect *rect,
 
 static void draw_dock_glass(cairo_t *cr, const struct orange_rect *rect,
 		double radius, bool dark) {
+	cairo_surface_t *main = cairo_get_target(cr);
+	cairo_surface_flush(main);
+
+	double blur_scale = 0.25;
+	int sw = (int)(rect->width * blur_scale);
+	int sh = (int)(rect->height * blur_scale);
+	if (sw < 1) sw = 1;
+	if (sh < 1) sh = 1;
+
+	cairo_surface_t *blurred = cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, sw, sh);
+	cairo_t *blur_cr = cairo_create(blurred);
+	cairo_scale(blur_cr, blur_scale, blur_scale);
+	cairo_set_source_surface(blur_cr, main, -rect->x, -rect->y);
+	cairo_pattern_set_filter(cairo_get_source(blur_cr), CAIRO_FILTER_BILINEAR);
+	cairo_paint(blur_cr);
+	cairo_destroy(blur_cr);
+
+	cairo_save(cr);
+	cairo_translate(cr, rect->x, rect->y);
+	cairo_scale(cr, 1.0 / blur_scale, 1.0 / blur_scale);
+	cairo_set_source_surface(cr, blurred, 0, 0);
+	cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BILINEAR);
+	cairo_paint(cr);
+	cairo_restore(cr);
+	cairo_surface_destroy(blurred);
+
 	cairo_save(cr);
 	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
 	cairo_clip(cr);
@@ -909,13 +936,13 @@ static void draw_dock_glass(cairo_t *cr, const struct orange_rect *rect,
 	cairo_pattern_t *shade = cairo_pattern_create_linear(
 		rect->x, rect->y, rect->x, rect->y + rect->height);
 	if (dark) {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.12, 0.14, 0.18, 0.40);
-		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.10, 0.12, 0.15, 0.38);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.04, 0.05, 0.07, 0.36);
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.12, 0.14, 0.18, 0.35);
+		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.10, 0.12, 0.15, 0.30);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.04, 0.05, 0.07, 0.25);
 	} else {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.92, 0.94, 0.96, 0.28);
-		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.88, 0.90, 0.93, 0.24);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.78, 0.82, 0.86, 0.20);
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.50, 0.50, 0.50, 0.22);
+		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.45, 0.45, 0.45, 0.18);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.40, 0.40, 0.40, 0.14);
 	}
 	cairo_rectangle(cr, rect->x, rect->y, rect->width, rect->height);
 	cairo_set_source(cr, shade);
@@ -923,15 +950,6 @@ static void draw_dock_glass(cairo_t *cr, const struct orange_rect *rect,
 	cairo_pattern_destroy(shade);
 
 	cairo_restore(cr);
-
-	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
-	set_source_rgba255(cr, 255, 255, 255, dark ? 0.15 : 0.25);
-	cairo_set_line_width(cr, 1.0);
-	cairo_stroke(cr);
-	rounded_rect(cr, rect->x + 2.0, rect->y + 2.0,
-		rect->width - 4.0, rect->height - 4.0, radius - 2.0);
-	set_source_rgba255(cr, 255, 255, 255, dark ? 0.05 : 0.10);
-	cairo_stroke(cr);
 }
 
 static void draw_menu_glass(cairo_t *cr, const struct orange_rect *rect,
@@ -1366,11 +1384,14 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 	double s = layout_scale(layout);
 	bool dark = is_dark_config(config);
 	struct orange_rect r = layout->dock;
-	set_source_rgba255(cr, 0, 0, 0, 0.18);
-	rounded_rect(cr, r.x + scaled_i(2, s), r.y + scaled_i(7, s),
-		r.width, r.height, 44 * s);
-	cairo_fill(cr);
 	draw_dock_glass(cr, &r, 44 * s, dark);
+
+	rounded_rect(cr, r.x + 0.5, r.y + 0.5,
+		r.width - 1.0, r.height - 1.0, 44 * s);
+	cairo_set_source_rgba(cr, 1.0, 1.0, 1.0,
+		dark ? 0.15 : 0.18);
+	cairo_set_line_width(cr, 1.0);
+	cairo_stroke(cr);
 
 	struct dock_visual_item visual[ORANGE_DOCK_MAX];
 	compute_dock_visual_items(layout, state, config, visual);
@@ -1399,8 +1420,8 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 			double item_s = (double)item.width / 106.0;
 			set_source_rgba255(cr, 34, 37, 42, 0.70);
 			cairo_arc(cr, item.x + item.width / 2.0,
-				r.y + r.height - scaled_i(9, s),
-				2.1 * item_s, 0, 2.0 * M_PI);
+				r.y + r.height - scaled_i(10, s),
+				4.5 * item_s, 0, 2.0 * M_PI);
 			cairo_fill(cr);
 		}
 		if (launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
@@ -2354,9 +2375,9 @@ void orange_shell_layout_compute(
 	double dock_s = s * config->dock_scale;
 	int dock_icon = scaled_i(106, s * config->dock_icon_scale * config->dock_scale);
 	int dock_gap = scaled_i(18, dock_s);
-	int dock_sep_extra = scaled_i(66, dock_s);
-	int dock_left_pad = scaled_i(16, dock_s);
-	int dock_right_pad = scaled_i(16, dock_s);
+	int dock_sep_extra = scaled_i(50, dock_s);
+	int dock_left_pad = scaled_i(22, dock_s);
+	int dock_right_pad = scaled_i(22, dock_s);
 	int dock_top_pad = scaled_i(16, dock_s);
 	int dock_bottom_pad = scaled_i(10, dock_s);
 	int dock_bottom_margin = scaled_i(8, dock_s);
@@ -2393,7 +2414,7 @@ void orange_shell_layout_compute(
 		dock_height,
 	};
 	int dx = layout->dock.x + dock_left_pad;
-	int dy = layout->dock.y + dock_top_pad;
+	int dy = layout->dock.y + dock_top_pad - scaled_i(2, dock_s);
 	for (int i = 0; i < dock_count; i++) {
 		int launcher_idx = visible_launchers[i];
 		layout->dock_launcher_indices[i] = launcher_idx;

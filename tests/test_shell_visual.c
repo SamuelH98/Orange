@@ -409,7 +409,7 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 	free(pixels);
 }
 
-static void test_default_dock_prefers_app_identity_theme_icons(void) {
+static void test_default_dock_prefers_role_icons_before_desktop_icons(void) {
 	const int width = 1440;
 	const int height = 900;
 	const int stride = width * 4;
@@ -427,21 +427,21 @@ static void test_default_dock_prefers_app_identity_theme_icons(void) {
 	assert(layout.dock_item_count > 8);
 
 	cairo_surface_t *generic = colored_icon_surface(0.95, 0.12, 0.18);
-	cairo_surface_t *loupe = colored_icon_surface(0.65, 0.22, 0.92);
+	cairo_surface_t *image_viewer = colored_icon_surface(0.65, 0.22, 0.92);
 	cairo_surface_t *notes = colored_icon_surface(1.00, 0.78, 0.10);
-	cairo_surface_t *video = colored_icon_surface(0.10, 0.80, 0.30);
+	cairo_surface_t *video_player = colored_icon_surface(0.10, 0.80, 0.30);
 	struct orange_assets assets = {0};
 	orange_assets_init(&assets);
 	add_test_icon(&assets, "image-x-generic", generic);
-	add_test_icon(&assets, "image-viewer", generic);
-	add_test_icon(&assets, "org.gnome.Loupe", loupe);
+	add_test_icon(&assets, "image-viewer", image_viewer);
+	add_test_icon(&assets, "org.gnome.Loupe", generic);
 	add_test_icon(&assets, "accessories-text-editor", generic);
 	add_test_icon(&assets, "org.gnome.TextEditor", generic);
 	add_test_icon(&assets, "notes", generic);
 	add_test_icon(&assets, "org.gnome.Notes", notes);
 	add_test_icon(&assets, "video-display", generic);
-	add_test_icon(&assets, "video-player", generic);
-	add_test_icon(&assets, "org.gnome.Showtime", video);
+	add_test_icon(&assets, "video-player", video_player);
+	add_test_icon(&assets, "org.gnome.Showtime", generic);
 
 	const struct orange_desktop_entry entries[] = {
 		{
@@ -494,9 +494,9 @@ static void test_default_dock_prefers_app_identity_theme_icons(void) {
 		video_item.y + video_item.height / 2), 26, 204, 77));
 
 	cairo_surface_destroy(generic);
-	cairo_surface_destroy(loupe);
+	cairo_surface_destroy(image_viewer);
 	cairo_surface_destroy(notes);
-	cairo_surface_destroy(video);
+	cairo_surface_destroy(video_player);
 	orange_assets_finish(&assets);
 	free(pixels);
 }
@@ -507,7 +507,7 @@ int main(void) {
 	test_notification_center_renders_panel_cards_and_button();
 	test_desktop_volume_icon_draws();
 	test_dock_magnification_wave_paints_above_base_icons();
-	test_default_dock_prefers_app_identity_theme_icons();
+	test_default_dock_prefers_role_icons_before_desktop_icons();
 	puts("shell visual tests passed");
 	return 0;
 }

@@ -43,20 +43,14 @@ static void test_reordered_dock_hit_resolves_launcher(void) {
 		first.y + first.height / 2);
 	assert(hit.kind == ORANGE_HIT_DOCK_ITEM);
 	assert(hit.index == 0);
-	assert(orange_shell_dock_launcher_index(&layout, hit.index) == 1);
-
-	struct orange_desktop_entry entries[1] = {{
-		.id = "org.gnome.Nautilus",
-		.name = "Files",
-		.icon = "system-file-manager",
-		.exec = "nautilus %U",
-	}};
-	assert(strcmp(orange_shell_dock_label(
-		orange_shell_dock_launcher_index(&layout, hit.index),
-		entries, 1, &config), "Files") == 0);
-	assert(strcmp(orange_shell_dock_command(
-		orange_shell_dock_launcher_index(&layout, hit.index),
-		entries, 1, &config), "nautilus %U") == 0);
+	int launcher_idx = orange_shell_dock_launcher_index(&layout, hit.index);
+	assert(launcher_idx == 1);
+	assert(strcmp(orange_shell_dock_label(launcher_idx, NULL, 0, &config),
+		"") == 0);
+	const char *command = orange_shell_dock_command(launcher_idx,
+		NULL, 0, &config);
+	assert(command != NULL);
+	assert(strstr(command, "ORANGE_APP_PICKER") != NULL);
 }
 
 static void test_default_dock_apps_have_fallback_commands(void) {
