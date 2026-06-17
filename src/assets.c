@@ -310,11 +310,11 @@ static void parse_theme_index(FILE *file, struct icon_theme_info *info) {
 		if (strcmp(section, "Icon Theme") == 0) {
 			if (strcmp(key, "Inherits") == 0) {
 				snprintf(info->inherits, sizeof(info->inherits), "%s", value);
-			} else if (strcmp(key, "Directories") == 0 ||
-					strcmp(key, "ScaledDirectories") == 0) {
-				char list[4096];
-				snprintf(list, sizeof(list), "%s", value);
-				add_theme_dir_list(info, list);
+		} else if (strcmp(key, "Directories") == 0 ||
+				strcmp(key, "ScaledDirectories") == 0) {
+			char list[65536];
+			snprintf(list, sizeof(list), "%s", value);
+			add_theme_dir_list(info, list);
 			}
 			continue;
 		}
@@ -481,7 +481,7 @@ static bool try_icon_path(char *out,
 		const char *theme_name,
 		const char *subdir,
 		const char *icon_name) {
-	const char *extensions[] = {"png", "svg", "svgz"};
+	const char *extensions[] = {"svg", "svgz", "png"};
 	for (size_t i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++) {
 		char path[4096];
 		snprintf(path, sizeof(path), "%s/%s/%s/%s.%s",
@@ -492,6 +492,79 @@ static bool try_icon_path(char *out,
 		}
 	}
 	return false;
+}
+
+static bool has_symbolic_suffix(const char *name) {
+	return has_suffix(name, "-symbolic");
+}
+
+static int generate_themed_icon_names(const char *name,
+		char names[][ORANGE_ASSET_ICON_NAME_MAX],
+		int max) {
+	if (name == NULL || name[0] == '\0' || max < 1) {
+		return 0;
+	}
+
+	bool is_symbolic = has_symbolic_suffix(name);
+	char base[ORANGE_ASSET_ICON_NAME_MAX];
+	if (is_symbolic) {
+		size_t len = strlen(name);
+		snprintf(base, sizeof(base), "%.*s",
+			(int)(len - 9), name);
+	} else {
+		snprintf(base, sizeof(base), "%s", name);
+	}
+
+	char splits[ICON_THEME_DIR_MAX][ORANGE_ASSET_ICON_NAME_MAX];
+	int split_count = 0;
+	snprintf(splits[split_count++], sizeof(splits[0]), "%s", base);
+
+	char buf[ORANGE_ASSET_ICON_NAME_MAX];
+	snprintf(buf, sizeof(buf), "%s", base);
+	char *p = buf + strlen(buf);
+
+	while (split_count < ICON_THEME_DIR_MAX) {
+		while (p > buf && *p != '-') {
+			p--;
+		}
+		if (p <= buf) {
+			break;
+		}
+		*p = '\0';
+		bool dup = false;
+		for (int i = 0; i < split_count; i++) {
+			if (strcmp(splits[i], buf) == 0) {
+				dup = true;
+				break;
+			}
+		}
+		if (!dup) {
+			snprintf(splits[split_count++], sizeof(splits[0]), "%s", buf);
+		}
+	}
+
+	int count = 0;
+	for (int i = 0; i < split_count && count < max; i++) {
+		if (is_symbolic) {
+			snprintf(names[count], ORANGE_ASSET_ICON_NAME_MAX,
+				"%s-symbolic", splits[i]);
+		} else {
+			snprintf(names[count], ORANGE_ASSET_ICON_NAME_MAX,
+				"%s", splits[i]);
+		}
+		count++;
+	}
+	for (int i = 0; i < split_count && count < max; i++) {
+		if (is_symbolic) {
+			snprintf(names[count], ORANGE_ASSET_ICON_NAME_MAX,
+				"%s", splits[i]);
+		} else {
+			snprintf(names[count], ORANGE_ASSET_ICON_NAME_MAX,
+				"%s-symbolic", splits[i]);
+		}
+		count++;
+	}
+	return count;
 }
 
 static bool lookup_icon_in_theme(char *out,
@@ -517,21 +590,37 @@ static bool lookup_icon_in_theme(char *out,
 	}
 
 	int best_distance = INT_MAX;
+	int best_dir_size = 0;
+	enum icon_dir_type best_type = ICON_DIR_FIXED;
 	char best_path[4096] = "";
 	for (int i = 0; i < info->dir_count; i++) {
 		const struct icon_dir_info *dir = &info->dirs[i];
 		int distance = directory_size_distance(dir, icon_size, icon_scale);
-		if (distance > best_distance) {
-			continue;
-		}
 		for (int b = 0; b < base_count; b++) {
 			char candidate[4096];
 			if (!try_icon_path(candidate, sizeof(candidate), bases[b],
 					theme_name, dir->name, icon_name)) {
 				continue;
 			}
-			if (distance < best_distance || best_path[0] == '\0') {
+			bool better = false;
+			if (best_path[0] == '\0') {
+				better = true;
+			} else if (dir->type == ICON_DIR_SCALABLE &&
+					best_type != ICON_DIR_SCALABLE) {
+				better = true;
+			} else if (dir->type != ICON_DIR_SCALABLE &&
+					best_type == ICON_DIR_SCALABLE) {
+				better = false;
+			} else if (distance < best_distance) {
+				better = true;
+			} else if (distance == best_distance &&
+					dir->size > best_dir_size) {
+				better = true;
+			}
+			if (better) {
 				best_distance = distance;
+				best_dir_size = dir->size;
+				best_type = dir->type;
 				snprintf(best_path, sizeof(best_path), "%s", candidate);
 			}
 			break;
@@ -549,7 +638,7 @@ static bool lookup_fallback_icon(char *out,
 		const char *icon_name,
 		char bases[ICON_THEME_BASE_MAX][4096],
 		int base_count) {
-	const char *extensions[] = {"png", "svg", "svgz"};
+	const char *extensions[] = {"svg", "svgz", "png"};
 	for (int b = 0; b < base_count; b++) {
 		for (size_t i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++) {
 			char path[4096];
@@ -647,6 +736,7 @@ static bool find_icon_file(char *out,
 
 	const char *theme = assets->icon_theme[0] != '\0' ?
 		assets->icon_theme : "hicolor";
+
 	if (find_icon_helper(out, out_size, normalized, theme, assets,
 			bases, base_count, ICON_LOOKUP_SIZE, ICON_LOOKUP_SCALE, 0)) {
 		return true;
@@ -657,6 +747,26 @@ static bool find_icon_file(char *out,
 		return true;
 	}
 	return lookup_fallback_icon(out, out_size, normalized, bases, base_count);
+}
+
+static bool find_icon_file_with_fallbacks(char *out,
+		size_t out_size,
+		const char *icon_name,
+		const struct orange_assets *assets) {
+	if (icon_name == NULL || icon_name[0] == '\0') {
+		return false;
+	}
+
+	char names[ICON_THEME_DIR_MAX * 2][ORANGE_ASSET_ICON_NAME_MAX];
+	int name_count = generate_themed_icon_names(icon_name,
+		names, ICON_THEME_DIR_MAX * 2);
+
+	for (int i = 0; i < name_count; i++) {
+		if (find_icon_file(out, out_size, names[i], assets)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 static const char *const aliases_network_wireless[] = {
@@ -726,8 +836,10 @@ static const char *const aliases_weather[] = {
 	"weather", NULL,
 };
 static const char *const aliases_system_menu[] = {
-	"start-here", "application-menu", "application-menu-symbolic",
-	"orange-menu", "view-app-grid", NULL,
+	"start-here", "start-here-symbolic",
+	"view-app-grid", "view-app-grid-symbolic",
+	"application-menu", "application-menu-symbolic",
+	"orange-menu", NULL,
 };
 static const char *const aliases_app_grid[] = {
 	"view-app-grid", "view-app-grid-symbolic",
@@ -888,9 +1000,21 @@ static cairo_surface_t *resolve_icon_surface(
 	}
 
 	char path[4096];
-	if (find_icon_file(path, sizeof(path), name, assets)) {
+	if (find_icon_file_with_fallbacks(path, sizeof(path), name, assets)) {
 		return load_icon_file(path);
 	}
+
+	if (strcmp(name, "application-x-executable") != 0 &&
+			find_icon_file_with_fallbacks(path, sizeof(path),
+				"application-x-executable", assets)) {
+		return load_icon_file(path);
+	}
+
+	if (find_icon_file_with_fallbacks(path, sizeof(path),
+			"image-missing", assets)) {
+		return load_icon_file(path);
+	}
+
 	return NULL;
 }
 
