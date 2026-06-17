@@ -409,7 +409,7 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 	free(pixels);
 }
 
-static void test_default_dock_prefers_role_icons_before_desktop_icons(void) {
+static void test_default_dock_prefers_desktop_icons_before_role_icons(void) {
 	const int width = 1440;
 	const int height = 900;
 	const int stride = width * 4;
@@ -429,15 +429,18 @@ static void test_default_dock_prefers_role_icons_before_desktop_icons(void) {
 	cairo_surface_t *generic = colored_icon_surface(0.95, 0.12, 0.18);
 	cairo_surface_t *image_viewer = colored_icon_surface(0.65, 0.22, 0.92);
 	cairo_surface_t *notes = colored_icon_surface(1.00, 0.78, 0.10);
+	cairo_surface_t *text_editor = colored_icon_surface(0.15, 0.25, 0.95);
 	cairo_surface_t *video_player = colored_icon_surface(0.10, 0.80, 0.30);
+	cairo_surface_t *video_display = colored_icon_surface(0.95, 0.35, 0.10);
 	struct orange_assets assets = {0};
 	orange_assets_init(&assets);
 	add_test_icon(&assets, "image-x-generic", generic);
 	add_test_icon(&assets, "image-viewer", image_viewer);
 	add_test_icon(&assets, "org.gnome.Loupe", generic);
 	add_test_icon(&assets, "accessories-text-editor", notes);
+	add_test_icon(&assets, "org.gnome.TextEditor", text_editor);
 	add_test_icon(&assets, "video-player", video_player);
-	add_test_icon(&assets, "video-display", video_player);
+	add_test_icon(&assets, "video-display", video_display);
 	add_test_icon(&assets, "org.gnome.Showtime", generic);
 
 	const struct orange_desktop_entry entries[] = {
@@ -482,18 +485,20 @@ static void test_default_dock_prefers_role_icons_before_desktop_icons(void) {
 	struct orange_rect video_item = layout.dock_items[8];
 	assert(color_close(pixel_at(pixels, stride,
 		loupe_item.x + loupe_item.width / 2,
-		loupe_item.y + loupe_item.height / 2), 166, 56, 235));
+		loupe_item.y + loupe_item.height / 2), 242, 31, 46));
 	assert(color_close(pixel_at(pixels, stride,
 		notes_item.x + notes_item.width / 2,
-		notes_item.y + notes_item.height / 2), 255, 199, 26));
+		notes_item.y + notes_item.height / 2), 38, 64, 242));
 	assert(color_close(pixel_at(pixels, stride,
 		video_item.x + video_item.width / 2,
-		video_item.y + video_item.height / 2), 26, 204, 77));
+		video_item.y + video_item.height / 2), 242, 89, 26));
 
 	cairo_surface_destroy(generic);
 	cairo_surface_destroy(image_viewer);
 	cairo_surface_destroy(notes);
+	cairo_surface_destroy(text_editor);
 	cairo_surface_destroy(video_player);
+	cairo_surface_destroy(video_display);
 	orange_assets_finish(&assets);
 	free(pixels);
 }
@@ -504,7 +509,7 @@ int main(void) {
 	test_notification_center_renders_panel_cards_and_button();
 	test_desktop_volume_icon_draws();
 	test_dock_magnification_wave_paints_above_base_icons();
-	test_default_dock_prefers_role_icons_before_desktop_icons();
+	test_default_dock_prefers_desktop_icons_before_role_icons();
 	puts("shell visual tests passed");
 	return 0;
 }

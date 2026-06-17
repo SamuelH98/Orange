@@ -51,6 +51,8 @@
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
+#define DESKTOP_ENTRY_RELOAD_TICKS 5
+
 enum orange_cursor_mode {
 	ORANGE_CURSOR_PASSTHROUGH,
 	ORANGE_CURSOR_MOVE,
@@ -174,6 +176,7 @@ struct orange_server {
 	char app_menu_bus_name[128];
 	char app_menu_action_path[128];
 	int status_poll_ticks;
+	int desktop_entry_poll_ticks;
 	int hot_dock_index;
 	int last_dock_pointer_x;
 	int last_dock_pointer_y;
@@ -957,16 +960,31 @@ static const struct orange_desktop_entry *server_desktop_entry_for_app_id(
 	return NULL;
 }
 
+static void server_reload_desktop_entries(struct orange_server *server) {
+	if (server == NULL) {
+		return;
+	}
+	server->desktop_entry_count = orange_desktop_entry_load_all_xdg(
+		server->desktop_entries, 1024);
+}
+
 static void launch_desktop_entry(
 		const struct orange_desktop_entry *entry) {
 	if (entry == NULL) {
 		return;
 	}
 	char command[1024];
-	if (orange_desktop_entry_expand_exec(entry, command, sizeof(command))) {
-		launch_command(command);
+	bool expanded = orange_desktop_entry_expand_exec(entry,
+		command, sizeof(command));
+	const char *exec = expanded ? command : entry->exec;
+	if (orange_desktop_entry_id_matches(entry->id, "org.gnome.Settings") ||
+			strstr(exec, "gnome-control-center") != NULL) {
+		char wrapped[1200];
+		snprintf(wrapped, sizeof(wrapped),
+			"XDG_CURRENT_DESKTOP=GNOME %s", exec);
+		launch_command(wrapped);
 	} else {
-		launch_command(entry->exec);
+		launch_command(exec);
 	}
 }
 
@@ -3649,6 +3667,12 @@ static int handle_clock_timer(void *data) {
 	struct orange_server *server = data;
 	if (!server->desktop_drag_active) {
 		server_load_config(server, false);
+		if (server->desktop_entry_poll_ticks <= 0) {
+			server_reload_desktop_entries(server);
+			server->desktop_entry_poll_ticks = DESKTOP_ENTRY_RELOAD_TICKS;
+		} else {
+			server->desktop_entry_poll_ticks--;
+		}
 		update_volumes(server);
 	}
 	bool status_changed = false;
@@ -3699,6 +3723,7 @@ static bool server_init(struct orange_server *server,
 	server->last_dock_pointer_x = INT_MIN;
 	server->last_dock_pointer_y = INT_MIN;
 	server->status_poll_ticks = 0;
+	server->desktop_entry_poll_ticks = 0;
 	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 	server->context_menu_index = -1;
 	server->desktop_drag_index = -1;
@@ -3713,8 +3738,7 @@ static bool server_init(struct orange_server *server,
 	server_load_config(server, false);
 	status_set_defaults(&server->status);
 	server_update_status(server);
-	server->desktop_entry_count = orange_desktop_entry_load_all_xdg(
-		server->desktop_entries, 1024);
+	server_reload_desktop_entries(server);
 	update_volumes(server);
 	orange_assets_init(&server->assets);
 	orange_assets_load(&server->assets, options->asset_root,

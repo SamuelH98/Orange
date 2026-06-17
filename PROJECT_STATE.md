@@ -502,12 +502,42 @@ build here. They remain conditional for systems without GTK4 development files.
   `~/.cursors`.
 - **Dock glass and default order tuned**: Dock rendering now includes a
   downsampled framebuffer backdrop behind the translucent shade, the checked-in
-  defaults place Files before Launchpad, role icons are preferred before
-  `.desktop` icon fields for Image Viewer and Video Player, and shell layout
-  and visual tests cover the updated behavior.
+  defaults place Files before Launchpad, and shell layout and visual tests cover
+  the updated behavior.
+- **Dock app icons now follow installed desktop entries**: Dock icon selection
+  now uses installed `.desktop` `Icon=` fields before Orange role fallbacks, and
+  the asset resolver tries exact icon names before semantic aliases. Icon theme
+  index parsing now handles Ubuntu's long hicolor `Directories=` lines and the
+  large hicolor directory list, so installed GNOME app icons in
+  `hicolor/scalable/apps/org.gnome.*.svg` resolve instead of falling through to
+  the generic executable icon. Snap and Flatpak export roots are scanned for
+  desktop entries and icon themes even when the session omits them from
+  `XDG_DATA_DIRS`; dock IDs such as `firefox.desktop` match exported IDs such
+  as `firefox_firefox.desktop` or `org.mozilla.firefox.desktop`; and absolute
+  desktop-entry icon paths are covered by tests for Snap-style `Icon=/...`
+  values. The compositor also refreshes XDG desktop entries every few seconds
+  so newly installed dock apps can update without restarting Orange. Launching
+  the installed GNOME Settings desktop entry now sets `XDG_CURRENT_DESKTOP=GNOME`
+  for `gnome-control-center`, avoiding its GNOME/Unity guard when launched from
+  the Dock.
+- **Local dock GNOME apps installed through apt**: Ubuntu 24.04 packages were
+  installed for `gnome-calendar`, `gnome-contacts`, `gnome-software`, and
+  `loupe`. The configured apt sources did not provide packages or desktop
+  entries for `org.gnome.Showtime.desktop` or `org.gnome.Decibels.desktop`.
 
 #### Latest Validation
 
+- `ninja -C build` passed after desktop-entry refresh and icon precedence
+  changes.
+- `./build/test-assets`, `./build/test-shell-visual`, and
+  `./build/test-shell-layout` passed.
+- `meson test -C build --print-errorlogs` passed.
+- `./build/orange-render-shell /tmp/orange-shell.png` passed after installing
+  the available GNOME dock apps.
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf /tmp/orange-shell-maps-fixed.png`
+  passed and the rendered Dock shows the installed Maps map-pin icon.
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf /tmp/orange-shell-firefox-fixed.png`
+  passed and the rendered Dock shows the Snap-installed Firefox icon.
 - `ninja -C build` passed.
 - `meson test -C build --print-errorlogs` passed.
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once --width 1440 --height 900 --assets assets --config orange.conf` passed; DBus status probes logged sandbox connection errors but did not fail startup.

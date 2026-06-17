@@ -81,6 +81,26 @@ static void test_default_dock_apps_have_fallback_commands(void) {
 	}
 }
 
+static void test_firefox_dock_matches_snap_desktop_entry(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	const struct orange_desktop_entry entries[] = {
+		{
+			.id = "firefox_firefox",
+			.name = "Firefox",
+			.icon = "/snap/firefox/current/default256.png",
+			.exec = "/snap/bin/firefox %u",
+		},
+	};
+
+	assert(strcmp(config.dock_apps[2], "firefox.desktop") == 0);
+	assert(strcmp(orange_shell_dock_label(2, entries, 1, &config),
+		"Firefox") == 0);
+	const char *command = orange_shell_dock_command(2, entries, 1, &config);
+	assert(command != NULL);
+	assert(strstr(command, "/snap/bin/firefox") != NULL);
+}
+
 static void test_dock_trash_spacing_is_balanced(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
@@ -655,6 +675,7 @@ int main(void) {
 	test_dock_hit();
 	test_reordered_dock_hit_resolves_launcher();
 	test_default_dock_apps_have_fallback_commands();
+	test_firefox_dock_matches_snap_desktop_entry();
 	test_dock_trash_spacing_is_balanced();
 	test_desktop_hit();
 	test_desktop_requires_volumes();

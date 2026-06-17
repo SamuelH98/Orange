@@ -1078,14 +1078,14 @@ static const char *dock_icon_name(int launcher_idx,
 	if (bi != NULL) {
 		return bi;
 	}
-	const char *role_icon = dock_role_icon(app_id);
-	if (role_icon != NULL) {
-		return role_icon;
-	}
 	/* Look up in scanned .desktop entries */
 	const struct orange_desktop_entry *entry = lookup_entry(app_id, entries, entry_count);
 	if (entry != NULL && entry->icon[0] != '\0') {
 		return entry->icon;
+	}
+	const char *role_icon = dock_role_icon(app_id);
+	if (role_icon != NULL) {
+		return role_icon;
 	}
 	const char *fallback = fallback_icon(app_id);
 	if (fallback != NULL) {

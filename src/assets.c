@@ -12,9 +12,10 @@
 #define ICON_LOOKUP_SIZE 128
 #define ICON_LOOKUP_SCALE 1
 #define ICON_THEME_BASE_MAX 32
-#define ICON_THEME_DIR_MAX 256
+#define ICON_THEME_DIR_MAX 1024
 #define ICON_THEME_INHERITS_MAX 512
 #define ICON_THEME_DEPTH_MAX 12
+#define ICON_NAME_VARIANT_MAX 64
 
 enum icon_dir_type {
 	ICON_DIR_FIXED,
@@ -282,9 +283,10 @@ static void finalize_theme_dirs(struct icon_theme_info *info) {
 }
 
 static void parse_theme_index(FILE *file, struct icon_theme_info *info) {
-	char line[1024];
+	char *line = NULL;
+	size_t line_cap = 0;
 	char section[256] = "";
-	while (fgets(line, sizeof(line), file) != NULL) {
+	while (getline(&line, &line_cap, file) >= 0) {
 		char *start = trim(line);
 		if (start[0] == '\0' || start[0] == '#' || start[0] == ';') {
 			continue;
@@ -310,11 +312,13 @@ static void parse_theme_index(FILE *file, struct icon_theme_info *info) {
 		if (strcmp(section, "Icon Theme") == 0) {
 			if (strcmp(key, "Inherits") == 0) {
 				snprintf(info->inherits, sizeof(info->inherits), "%s", value);
-		} else if (strcmp(key, "Directories") == 0 ||
-				strcmp(key, "ScaledDirectories") == 0) {
-			char list[65536];
-			snprintf(list, sizeof(list), "%s", value);
-			add_theme_dir_list(info, list);
+			} else if (strcmp(key, "Directories") == 0 ||
+					strcmp(key, "ScaledDirectories") == 0) {
+				char *list = strdup(value);
+				if (list != NULL) {
+					add_theme_dir_list(info, list);
+					free(list);
+				}
 			}
 			continue;
 		}
@@ -343,6 +347,7 @@ static void parse_theme_index(FILE *file, struct icon_theme_info *info) {
 			}
 		}
 	}
+	free(line);
 	finalize_theme_dirs(info);
 }
 
@@ -397,6 +402,13 @@ static void collect_icon_bases(const struct orange_assets *assets,
 			add_icon_base(bases, count, path);
 		}
 		token = strtok_r(NULL, ":", &save);
+	}
+	add_icon_base(bases, count, "/var/lib/snapd/desktop/icons");
+	add_icon_base(bases, count, "/var/lib/flatpak/exports/share/icons");
+	if (home != NULL && home[0] != '\0') {
+		snprintf(path, sizeof(path),
+			"%s/.local/share/flatpak/exports/share/icons", home);
+		add_icon_base(bases, count, path);
 	}
 	add_icon_base(bases, count, "/usr/share/pixmaps");
 }
@@ -515,7 +527,7 @@ static int generate_themed_icon_names(const char *name,
 		snprintf(base, sizeof(base), "%s", name);
 	}
 
-	char splits[ICON_THEME_DIR_MAX][ORANGE_ASSET_ICON_NAME_MAX];
+	char splits[ICON_NAME_VARIANT_MAX][ORANGE_ASSET_ICON_NAME_MAX];
 	int split_count = 0;
 	snprintf(splits[split_count++], sizeof(splits[0]), "%s", base);
 
@@ -523,7 +535,7 @@ static int generate_themed_icon_names(const char *name,
 	snprintf(buf, sizeof(buf), "%s", base);
 	char *p = buf + strlen(buf);
 
-	while (split_count < ICON_THEME_DIR_MAX) {
+	while (split_count < ICON_NAME_VARIANT_MAX) {
 		while (p > buf && *p != '-') {
 			p--;
 		}
@@ -757,9 +769,9 @@ static bool find_icon_file_with_fallbacks(char *out,
 		return false;
 	}
 
-	char names[ICON_THEME_DIR_MAX * 2][ORANGE_ASSET_ICON_NAME_MAX];
+	char names[ICON_NAME_VARIANT_MAX * 2][ORANGE_ASSET_ICON_NAME_MAX];
 	int name_count = generate_themed_icon_names(icon_name,
-		names, ICON_THEME_DIR_MAX * 2);
+		names, ICON_NAME_VARIANT_MAX * 2);
 
 	for (int i = 0; i < name_count; i++) {
 		if (find_icon_file(out, out_size, names[i], assets)) {
@@ -996,19 +1008,18 @@ static cairo_surface_t *resolve_icon_surface(
 		return NULL;
 	}
 
+	char path[4096];
+	if (find_icon_file_with_fallbacks(path, sizeof(path), name, assets)) {
+		return load_icon_file(path);
+	}
+
 	const char *const *aliases = aliases_for_icon(name);
 	if (aliases != NULL) {
 		for (int i = 0; aliases[i] != NULL; i++) {
-			char path[4096];
 			if (find_icon_file(path, sizeof(path), aliases[i], assets)) {
 				return load_icon_file(path);
 			}
 		}
-	}
-
-	char path[4096];
-	if (find_icon_file_with_fallbacks(path, sizeof(path), name, assets)) {
-		return load_icon_file(path);
 	}
 
 	if (strcmp(name, "application-x-executable") != 0 &&

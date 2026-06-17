@@ -41,6 +41,13 @@ static void strip_desktop_suffix(char *name) {
 	}
 }
 
+static const char *desktop_id_tail(const char *id) {
+	const char *dot = strrchr(id, '.');
+	const char *underscore = strrchr(id, '_');
+	const char *separator = dot > underscore ? dot : underscore;
+	return separator != NULL ? separator + 1 : id;
+}
+
 bool orange_desktop_entry_id_matches(const char *entry_id, const char *id) {
 	if (entry_id == NULL || id == NULL || entry_id[0] == '\0' ||
 			id[0] == '\0') {
@@ -56,9 +63,22 @@ bool orange_desktop_entry_id_matches(const char *entry_id, const char *id) {
 		return true;
 	}
 	size_t entry_len = strlen(entry_id);
-	return entry_len + 8 == id_len &&
+	if (entry_len + 8 == id_len &&
 		strncmp(entry_id, id, entry_len) == 0 &&
-		strcmp(id + entry_len, ".desktop") == 0;
+			strcmp(id + entry_len, ".desktop") == 0) {
+		return true;
+	}
+
+	char entry_normal[256];
+	char id_normal[256];
+	snprintf(entry_normal, sizeof(entry_normal), "%s", entry_id);
+	snprintf(id_normal, sizeof(id_normal), "%s", id);
+	strip_desktop_suffix(entry_normal);
+	strip_desktop_suffix(id_normal);
+	const char *entry_tail = desktop_id_tail(entry_normal);
+	const char *id_tail = desktop_id_tail(id_normal);
+	return (entry_tail != entry_normal || id_tail != id_normal) &&
+		strcmp(entry_tail, id_tail) == 0;
 }
 
 static bool append_char(char *out, size_t out_size, size_t *len, char c) {
@@ -280,6 +300,33 @@ bool orange_desktop_entry_load_all(
 	return true;
 }
 
+static void load_applications_dir(
+		const char *path,
+		struct orange_desktop_entry *entries,
+		size_t capacity,
+		size_t *count) {
+	if (path == NULL || path[0] == '\0' || *count >= capacity) {
+		return;
+	}
+	size_t dir_count = 0;
+	orange_desktop_entry_load_all(path, entries + *count,
+		capacity - *count, &dir_count);
+	*count += dir_count;
+}
+
+static void load_applications_base(
+		const char *base,
+		struct orange_desktop_entry *entries,
+		size_t capacity,
+		size_t *count) {
+	if (base == NULL || base[0] == '\0') {
+		return;
+	}
+	char path[4096];
+	snprintf(path, sizeof(path), "%s/applications", base);
+	load_applications_dir(path, entries, capacity, count);
+}
+
 size_t orange_desktop_entry_load_all_xdg(
 		struct orange_desktop_entry *entries,
 		size_t capacity) {
@@ -289,19 +336,11 @@ size_t orange_desktop_entry_load_all_xdg(
 	const char *xdg_data_home = getenv("XDG_DATA_HOME");
 	const char *home = getenv("HOME");
 	if (xdg_data_home != NULL && xdg_data_home[0] != '\0') {
-		char path[4096];
-		snprintf(path, sizeof(path), "%s/applications", xdg_data_home);
-		size_t dir_count = 0;
-		orange_desktop_entry_load_all(path, entries + count,
-			capacity - count, &dir_count);
-		count += dir_count;
+		load_applications_base(xdg_data_home, entries, capacity, &count);
 	} else if (home != NULL && home[0] != '\0') {
 		char path[4096];
 		snprintf(path, sizeof(path), "%s/.local/share/applications", home);
-		size_t dir_count = 0;
-		orange_desktop_entry_load_all(path, entries + count,
-			capacity - count, &dir_count);
-		count += dir_count;
+		load_applications_dir(path, entries, capacity, &count);
 	}
 
 	/* XDG data dirs: $XDG_DATA_DIRS/applications/ */
@@ -315,13 +354,19 @@ size_t orange_desktop_entry_load_all_xdg(
 	char *save;
 	char *token = strtok_r(dirs_copy, ":", &save);
 	while (token != NULL && count < capacity) {
-		char path[4096];
-		snprintf(path, sizeof(path), "%s/applications", token);
-		size_t dir_count = 0;
-		orange_desktop_entry_load_all(path, entries + count,
-			capacity - count, &dir_count);
-		count += dir_count;
+		load_applications_base(token, entries, capacity, &count);
 		token = strtok_r(NULL, ":", &save);
+	}
+
+	load_applications_base("/var/lib/snapd/desktop",
+		entries, capacity, &count);
+	load_applications_base("/var/lib/flatpak/exports/share",
+		entries, capacity, &count);
+	if (home != NULL && home[0] != '\0') {
+		char path[4096];
+		snprintf(path, sizeof(path),
+			"%s/.local/share/flatpak/exports/share", home);
+		load_applications_base(path, entries, capacity, &count);
 	}
 
 	return count;

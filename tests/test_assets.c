@@ -74,14 +74,43 @@ static void write_index(const char *path, const char *inherits) {
 	fclose(file);
 }
 
+static void write_long_hicolor_index(const char *path) {
+	FILE *file = fopen(path, "w");
+	assert(file != NULL);
+	fprintf(file,
+		"[Icon Theme]\n"
+		"Name=Hicolor\n"
+		"Comment=Fallback\n"
+		"Directories=");
+	for (int i = 0; i < 300; i++) {
+		fprintf(file, "dummy%03d/apps,", i);
+	}
+	fprintf(file,
+		"128x128/apps,scalable/apps\n"
+		"\n"
+		"[128x128/apps]\n"
+		"Size=128\n"
+		"Type=Fixed\n"
+		"Context=Applications\n"
+		"\n"
+		"[scalable/apps]\n"
+		"Size=128\n"
+		"Type=Scalable\n"
+		"MinSize=1\n"
+		"MaxSize=512\n"
+		"Context=Applications\n");
+	fclose(file);
+}
+
 int main(void) {
 	mkdir_p("/tmp/orange-assets-test/assets");
 	mkdir_p("/tmp/orange-assets-test/data/icons/TestTheme/128x128/apps");
 	mkdir_p("/tmp/orange-assets-test/data/icons/TestTheme/places/scalable");
 	mkdir_p("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps");
+	mkdir_p("/tmp/orange-assets-test/data/icons/hicolor/scalable/apps");
 	assert(setenv("XDG_DATA_HOME", "/tmp/orange-assets-test/data", 1) == 0);
 	write_index("/tmp/orange-assets-test/data/icons/TestTheme/index.theme", NULL);
-	write_index("/tmp/orange-assets-test/data/icons/hicolor/index.theme", NULL);
+	write_long_hicolor_index("/tmp/orange-assets-test/data/icons/hicolor/index.theme");
 	write_png("/tmp/orange-assets-test/data/icons/TestTheme/128x128/apps/test-app.png",
 		1.0, 0.2, 0.1);
 	write_png("/tmp/orange-assets-test/data/icons/TestTheme/places/scalable/folder.png",
@@ -112,6 +141,9 @@ int main(void) {
 		0.1, 0.7, 0.8);
 	write_png("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps/image-viewer.png",
 		0.7, 0.2, 0.9);
+	write_png("/tmp/orange-assets-test/data/icons/hicolor/scalable/apps/org.gnome.Maps.png",
+		0.1, 0.65, 0.3);
+	write_png("/tmp/orange-assets-test/absolute-icon.png", 0.7, 0.1, 0.35);
 
 	struct orange_assets assets;
 	orange_assets_init(&assets);
@@ -164,7 +196,7 @@ int main(void) {
 	cairo_surface_t *video = orange_assets_icon(&assets,
 		ORANGE_ASSET_ICON_LIGHT, "video-display");
 	assert(video != NULL);
-	assert_pixel_rgb(video, 26, 204, 77);
+	assert_pixel_rgb(video, 230, 26, 26);
 
 	cairo_surface_t *loupe = orange_assets_icon(&assets,
 		ORANGE_ASSET_ICON_LIGHT, "org.gnome.Loupe");
@@ -175,6 +207,16 @@ int main(void) {
 		ORANGE_ASSET_ICON_LIGHT, "image-x-generic");
 	assert(image_viewer != NULL);
 	assert_pixel_rgb(image_viewer, 179, 51, 230);
+
+	cairo_surface_t *maps = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "org.gnome.Maps");
+	assert(maps != NULL);
+	assert_pixel_rgb(maps, 26, 166, 77);
+
+	cairo_surface_t *absolute = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "/tmp/orange-assets-test/absolute-icon.png");
+	assert(absolute != NULL);
+	assert_pixel_rgb(absolute, 179, 26, 89);
 
 	assert(orange_assets_icon(&assets,
 		ORANGE_ASSET_ICON_LIGHT, "missing-app") == NULL);
