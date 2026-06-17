@@ -169,6 +169,10 @@ struct orange_server {
 	bool system_menu_open;
 	bool notification_center_open;
 	struct orange_status_state status;
+	struct orange_app_menu_model app_menu;
+	char app_menu_cache_key[128];
+	char app_menu_bus_name[128];
+	char app_menu_action_path[128];
 	int status_poll_ticks;
 	int hot_dock_index;
 	int last_dock_pointer_x;
@@ -813,8 +817,129 @@ static void launch_app_picker(void) {
 	launch_command("wofi --show drun || rofi -show drun || true");
 }
 
+static uint32_t monotonic_time_msec(void) {
+	struct timespec ts;
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+		return 0;
+	}
+	return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
+
 static bool contains_case(const char *haystack, const char *needle) {
 	return haystack != NULL && needle != NULL && strcasestr(haystack, needle) != NULL;
+}
+
+static void app_menu_model_reset(struct orange_app_menu_model *menu) {
+	if (menu != NULL) {
+		memset(menu, 0, sizeof(*menu));
+	}
+}
+
+static bool gmenu_item_string(
+		GMenuModel *model,
+		int item,
+		const char *attribute,
+		char *buffer,
+		size_t buffer_size) {
+	if (buffer == NULL || buffer_size == 0) {
+		return false;
+	}
+	buffer[0] = '\0';
+	GVariant *value = g_menu_model_get_item_attribute_value(
+		model, item, attribute, G_VARIANT_TYPE_STRING);
+	if (value == NULL) {
+		return false;
+	}
+	const char *text = g_variant_get_string(value, NULL);
+	if (text != NULL && text[0] != '\0') {
+		snprintf(buffer, buffer_size, "%s", text);
+	}
+	g_variant_unref(value);
+	return buffer[0] != '\0';
+}
+
+static void parse_gmenu_items(
+		GMenuModel *model,
+		struct orange_app_menu_model *menu,
+		int tab,
+		int depth) {
+	if (model == NULL || menu == NULL ||
+			tab < 0 || tab >= ORANGE_APP_MENU_TAB_COUNT ||
+			depth > 4) {
+		return;
+	}
+	int n_items = g_menu_model_get_n_items(model);
+	for (int i = 0; i < n_items; i++) {
+		GMenuModel *section = g_menu_model_get_item_link(
+			model, i, G_MENU_LINK_SECTION);
+		if (section != NULL) {
+			if (menu->item_counts[tab] > 0 &&
+					menu->item_counts[tab] < ORANGE_APP_MENU_ITEM_MAX) {
+				menu->items[tab][menu->item_counts[tab]].separator = true;
+			}
+			parse_gmenu_items(section, menu, tab, depth + 1);
+			g_object_unref(section);
+			continue;
+		}
+
+		if (menu->item_counts[tab] >= ORANGE_APP_MENU_ITEM_MAX) {
+			break;
+		}
+		struct orange_app_menu_item *out =
+			&menu->items[tab][menu->item_counts[tab]];
+		if (!gmenu_item_string(model, i, G_MENU_ATTRIBUTE_LABEL,
+				out->label, sizeof(out->label))) {
+			GMenuModel *submenu = g_menu_model_get_item_link(
+				model, i, G_MENU_LINK_SUBMENU);
+			if (submenu != NULL) {
+				parse_gmenu_items(submenu, menu, tab, depth + 1);
+				g_object_unref(submenu);
+			}
+			continue;
+		}
+		gmenu_item_string(model, i, G_MENU_ATTRIBUTE_ACTION,
+			out->action, sizeof(out->action));
+		out->enabled = true;
+		menu->item_counts[tab]++;
+	}
+}
+
+static bool parse_gmenu_root(
+		GMenuModel *root,
+		struct orange_app_menu_model *menu) {
+	if (root == NULL || menu == NULL) {
+		return false;
+	}
+	int n_items = g_menu_model_get_n_items(root);
+	for (int i = 0; i < n_items && menu->tab_count < ORANGE_APP_MENU_TAB_COUNT; i++) {
+		char label[ORANGE_APP_MENU_LABEL_MAX];
+		GMenuModel *submenu = g_menu_model_get_item_link(
+			root, i, G_MENU_LINK_SUBMENU);
+		GMenuModel *section = NULL;
+		if (submenu == NULL) {
+			section = g_menu_model_get_item_link(root, i, G_MENU_LINK_SECTION);
+		}
+		GMenuModel *child = submenu != NULL ? submenu : section;
+		if (child == NULL) {
+			continue;
+		}
+		if (!gmenu_item_string(root, i, G_MENU_ATTRIBUTE_LABEL,
+				label, sizeof(label))) {
+			if (section != NULL) {
+				parse_gmenu_root(section, menu);
+			}
+			g_object_unref(child);
+			continue;
+		}
+		int tab = menu->tab_count++;
+		snprintf(menu->tab_labels[tab],
+			sizeof(menu->tab_labels[tab]), "%s", label);
+		parse_gmenu_items(child, menu, tab, 0);
+		g_object_unref(child);
+	}
+	menu->available = menu->tab_count > 0;
+	menu->native = menu->available;
+	return menu->available;
 }
 
 static const struct orange_desktop_entry *server_desktop_entry_for_app_id(
@@ -854,16 +979,22 @@ static void launch_dock_launcher(
 		return;
 	}
 
-	const char *command = orange_shell_dock_command(launcher_idx,
-		server->desktop_entries, (int)server->desktop_entry_count,
-		&server->config);
+	const char *app_id = server->config.dock_apps[launcher_idx];
+	if (orange_shell_builtin_command(app_id) != NULL) {
+		launch_command(orange_shell_builtin_command(app_id));
+		return;
+	}
 	const struct orange_desktop_entry *entry =
-		server_desktop_entry_for_app_id(server,
-			server->config.dock_apps[launcher_idx]);
+		server_desktop_entry_for_app_id(server, app_id);
 	if (entry != NULL) {
 		launch_desktop_entry(entry);
 	} else {
-		launch_command(command);
+		const char *command = orange_shell_dock_command(launcher_idx,
+			server->desktop_entries, (int)server->desktop_entry_count,
+			&server->config);
+		if (command != NULL) {
+			launch_command(command);
+		}
 	}
 }
 
@@ -895,21 +1026,6 @@ static int dock_launcher_for_visible_index(
 		}
 	}
 	return visible_index < visible ? launchers[visible_index] : -1;
-}
-
-static int dock_visible_index_for_launcher(
-		struct orange_server *server,
-		int launcher_idx) {
-	if (server == NULL || launcher_idx < 0) {
-		return -1;
-	}
-	int dock_count = orange_shell_dock_count(&server->config);
-	for (int i = 0; i < dock_count; i++) {
-		if (dock_launcher_for_visible_index(server, i) == launcher_idx) {
-			return i;
-		}
-	}
-	return -1;
 }
 
 static int dock_launcher_for_view(struct orange_server *server, struct orange_view *view) {
@@ -982,6 +1098,25 @@ static int dock_launcher_for_view(struct orange_server *server, struct orange_vi
 	return -1;
 }
 
+static void focus_view(struct orange_view *view, struct wlr_surface *surface);
+
+static bool focus_view_for_app_id(struct orange_server *server,
+		const char *needle) {
+	struct orange_view *view;
+	wl_list_for_each(view, &server->views, link) {
+		if (!view->mapped) continue;
+		const char *app_id = view->xdg_surface->toplevel->app_id;
+		if (app_id != NULL && strcasestr(app_id, needle) != NULL) {
+			struct wlr_surface *surface = view->xdg_surface->surface;
+			if (surface != NULL) {
+				focus_view(view, surface);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 static void server_update_dock_open(struct orange_server *server) {
 	memset(server->dock_open, 0, sizeof(server->dock_open));
 	struct orange_view *view;
@@ -994,6 +1129,209 @@ static void server_update_dock_open(struct orange_server *server) {
 			server->dock_open[index] = true;
 		}
 	}
+}
+
+static void format_app_id_label(
+		char *buffer,
+		size_t buffer_size,
+		const char *app_id) {
+	if (buffer == NULL || buffer_size == 0) {
+		return;
+	}
+	buffer[0] = '\0';
+	if (app_id == NULL || app_id[0] == '\0') {
+		return;
+	}
+
+	const char *start = app_id;
+	size_t len = strlen(app_id);
+	const char *suffixes[] = {".desktop", ".exe", NULL};
+	for (int i = 0; suffixes[i] != NULL; i++) {
+		size_t suffix_len = strlen(suffixes[i]);
+		if (len > suffix_len &&
+				strcasecmp(app_id + len - suffix_len, suffixes[i]) == 0) {
+			len -= suffix_len;
+			break;
+		}
+	}
+	for (size_t i = len; i > 0; i--) {
+		if (app_id[i - 1] == '.') {
+			start = app_id + i;
+			len -= i;
+			break;
+		}
+	}
+	if (len >= buffer_size) {
+		len = buffer_size - 1;
+	}
+	for (size_t i = 0; i < len; i++) {
+		char c = start[i];
+		buffer[i] = c == '-' || c == '_' ? ' ' : c;
+	}
+	buffer[len] = '\0';
+	if (buffer[0] >= 'a' && buffer[0] <= 'z') {
+		buffer[0] = (char)(buffer[0] - 'a' + 'A');
+	}
+	for (size_t i = 1; buffer[i] != '\0'; i++) {
+		if (buffer[i - 1] == ' ' && buffer[i] >= 'a' && buffer[i] <= 'z') {
+			buffer[i] = (char)(buffer[i] - 'a' + 'A');
+		}
+	}
+}
+
+static void server_active_app_label(
+		struct orange_server *server,
+		char *buffer,
+		size_t buffer_size) {
+	if (buffer == NULL || buffer_size == 0) {
+		return;
+	}
+	snprintf(buffer, buffer_size, "%s", "Files");
+	if (server == NULL || server->focused_view == NULL ||
+			!server->focused_view->mapped ||
+			server->focused_view->xdg_surface == NULL ||
+			server->focused_view->xdg_surface->toplevel == NULL) {
+		return;
+	}
+
+	int launcher_idx = dock_launcher_for_view(server, server->focused_view);
+	const char *label = launcher_idx >= 0 ?
+		orange_shell_dock_label(launcher_idx,
+			server->desktop_entries,
+			(int)server->desktop_entry_count,
+			&server->config) : NULL;
+	if (label != NULL && label[0] != '\0') {
+		snprintf(buffer, buffer_size, "%s", label);
+		return;
+	}
+
+	const char *app_id = server->focused_view->xdg_surface->toplevel->app_id;
+	format_app_id_label(buffer, buffer_size, app_id);
+	if (buffer[0] != '\0') {
+		return;
+	}
+
+	const char *title = server->focused_view->xdg_surface->toplevel->title;
+	if (title != NULL && title[0] != '\0') {
+		snprintf(buffer, buffer_size, "%s", title);
+	}
+}
+
+static const char *focused_app_id(struct orange_server *server) {
+	if (server == NULL || server->focused_view == NULL ||
+			!server->focused_view->mapped ||
+			server->focused_view->xdg_surface == NULL ||
+			server->focused_view->xdg_surface->toplevel == NULL) {
+		return NULL;
+	}
+	return server->focused_view->xdg_surface->toplevel->app_id;
+}
+
+static void strip_desktop_suffix(
+		const char *source,
+		char *buffer,
+		size_t buffer_size) {
+	if (buffer == NULL || buffer_size == 0) {
+		return;
+	}
+	buffer[0] = '\0';
+	if (source == NULL || source[0] == '\0') {
+		return;
+	}
+	snprintf(buffer, buffer_size, "%s", source);
+	size_t len = strlen(buffer);
+	const char *suffix = ".desktop";
+	size_t suffix_len = strlen(suffix);
+	if (len > suffix_len &&
+			strcasecmp(buffer + len - suffix_len, suffix) == 0) {
+		buffer[len - suffix_len] = '\0';
+	}
+}
+
+static bool import_gmenu_for_bus_name(
+		struct orange_server *server,
+		GDBusConnection *connection,
+		const char *bus_name,
+		struct orange_app_menu_model *menu) {
+	static const char *menu_paths[] = {
+		"/org/gtk/menus",
+		"/org/gtk/Menus",
+		NULL,
+	};
+	if (connection == NULL || bus_name == NULL ||
+			!g_dbus_is_name(bus_name)) {
+		return false;
+	}
+	for (int i = 0; menu_paths[i] != NULL; i++) {
+		struct orange_app_menu_model candidate;
+		app_menu_model_reset(&candidate);
+		GDBusMenuModel *dbus_model = g_dbus_menu_model_get(
+			connection, bus_name, menu_paths[i]);
+		if (dbus_model == NULL) {
+			continue;
+		}
+		bool ok = parse_gmenu_root(G_MENU_MODEL(dbus_model), &candidate);
+		g_object_unref(dbus_model);
+		if (ok) {
+			*menu = candidate;
+			snprintf(server->app_menu_bus_name,
+				sizeof(server->app_menu_bus_name), "%s", bus_name);
+			snprintf(server->app_menu_action_path,
+				sizeof(server->app_menu_action_path), "%s", "/org/gtk/Actions");
+			return true;
+		}
+	}
+	return false;
+}
+
+static void server_update_app_menu_model(struct orange_server *server) {
+	char active_label[ORANGE_APP_MENU_LABEL_MAX];
+	server_active_app_label(server, active_label, sizeof(active_label));
+	const char *app_id = focused_app_id(server);
+	char key[128];
+	snprintf(key, sizeof(key), "%s|%s",
+		app_id != NULL ? app_id : "",
+		active_label);
+	if (strcmp(server->app_menu_cache_key, key) == 0) {
+		return;
+	}
+	snprintf(server->app_menu_cache_key,
+		sizeof(server->app_menu_cache_key), "%s", key);
+	app_menu_model_reset(&server->app_menu);
+	server->app_menu_bus_name[0] = '\0';
+	server->app_menu_action_path[0] = '\0';
+
+	GError *error = NULL;
+	GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
+	if (error != NULL) {
+		g_error_free(error);
+	}
+	if (connection == NULL) {
+		return;
+	}
+
+	char stripped_id[128];
+	strip_desktop_suffix(app_id, stripped_id, sizeof(stripped_id));
+	const char *candidates[5] = {0};
+	int count = 0;
+	if (stripped_id[0] != '\0') {
+		candidates[count++] = stripped_id;
+	}
+	if (contains_case(app_id, "firefox") ||
+			contains_case(active_label, "firefox")) {
+		candidates[count++] = "org.mozilla.firefox";
+	}
+	if (contains_case(app_id, "nautilus") ||
+			contains_case(active_label, "files")) {
+		candidates[count++] = "org.gnome.Nautilus";
+	}
+	for (int i = 0; i < count; i++) {
+		if (import_gmenu_for_bus_name(server, connection,
+				candidates[i], &server->app_menu)) {
+			break;
+		}
+	}
+	g_object_unref(connection);
 }
 
 static struct orange_output *output_from_wlr_output(
@@ -1032,17 +1370,23 @@ static void compute_shell_layout_for_output(
 		struct orange_server *server,
 		struct orange_output *output,
 		struct orange_shell_layout *layout) {
+	server_update_app_menu_model(server);
 	orange_shell_layout_compute(output->width, output->height,
 		server->system_menu_open,
 		&server->config,
 		(int)server->desktop_entry_count,
 		server->desktop_volume_count,
 		layout);
+	char active_app_label[ORANGE_APP_MENU_LABEL_MAX];
+	server_active_app_label(server, active_app_label, sizeof(active_app_label));
+	orange_shell_layout_set_app_menu_tabs(layout, active_app_label,
+		&server->app_menu);
 	orange_shell_layout_set_context_menu(layout,
 		server->context_menu_kind,
 		server->context_menu_index,
 		server->context_menu_cursor_x,
-		server->context_menu_cursor_y);
+		server->context_menu_cursor_y,
+		&server->app_menu);
 	if (server->notification_center_open) {
 		orange_shell_layout_set_notification_center(layout);
 	}
@@ -1165,6 +1509,7 @@ static void output_redraw_shell(struct orange_output *output) {
 	wlr_output_layout_output_coords(output->server->output_layout,
 		output->wlr_output, &cursor_x, &cursor_y);
 
+	server_update_app_menu_model(output->server);
 	server_update_dock_open(output->server);
 	struct orange_shell_state state = {
 		.system_menu_open = output->server->system_menu_open,
@@ -1195,6 +1540,9 @@ static void output_redraw_shell(struct orange_output *output) {
 		.context_menu_cursor_y = output->server->context_menu_cursor_y,
 	};
 	memcpy(state.dock_open, output->server->dock_open, sizeof(state.dock_open));
+	server_active_app_label(output->server,
+		state.active_app_label, sizeof(state.active_app_label));
+	state.app_menu = output->server->app_menu;
 	orange_shell_draw(output->shell_buffer->pixels,
 		output->width,
 		output->height,
@@ -1234,6 +1582,7 @@ static void focus_view(struct orange_view *view, struct wlr_surface *surface) {
 			keyboard->num_keycodes,
 			&keyboard->modifiers);
 	}
+	server_mark_shell_dirty(server);
 }
 
 static struct wlr_surface *surface_at(
@@ -1339,6 +1688,32 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 	if (surface != NULL) {
 		wlr_seat_pointer_notify_enter(server->seat, surface, sx, sy);
 		wlr_seat_pointer_notify_motion(server->seat, time_msec, sx, sy);
+
+		if (view != NULL && server->xcursor_manager != NULL) {
+			double cx = server->cursor->x;
+			double cy = server->cursor->y;
+			int l = view->x, r = view->x + view->width;
+			int t = view->y, b = view->y + view->height;
+			if (cx >= l && cx <= r && cy >= t && cy <= b) {
+				uint32_t edges = 0;
+				if (cx - l < 5) edges |= WLR_EDGE_LEFT;
+				if (r - cx < 5) edges |= WLR_EDGE_RIGHT;
+				if (cy - t < 5) edges |= WLR_EDGE_TOP;
+				if (b - cy < 5) edges |= WLR_EDGE_BOTTOM;
+				if (edges) {
+					const char *name = "default";
+					if (edges == (WLR_EDGE_LEFT)) name = "w-resize";
+					else if (edges == (WLR_EDGE_RIGHT)) name = "e-resize";
+					else if (edges == (WLR_EDGE_TOP)) name = "n-resize";
+					else if (edges == (WLR_EDGE_BOTTOM)) name = "s-resize";
+					else if (edges == (WLR_EDGE_LEFT | WLR_EDGE_TOP)) name = "nw-resize";
+					else if (edges == (WLR_EDGE_RIGHT | WLR_EDGE_TOP)) name = "ne-resize";
+					else if (edges == (WLR_EDGE_LEFT | WLR_EDGE_BOTTOM)) name = "sw-resize";
+					else if (edges == (WLR_EDGE_RIGHT | WLR_EDGE_BOTTOM)) name = "se-resize";
+					wlr_cursor_set_xcursor(server->cursor, server->xcursor_manager, name);
+				}
+			}
+		}
 	} else {
 		wlr_cursor_set_xcursor(server->cursor, server->xcursor_manager, "default");
 		wlr_seat_pointer_notify_clear_focus(server->seat);
@@ -1414,6 +1789,57 @@ static void close_focused_view(struct orange_server *server) {
 	if (server->focused_view != NULL && server->focused_view->mapped) {
 		wlr_xdg_toplevel_send_close(server->focused_view->xdg_surface->toplevel);
 	}
+}
+
+static bool add_named_modifier(
+		struct wlr_keyboard *keyboard,
+		struct wlr_keyboard_modifiers *modifiers,
+		const char *name) {
+	if (keyboard == NULL || keyboard->keymap == NULL ||
+			modifiers == NULL || name == NULL) {
+		return false;
+	}
+	xkb_mod_index_t index = xkb_keymap_mod_get_index(keyboard->keymap, name);
+	if (index == XKB_MOD_INVALID || index >= sizeof(xkb_mod_mask_t) * 8) {
+		return false;
+	}
+	modifiers->depressed |= ((xkb_mod_mask_t)1 << index);
+	return true;
+}
+
+static bool send_focused_shortcut(
+		struct orange_server *server,
+		uint32_t keycode,
+		bool ctrl,
+		bool shift,
+		bool alt) {
+	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
+	if (keyboard == NULL || server->focused_view == NULL ||
+			!server->focused_view->mapped) {
+		return false;
+	}
+
+	struct wlr_keyboard_modifiers saved = keyboard->modifiers;
+	struct wlr_keyboard_modifiers next = saved;
+	if (ctrl) {
+		add_named_modifier(keyboard, &next, XKB_MOD_NAME_CTRL);
+	}
+	if (shift) {
+		add_named_modifier(keyboard, &next, XKB_MOD_NAME_SHIFT);
+	}
+	if (alt) {
+		add_named_modifier(keyboard, &next, XKB_MOD_NAME_ALT);
+	}
+
+	uint32_t now = monotonic_time_msec();
+	wlr_seat_set_keyboard(server->seat, keyboard);
+	wlr_seat_keyboard_notify_modifiers(server->seat, &next);
+	wlr_seat_keyboard_notify_key(server->seat, now, keycode,
+		WL_KEYBOARD_KEY_STATE_PRESSED);
+	wlr_seat_keyboard_notify_key(server->seat, now, keycode,
+		WL_KEYBOARD_KEY_STATE_RELEASED);
+	wlr_seat_keyboard_notify_modifiers(server->seat, &saved);
+	return true;
 }
 
 static void cycle_focus(struct orange_server *server) {
@@ -1499,10 +1925,15 @@ static void apply_fullscreen(struct orange_view *view, bool fullscreen) {
 static void handle_shell_menu_action(struct orange_server *server, int index) {
 	switch (index) {
 	case 0:
-		launch_command("GSK_RENDERER=cairo build/orange-about || true");
+		if (!focus_view_for_app_id(server, ".About")) {
+			launch_command("GSK_RENDERER=cairo build/orange-about || true");
+		}
 		break;
 	case 1:
-		launch_command(orange_settings_command);
+		if (!focus_view_for_app_id(server, "orange-settings") &&
+				!focus_view_for_app_id(server, "settings")) {
+			launch_command(orange_settings_command);
+		}
 		break;
 	case 2:
 		launch_command("gnome-software || plasma-discover || true");
@@ -1567,13 +1998,334 @@ static void remove_widget(struct orange_server *server, int target) {
 	orange_config_save(&server->config, server->options->config_path);
 }
 
+static bool activate_imported_app_menu_action(
+		struct orange_server *server,
+		enum orange_context_menu_kind kind,
+		int item_index) {
+	if (server == NULL || !server->app_menu.available ||
+			!server->app_menu.native ||
+			server->app_menu_bus_name[0] == '\0') {
+		return false;
+	}
+	int tab = -1;
+	switch (kind) {
+	case ORANGE_CONTEXT_MENU_APP:
+		tab = ORANGE_APP_MENU_TAB_APP;
+		break;
+	case ORANGE_CONTEXT_MENU_APP_FILE:
+		tab = ORANGE_APP_MENU_TAB_FILE;
+		break;
+	case ORANGE_CONTEXT_MENU_APP_EDIT:
+		tab = ORANGE_APP_MENU_TAB_EDIT;
+		break;
+	case ORANGE_CONTEXT_MENU_APP_VIEW:
+		tab = ORANGE_APP_MENU_TAB_VIEW;
+		break;
+	case ORANGE_CONTEXT_MENU_APP_GO:
+	case ORANGE_CONTEXT_MENU_APP_HISTORY:
+		tab = ORANGE_APP_MENU_TAB_GO;
+		break;
+	case ORANGE_CONTEXT_MENU_APP_WINDOW:
+	case ORANGE_CONTEXT_MENU_APP_BOOKMARKS:
+		tab = ORANGE_APP_MENU_TAB_WINDOW;
+		break;
+	case ORANGE_CONTEXT_MENU_APP_TOOLS:
+		tab = ORANGE_APP_MENU_TAB_TOOLS;
+		break;
+	case ORANGE_CONTEXT_MENU_APP_HELP:
+		tab = ORANGE_APP_MENU_TAB_HELP;
+		break;
+	default:
+		break;
+	}
+	if (tab < 0 || tab >= server->app_menu.tab_count ||
+			item_index < 0 ||
+			item_index >= server->app_menu.item_counts[tab]) {
+		return false;
+	}
+	const char *action = server->app_menu.items[tab][item_index].action;
+	if (action == NULL || action[0] == '\0') {
+		return false;
+	}
+
+	GError *error = NULL;
+	GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
+	if (error != NULL) {
+		g_error_free(error);
+	}
+	if (connection == NULL) {
+		return false;
+	}
+	GDBusActionGroup *group = g_dbus_action_group_get(connection,
+		server->app_menu_bus_name,
+		server->app_menu_action_path[0] != '\0' ?
+			server->app_menu_action_path : "/org/gtk/Actions");
+	g_object_unref(connection);
+	if (group == NULL) {
+		return false;
+	}
+	const char *name = action;
+	const char *dot = strchr(action, '.');
+	if (dot != NULL && dot[1] != '\0') {
+		name = dot + 1;
+	}
+	GActionGroup *actions = G_ACTION_GROUP(group);
+	bool activated = false;
+	if (g_action_group_has_action(actions, name)) {
+		g_action_group_activate_action(actions, name, NULL);
+		activated = true;
+	} else if (g_action_group_has_action(actions, action)) {
+		g_action_group_activate_action(actions, action, NULL);
+		activated = true;
+	}
+	g_object_unref(group);
+	return activated;
+}
+
+static void handle_app_file_menu_action(
+		struct orange_server *server,
+		int item_index) {
+	switch (item_index) {
+	case 0:
+		send_focused_shortcut(server, KEY_N, true, false, false);
+		break;
+	case 1:
+		send_focused_shortcut(server, KEY_O, true, false, false);
+		break;
+	case 3:
+		send_focused_shortcut(server, KEY_W, true, false, false);
+		break;
+	case 4:
+		send_focused_shortcut(server, KEY_S, true, false, false);
+		break;
+	case 5:
+		send_focused_shortcut(server, KEY_S, true, true, false);
+		break;
+	case 6:
+		send_focused_shortcut(server, KEY_P, true, false, false);
+		break;
+	default:
+		break;
+	}
+}
+
+static void handle_app_edit_menu_action(
+		struct orange_server *server,
+		int item_index) {
+	switch (item_index) {
+	case 0:
+		send_focused_shortcut(server, KEY_Z, true, false, false);
+		break;
+	case 1:
+		send_focused_shortcut(server, KEY_Z, true, true, false);
+		break;
+	case 2:
+		send_focused_shortcut(server, KEY_X, true, false, false);
+		break;
+	case 3:
+		send_focused_shortcut(server, KEY_C, true, false, false);
+		break;
+	case 4:
+		send_focused_shortcut(server, KEY_V, true, false, false);
+		break;
+	case 5:
+		send_focused_shortcut(server, KEY_A, true, false, false);
+		break;
+	case 6:
+		send_focused_shortcut(server, KEY_F, true, false, false);
+		break;
+	default:
+		break;
+	}
+}
+
+static void handle_app_view_menu_action(
+		struct orange_server *server,
+		int item_index) {
+	switch (item_index) {
+	case 0:
+		send_focused_shortcut(server, KEY_EQUAL, true, false, false);
+		break;
+	case 1:
+		send_focused_shortcut(server, KEY_MINUS, true, false, false);
+		break;
+	case 2:
+		send_focused_shortcut(server, KEY_0, true, false, false);
+		break;
+	case 4:
+		send_focused_shortcut(server, KEY_F11, false, false, false);
+		break;
+	default:
+		break;
+	}
+}
+
+static void handle_app_go_menu_action(
+		struct orange_server *server,
+		int item_index) {
+	(void)server;
+	switch (item_index) {
+	case 0:
+		launch_command("xdg-open \"$HOME\" || true");
+		break;
+	case 1:
+		launch_command("xdg-open \"$HOME/Desktop\" || true");
+		break;
+	case 2:
+		launch_command("xdg-open \"$HOME/Documents\" || true");
+		break;
+	case 3:
+		launch_command("xdg-open \"$HOME/Downloads\" || true");
+		break;
+	case 4:
+		launch_app_picker();
+		break;
+	default:
+		break;
+	}
+}
+
+static void handle_app_window_menu_action(
+		struct orange_server *server,
+		int item_index) {
+	switch (item_index) {
+	case 0:
+		send_focused_shortcut(server, KEY_M, true, false, false);
+		break;
+	case 1:
+		if (server->focused_view != NULL) {
+			apply_maximize(server->focused_view,
+				!server->focused_view->maximized);
+		}
+		break;
+	case 2:
+		cycle_focus(server);
+		break;
+	case 3:
+		if (server->focused_view != NULL) {
+			wlr_scene_node_raise_to_top(
+				&server->focused_view->scene_tree->node);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void handle_app_history_menu_action(
+		struct orange_server *server,
+		int item_index) {
+	switch (item_index) {
+	case 0:
+		send_focused_shortcut(server, KEY_LEFT, false, false, true);
+		break;
+	case 1:
+		send_focused_shortcut(server, KEY_RIGHT, false, false, true);
+		break;
+	case 2:
+		send_focused_shortcut(server, KEY_HOME, false, false, true);
+		break;
+	case 3:
+		send_focused_shortcut(server, KEY_H, true, false, false);
+		break;
+	case 4:
+		send_focused_shortcut(server, KEY_DELETE, true, true, false);
+		break;
+	default:
+		break;
+	}
+}
+
+static void handle_app_bookmarks_menu_action(
+		struct orange_server *server,
+		int item_index) {
+	switch (item_index) {
+	case 0:
+		send_focused_shortcut(server, KEY_D, true, false, false);
+		break;
+	case 1:
+	case 2:
+		send_focused_shortcut(server, KEY_B, true, false, false);
+		break;
+	case 3:
+		send_focused_shortcut(server, KEY_O, true, true, false);
+		break;
+	default:
+		break;
+	}
+}
+
+static void handle_app_tools_menu_action(
+		struct orange_server *server,
+		int item_index) {
+	switch (item_index) {
+	case 0:
+		send_focused_shortcut(server, KEY_J, true, false, false);
+		break;
+	case 1:
+		send_focused_shortcut(server, KEY_A, true, true, false);
+		break;
+	case 3:
+		send_focused_shortcut(server, KEY_COMMA, true, false, false);
+		break;
+	default:
+		break;
+	}
+}
+
 static void handle_context_menu_action(struct orange_server *server, int item_index) {
 	enum orange_context_menu_kind kind = server->context_menu_kind;
 	int target = server->context_menu_index;
 	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 	server->context_menu_index = -1;
 
-	if (kind == ORANGE_CONTEXT_MENU_DOCK) {
+	if (activate_imported_app_menu_action(server, kind, item_index)) {
+		server_mark_shell_dirty(server);
+		return;
+	}
+
+	if (kind == ORANGE_CONTEXT_MENU_APP) {
+		switch (item_index) {
+		case 0:
+			if (!focus_view_for_app_id(server, ".About")) {
+				launch_command("GSK_RENDERER=cairo build/orange-about || true");
+			}
+			break;
+		case 1:
+			if (!focus_view_for_app_id(server, "orange-settings") &&
+					!focus_view_for_app_id(server, "settings")) {
+				launch_command(orange_settings_command);
+			}
+			break;
+		case 6:
+			send_focused_shortcut(server, KEY_Q, true, false, false);
+			break;
+		default:
+			break;
+		}
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_FILE) {
+		handle_app_file_menu_action(server, item_index);
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_EDIT) {
+		handle_app_edit_menu_action(server, item_index);
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_VIEW) {
+		handle_app_view_menu_action(server, item_index);
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_GO) {
+		handle_app_go_menu_action(server, item_index);
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_WINDOW) {
+		handle_app_window_menu_action(server, item_index);
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_HISTORY) {
+		handle_app_history_menu_action(server, item_index);
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_BOOKMARKS) {
+		handle_app_bookmarks_menu_action(server, item_index);
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_TOOLS) {
+		handle_app_tools_menu_action(server, item_index);
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_HELP) {
+		if (item_index == 0) {
+			launch_app_picker();
+		} else if (item_index == 1) {
+			send_focused_shortcut(server, KEY_F1, false, false, false);
+		}
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK) {
 		int launcher_idx = dock_launcher_for_visible_index(server, target);
 		switch (item_index) {
 		case 0:
@@ -1959,11 +2711,57 @@ static void open_status_menu(
 	server->notification_center_open = false;
 }
 
-static void open_status_quick_controls(
+static bool server_uses_firefox_menu_profile(struct orange_server *server) {
+	char active_label[ORANGE_APP_MENU_LABEL_MAX];
+	server_active_app_label(server, active_label, sizeof(active_label));
+	const char *app_id = focused_app_id(server);
+	return !server->app_menu.available &&
+		(contains_case(app_id, "firefox") ||
+		 contains_case(active_label, "firefox") ||
+		 contains_case(app_id, "browser") ||
+		 contains_case(active_label, "browser"));
+}
+
+static enum orange_context_menu_kind app_menu_kind_for_tab(
 		struct orange_server *server,
+		int tab) {
+	bool firefox = server_uses_firefox_menu_profile(server);
+	switch (tab) {
+	case ORANGE_APP_MENU_TAB_APP:
+		return ORANGE_CONTEXT_MENU_APP;
+	case ORANGE_APP_MENU_TAB_FILE:
+		return ORANGE_CONTEXT_MENU_APP_FILE;
+	case ORANGE_APP_MENU_TAB_EDIT:
+		return ORANGE_CONTEXT_MENU_APP_EDIT;
+	case ORANGE_APP_MENU_TAB_VIEW:
+		return ORANGE_CONTEXT_MENU_APP_VIEW;
+	case ORANGE_APP_MENU_TAB_GO:
+		return firefox ? ORANGE_CONTEXT_MENU_APP_HISTORY :
+			ORANGE_CONTEXT_MENU_APP_GO;
+	case ORANGE_APP_MENU_TAB_WINDOW:
+		return firefox ? ORANGE_CONTEXT_MENU_APP_BOOKMARKS :
+			ORANGE_CONTEXT_MENU_APP_WINDOW;
+	case ORANGE_APP_MENU_TAB_TOOLS:
+		return ORANGE_CONTEXT_MENU_APP_TOOLS;
+	case ORANGE_APP_MENU_TAB_HELP:
+		return ORANGE_CONTEXT_MENU_APP_HELP;
+	default:
+		return ORANGE_CONTEXT_MENU_APP;
+	}
+}
+
+static void open_app_menu(
+		struct orange_server *server,
+		int tab,
 		int local_x,
 		int local_y) {
-	open_status_menu(server, ORANGE_CONTEXT_MENU_STATUS, -1, local_x, local_y);
+	server->context_menu_kind = app_menu_kind_for_tab(server, tab);
+	server->context_menu_index =
+		dock_launcher_for_view(server, server->focused_view);
+	server->context_menu_cursor_x = local_x;
+	server->context_menu_cursor_y = local_y;
+	server->system_menu_open = false;
+	server->notification_center_open = false;
 }
 
 static void handle_shell_click(struct orange_server *server, int x, int y) {
@@ -1997,8 +2795,12 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		break;
 	case ORANGE_HIT_APP_MENU:
 		server->notification_center_open = false;
-		clear_context_menu(server);
 		server->system_menu_open = false;
+		if (server->context_menu_kind == app_menu_kind_for_tab(server, hit.index)) {
+			clear_context_menu(server);
+		} else {
+			open_app_menu(server, hit.index, local_x, local_y);
+		}
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_STATUS_ITEM:
@@ -2029,7 +2831,9 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 				launch_app_picker();
 				break;
 			case ORANGE_STATUS_ITEM_CONTROL_CENTER:
-				open_status_quick_controls(server, local_x, local_y);
+				open_status_menu(server,
+					ORANGE_CONTEXT_MENU_STATUS,
+					-1, local_x, local_y);
 				break;
 			default:
 				break;
@@ -2038,9 +2842,6 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_STATUS_AREA:
-		clear_context_menu(server);
-		server->system_menu_open = false;
-		open_status_quick_controls(server, local_x, local_y);
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_NOTIFICATION_CENTER:
@@ -2131,7 +2932,8 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 			server->context_menu_index = -1;
 			break;
 		case ORANGE_STATUS_ITEM_CONTROL_CENTER:
-			open_status_quick_controls(server, local_x, local_y);
+			open_status_menu(server, ORANGE_CONTEXT_MENU_STATUS,
+				-1, local_x, local_y);
 			break;
 		case ORANGE_STATUS_ITEM_CLOCK:
 			server->notification_center_open = true;
@@ -2143,25 +2945,8 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 			server->context_menu_index = -1;
 			break;
 		}
-	} else if (hit.kind == ORANGE_HIT_STATUS_AREA) {
-		open_status_quick_controls(server, local_x, local_y);
 	} else if (hit.kind == ORANGE_HIT_APP_MENU) {
-		int launcher_idx = dock_launcher_for_view(server, server->focused_view);
-		int visible_idx = dock_visible_index_for_launcher(server, launcher_idx);
-		if (visible_idx < 0) {
-			for (int i = 0; i < orange_shell_dock_count(&server->config); i++) {
-				launcher_idx = dock_launcher_for_visible_index(server, i);
-				if (launcher_idx >= 0 &&
-						server->config.dock_apps[launcher_idx][0] != '_' &&
-						strcmp(server->config.dock_apps[launcher_idx], "__trash__") != 0) {
-					visible_idx = i;
-					break;
-				}
-			}
-		}
-		server->context_menu_kind = visible_idx >= 0 ?
-			ORANGE_CONTEXT_MENU_DOCK : ORANGE_CONTEXT_MENU_NONE;
-		server->context_menu_index = visible_idx;
+		open_app_menu(server, hit.index, local_x, local_y);
 	} else if (hit.kind == ORANGE_HIT_WIDGET) {
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_WIDGET;
 		server->context_menu_index = hit.index;
@@ -2240,7 +3025,6 @@ static void handle_cursor_button(struct wl_listener *listener, void *data) {
 			wlr_seat_pointer_notify_enter(server->seat, surface, sx, sy);
 		} else {
 			wlr_seat_pointer_notify_clear_focus(server->seat);
-			wlr_seat_keyboard_notify_clear_focus(server->seat);
 			handle_shell_click(server, (int)server->cursor->x, (int)server->cursor->y);
 			return;
 		}
@@ -2569,6 +3353,28 @@ static void handle_new_xdg_surface(struct wl_listener *listener, void *data) {
 	struct orange_server *server =
 		wl_container_of(listener, server, new_xdg_surface);
 	struct wlr_xdg_surface *xdg_surface = data;
+
+	if (xdg_surface->role == WLR_XDG_SURFACE_ROLE_POPUP) {
+		struct wlr_xdg_popup *popup = xdg_surface->popup;
+
+		struct wlr_scene_tree *parent_tree = NULL;
+		if (popup->parent != NULL && popup->parent->data != NULL) {
+			struct orange_view *pv = popup->parent->data;
+			if (pv->scene_tree != NULL) {
+				parent_tree = pv->scene_tree;
+			}
+		}
+
+		struct wlr_scene_tree *scene_tree = wlr_scene_xdg_surface_create(
+			parent_tree ? parent_tree : server->window_tree, xdg_surface);
+		if (scene_tree == NULL) {
+			return;
+		}
+
+		xdg_surface->surface->data = scene_tree;
+		return;
+	}
+
 	if (xdg_surface->role != WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
 		return;
 	}

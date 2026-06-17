@@ -115,27 +115,9 @@ executable(
 )
 
 if gtk4_dep.found()
-  gtk_app_c_args = ['-Wno-pedantic']
-  executable(
-    'orange-settings',
-    files('src/settings_app.c'),
-    include_directories: inc,
-    dependencies: [orange_core_dep, gtk4_dep],
-    c_args: gtk_app_c_args,
-    install: false,
-  )
-  executable(
-    'orange-about',
-    files('src/about_app.c'),
-    include_directories: inc,
-    dependencies: [gtk4_dep],
-    c_args: gtk_app_c_args + [
-      '-DORANGE_PROJECT_VERSION="@0@"'.format(meson.project_version()),
-    ],
-    install: false,
-  )
+  # orange-settings and orange-about will be rewritten
 else
-  message('gtk4 development files not found; skipping orange-settings and orange-about targets')
+  message('gtk4 development files not found')
 endif
 
 test_shell_layout = executable(

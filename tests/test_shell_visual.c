@@ -91,10 +91,10 @@ static void test_context_menu_glass_and_scaling(void) {
 	struct orange_shell_layout large;
 	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &small);
 	orange_shell_layout_set_context_menu(&small,
-		ORANGE_CONTEXT_MENU_DESKTOP, -1, 720, 450);
+		ORANGE_CONTEXT_MENU_DESKTOP, -1, 720, 450, NULL);
 	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0, 0, &large);
 	orange_shell_layout_set_context_menu(&large,
-		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900);
+		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900, NULL);
 	assert(large.context_menu_panel.width > small.context_menu_panel.width);
 	assert(large.context_menu_items[0].height >
 		small.context_menu_items[0].height);
@@ -150,7 +150,7 @@ static void test_dark_context_menu_uses_dark_material(void) {
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0, 0, &layout);
 	orange_shell_layout_set_context_menu(&layout,
-		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900);
+		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900, NULL);
 
 	int stride = VISUAL_WIDTH * 4;
 	uint32_t *pixels = calloc((size_t)VISUAL_HEIGHT, (size_t)stride);
@@ -435,12 +435,9 @@ static void test_default_dock_prefers_role_icons_before_desktop_icons(void) {
 	add_test_icon(&assets, "image-x-generic", generic);
 	add_test_icon(&assets, "image-viewer", image_viewer);
 	add_test_icon(&assets, "org.gnome.Loupe", generic);
-	add_test_icon(&assets, "accessories-text-editor", generic);
-	add_test_icon(&assets, "org.gnome.TextEditor", generic);
-	add_test_icon(&assets, "notes", generic);
-	add_test_icon(&assets, "org.gnome.Notes", notes);
-	add_test_icon(&assets, "video-display", generic);
+	add_test_icon(&assets, "accessories-text-editor", notes);
 	add_test_icon(&assets, "video-player", video_player);
+	add_test_icon(&assets, "video-display", video_player);
 	add_test_icon(&assets, "org.gnome.Showtime", generic);
 
 	const struct orange_desktop_entry entries[] = {

@@ -10,6 +10,20 @@ static void assert_roughly_double(int large, int small) {
 	assert(abs(large - small * 2) <= 2);
 }
 
+static void assert_app_menu_tabs_do_not_overlap(
+		const struct orange_shell_layout *layout) {
+	int last_right = 0;
+	for (int i = 0; i < layout->app_menu_item_count; i++) {
+		struct orange_rect item = layout->app_menu_items[i];
+		if (item.width <= 0) {
+			continue;
+		}
+		assert(item.x >= last_right);
+		assert(item.x + item.width <= layout->status_area.x);
+		last_right = item.x + item.width;
+	}
+}
+
 static void test_dock_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
@@ -156,6 +170,144 @@ static void test_system_menu_hit(void) {
 	assert(orange_shell_menu_label(hit.index) != NULL);
 }
 
+static void test_app_menu_layout_and_labels(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_set_app_menu_tabs(&layout, "Photoshop", NULL);
+	assert_app_menu_tabs_do_not_overlap(&layout);
+
+	struct orange_shell_state default_state = {0};
+	assert(strcmp(orange_shell_active_app_label(&default_state), "Files") == 0);
+	struct orange_shell_state active_state = {0};
+	snprintf(active_state.active_app_label,
+		sizeof(active_state.active_app_label), "%s", "Terminal");
+	assert(strcmp(orange_shell_active_app_label(&active_state), "Terminal") == 0);
+
+	struct orange_rect app_tab =
+		layout.app_menu_items[ORANGE_APP_MENU_TAB_APP];
+	struct orange_shell_hit hit = orange_shell_hit_test(
+		&layout,
+		app_tab.x + app_tab.width / 2,
+		app_tab.y + app_tab.height / 2);
+	assert(hit.kind == ORANGE_HIT_APP_MENU);
+	assert(hit.index == ORANGE_APP_MENU_TAB_APP);
+
+	struct orange_rect file_tab =
+		layout.app_menu_items[ORANGE_APP_MENU_TAB_FILE];
+	hit = orange_shell_hit_test(
+		&layout,
+		file_tab.x + file_tab.width / 2,
+		file_tab.y + file_tab.height / 2);
+	assert(hit.kind == ORANGE_HIT_APP_MENU);
+	assert(hit.index == ORANGE_APP_MENU_TAB_FILE);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_APP, -1, 0, 0, NULL);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP);
+	assert(layout.context_menu_item_count == 7);
+	assert(layout.context_menu_panel.x == layout.app_menu_items[
+		ORANGE_APP_MENU_TAB_APP].x);
+	assert(layout.context_menu_panel.y > layout.menu_bar.height);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_APP, 0), "About App") == 0);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_APP, 6), "Quit App") == 0);
+	assert(orange_shell_context_menu_icon_name(
+		ORANGE_CONTEXT_MENU_APP, 0) != NULL);
+
+	struct orange_rect item = layout.context_menu_items[6];
+	hit = orange_shell_hit_test(
+		&layout,
+		item.x + item.width / 2,
+		item.y + item.height / 2);
+	assert(hit.kind == ORANGE_HIT_CONTEXT_MENU_ITEM);
+	assert(hit.index == 6);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_APP_FILE, -1, 0, 0, NULL);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP_FILE);
+	assert(layout.context_menu_item_count == 7);
+	assert(layout.context_menu_panel.x == layout.app_menu_items[
+		ORANGE_APP_MENU_TAB_FILE].x);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_APP_FILE, 1), "Open...") == 0);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_APP_FILE, 4), "Save") == 0);
+	assert(orange_shell_context_menu_icon_name(
+		ORANGE_CONTEXT_MENU_APP_FILE, 1) != NULL);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_APP_EDIT, -1, 0, 0, NULL);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP_EDIT);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_APP_EDIT, 3), "Copy") == 0);
+
+	orange_shell_layout_set_app_menu_tabs(&layout, "Firefox", NULL);
+	assert_app_menu_tabs_do_not_overlap(&layout);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_GO].width > 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_WINDOW].width >
+		layout.app_menu_items[ORANGE_APP_MENU_TAB_TOOLS].width);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_TOOLS].width > 0);
+	struct orange_rect bookmarks_tab =
+		layout.app_menu_items[ORANGE_APP_MENU_TAB_WINDOW];
+	hit = orange_shell_hit_test(
+		&layout,
+		bookmarks_tab.x + bookmarks_tab.width / 2,
+		bookmarks_tab.y + bookmarks_tab.height / 2);
+	assert(hit.kind == ORANGE_HIT_APP_MENU);
+	assert(hit.index == ORANGE_APP_MENU_TAB_WINDOW);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_APP_BOOKMARKS, -1, 0, 0, NULL);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP_BOOKMARKS);
+	assert(layout.context_menu_item_count == 4);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_APP_BOOKMARKS, 0),
+		"Bookmark Current Tab") == 0);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_APP_TOOLS, -1, 0, 0, NULL);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP_TOOLS);
+	assert(layout.context_menu_item_count == 4);
+	assert(strcmp(orange_shell_context_menu_label(
+		ORANGE_CONTEXT_MENU_APP_TOOLS, 1),
+		"Add-ons and Themes") == 0);
+
+	struct orange_app_menu_model native_menu = {
+		.available = true,
+		.native = true,
+		.tab_count = 2,
+	};
+	snprintf(native_menu.tab_labels[ORANGE_APP_MENU_TAB_APP],
+		sizeof(native_menu.tab_labels[ORANGE_APP_MENU_TAB_APP]),
+		"%s", "NativeApp");
+	snprintf(native_menu.tab_labels[ORANGE_APP_MENU_TAB_FILE],
+		sizeof(native_menu.tab_labels[ORANGE_APP_MENU_TAB_FILE]),
+		"%s", "Project");
+	native_menu.item_counts[ORANGE_APP_MENU_TAB_FILE] = 2;
+	snprintf(native_menu.items[ORANGE_APP_MENU_TAB_FILE][0].label,
+		sizeof(native_menu.items[ORANGE_APP_MENU_TAB_FILE][0].label),
+		"%s", "Native Open");
+	snprintf(native_menu.items[ORANGE_APP_MENU_TAB_FILE][1].label,
+		sizeof(native_menu.items[ORANGE_APP_MENU_TAB_FILE][1].label),
+		"%s", "Native Close");
+	orange_shell_layout_set_app_menu_tabs(&layout, "Firefox", &native_menu);
+	assert_app_menu_tabs_do_not_overlap(&layout);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_APP].width > 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_FILE].width > 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_EDIT].width == 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_HELP].width == 0);
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_APP_FILE, -1, 0, 0, &native_menu);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP_FILE);
+	assert(layout.context_menu_item_count == 2);
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_APP_HELP, -1, 0, 0, &native_menu);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_NONE);
+}
+
 static void test_status_area_hit_and_menu(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
@@ -178,7 +330,7 @@ static void test_status_area_hit_and_menu(void) {
 	assert(hit.index == ORANGE_STATUS_ITEM_CONTROL_CENTER);
 
 	orange_shell_layout_set_context_menu(&layout,
-		ORANGE_CONTEXT_MENU_STATUS, -1, 0, 0);
+		ORANGE_CONTEXT_MENU_STATUS, -1, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS);
 	assert(layout.context_menu_item_count == 10);
 	assert(orange_shell_context_menu_label(
@@ -189,7 +341,7 @@ static void test_status_area_hit_and_menu(void) {
 		ORANGE_CONTEXT_MENU_STATUS, 0) != NULL);
 
 	orange_shell_layout_set_context_menu(&layout,
-		ORANGE_CONTEXT_MENU_STATUS_WIFI, ORANGE_STATUS_ITEM_WIFI, 0, 0);
+		ORANGE_CONTEXT_MENU_STATUS_WIFI, ORANGE_STATUS_ITEM_WIFI, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_WIFI);
 	assert(layout.context_menu_item_count == 3);
 	assert(layout.context_menu_panel.y > layout.menu_bar.height);
@@ -199,13 +351,13 @@ static void test_status_area_hit_and_menu(void) {
 		ORANGE_CONTEXT_MENU_STATUS_WIFI, 0) != NULL);
 
 	orange_shell_layout_set_context_menu(&layout,
-		ORANGE_CONTEXT_MENU_STATUS_SOUND, ORANGE_STATUS_ITEM_SOUND, 0, 0);
+		ORANGE_CONTEXT_MENU_STATUS_SOUND, ORANGE_STATUS_ITEM_SOUND, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_SOUND);
 	assert(strcmp(orange_shell_context_menu_label(
 		ORANGE_CONTEXT_MENU_STATUS_SOUND, 2), "Sound Settings...") == 0);
 
 	orange_shell_layout_set_context_menu(&layout,
-		ORANGE_CONTEXT_MENU_STATUS_BATTERY, ORANGE_STATUS_ITEM_BATTERY, 0, 0);
+		ORANGE_CONTEXT_MENU_STATUS_BATTERY, ORANGE_STATUS_ITEM_BATTERY, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_BATTERY);
 	assert(strcmp(orange_shell_context_menu_label(
 		ORANGE_CONTEXT_MENU_STATUS_BATTERY, 1), "Power Settings...") == 0);
@@ -324,9 +476,9 @@ static void test_major_surfaces_scale_by_resolution(void) {
 	assert_roughly_double(large.dock_items[0].width,
 		small.dock_items[0].width);
 	orange_shell_layout_set_context_menu(&small,
-		ORANGE_CONTEXT_MENU_DESKTOP, -1, 720, 450);
+		ORANGE_CONTEXT_MENU_DESKTOP, -1, 720, 450, NULL);
 	orange_shell_layout_set_context_menu(&large,
-		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900);
+		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900, NULL);
 	assert_roughly_double(large.context_menu_panel.width,
 		small.context_menu_panel.width);
 	assert_roughly_double(large.context_menu_panel.height,
@@ -360,7 +512,8 @@ static void test_context_menu_hit(void) {
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
-	orange_shell_layout_set_context_menu(&layout, ORANGE_CONTEXT_MENU_DOCK, 0, 0, 0);
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DOCK, 0, 0, 0, NULL);
 	assert(layout.context_menu_item_count == 5);
 	assert(layout.context_menu_panel.y + layout.context_menu_panel.height <=
 		layout.dock.y);
@@ -375,7 +528,7 @@ static void test_context_menu_hit(void) {
 	assert(orange_shell_context_menu_label(ORANGE_CONTEXT_MENU_DOCK, hit.index) != NULL);
 
 	orange_shell_layout_set_context_menu(&layout, ORANGE_CONTEXT_MENU_DOCK,
-		layout.dock_item_count - 1, layout.width, layout.height);
+		layout.dock_item_count - 1, layout.width, layout.height, NULL);
 	assert(layout.context_menu_panel.x >= 0);
 	assert(layout.context_menu_panel.x + layout.context_menu_panel.width <=
 		layout.width);
@@ -400,7 +553,8 @@ static void test_widget_hit_and_context_menu(void) {
 		ORANGE_CONTEXT_MENU_WIDGET,
 		hit.index,
 		widget.x + widget.width / 2,
-		widget.y + widget.height / 2);
+		widget.y + widget.height / 2,
+		NULL);
 	assert(layout.context_menu_item_count == 5);
 	assert(strcmp(orange_shell_context_menu_label(
 		ORANGE_CONTEXT_MENU_WIDGET, 0), "Edit Widget") == 0);
@@ -507,6 +661,7 @@ int main(void) {
 	test_desktop_custom_position_snaps_to_grid();
 	test_desktop_custom_position_clamps_to_visible_area();
 	test_system_menu_hit();
+	test_app_menu_layout_and_labels();
 	test_status_area_hit_and_menu();
 	test_notification_center_layout_and_hit();
 	test_small_width_dock_fits();

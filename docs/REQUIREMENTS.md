@@ -114,8 +114,15 @@ macOS-like shell prototype.
   - system menu popover with shell actions.
 - Launch Dock and desktop apps from parsed freedesktop `.desktop` entries with
   unsupported or file-specific `Exec` field codes removed for no-file launches.
-- Right-clicking the active app/menu title area in the menu bar opens the same
-  app context menu used by Dock items so the menu-bar app menu is actionable.
+- The left side of the menu bar must be active-app driven, matching macOS'
+  single-menu-bar model: the title next to the system menu reflects the focused
+  application, and File/Edit/View/Go/Window/Help menus sit to its right.
+- App menu commands must operate on the focused client where the compositor has
+  a real mechanism. For generic Wayland clients, Orange dispatches standard
+  focused-client keyboard accelerators for common commands such as Open, Save,
+  Undo, Copy, Paste, Find, Print, Full Screen, Help, and Quit. Toolkit-exported
+  native menu introspection remains a separate DBusMenu/global-menu backend
+  feature because xdg-shell does not expose arbitrary app menu trees.
 - Provide keyboard shortcuts modeled after a Mac-like Command key flow:
   - Super/Logo+Return launches a terminal,
   - Super/Logo+Space launches an app picker if available,

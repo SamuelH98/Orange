@@ -239,6 +239,43 @@ Settings app includes per-volume visibility toggles, Sort By dropdown, and
 Label Position dropdown. Grid layout respects `desktop_grid_spacing` and
 occupies a minimum 2×2 slot area even without volumes.
 
+### Top-Left App Menu
+
+The menu-bar app title is no longer a static `Files` placeholder. Shell state
+now carries an active app label from the focused view, resolved through Dock
+metadata when possible and falling back to app ID/title text. The menu bar now
+lays out the active app title plus File, Edit, View, Go, Window, and Help as
+separate hit targets. Clicking or right-clicking each tab opens a shell-rendered
+menu anchored beneath that tab.
+
+Generic app commands are routed to the focused client through standard keyboard
+accelerators where xdg-shell gives Orange a real mechanism: New/Open/Close/
+Save/Save As/Print, Undo/Redo/Cut/Copy/Paste/Select All/Find, Zoom, Full
+Screen, Help, and Quit. Window menu commands use compositor behavior where
+available. Arbitrary native app menu-tree extraction remains future work behind
+a DBusMenu/global-menu backend, because xdg-shell does not expose app menu
+models or native menu callbacks.
+
+The status-side Control Center slot and quick-controls menu were restored so
+the existing macOS-like status tests pass again.
+
+Validation from this pass:
+
+- `ninja -C build` passed.
+- `./build/test-shell-layout` passed.
+- `meson test -C build --print-errorlogs` passed 6/6 tests.
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets
+  --config orange.conf --foreground-only --active-app Photoshop --context-menu
+  app /tmp/orange-shell-photoshop-app-menu.png` passed.
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets
+  --config orange.conf --foreground-only --active-app Photoshop --context-menu
+  app-file /tmp/orange-shell-photoshop-file-menu.png` passed and visually shows
+  `Photoshop File Edit View Go Window Help` with File menu entries anchored
+  under the File tab.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once
+  --width 1440 --height 900 --assets assets --config orange.conf` passed,
+  with expected sandbox dconf/DBus warnings.
+
 ### Dock Icon Alias Fix
 
 Completed a focused Dock icon fix for the default Image Viewer, Notes, and

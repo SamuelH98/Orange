@@ -30,6 +30,9 @@ Responsibilities:
 - place desktop icons from persisted coordinates when the user drags them,
 - draw shell context menus for Dock items, widgets, desktop items, and empty
   desktop background,
+- draw the top-left active app menu tabs as shell chrome anchored under the
+  active app title and File/Edit/View/Go/Window/Help tab rectangles, using
+  focused-client state for the visible app label,
 - draw a right-edge Notification Center overlay as transient shell chrome,
 - expose deterministic layout and hit-test math for tests,
 - maintain transient UI state such as the system menu popover.
@@ -153,18 +156,25 @@ Responsibilities:
 5. Runtime commits the scene output and sends frame callbacks.
 6. Pointer hit testing first finds client surfaces; if none, shell hit testing
    handles Dock, desktop, and menu clicks.
-7. Shell click handlers launch commands from Dock definitions or parsed XDG
+7. Clicking or right-clicking the active app title or one of the app menu tabs
+   opens a shell-rendered app menu anchored under that tab. The compositor fills
+   the menu bar label from the focused view's Dock entry, app ID, or title.
+   Common commands are dispatched to the focused keyboard client as standard
+   accelerators such as Ctrl+O, Ctrl+S, Ctrl+Z, Ctrl+C, Ctrl+V, Ctrl+F,
+   Ctrl+P, F11, and F1; window-level commands use compositor state where
+   available.
+8. Shell click handlers launch commands from Dock definitions or parsed XDG
    `.desktop` entries.
-8. Desktop drag state updates the in-memory config while dragging and saves
+9. Desktop drag state updates the in-memory config while dragging and saves
    `orange.conf` on release.
-9. Right-click hit testing opens a shell context menu above a Dock item, near a
+10. Right-click hit testing opens a shell context menu above a Dock item, near a
    widget, near a desktop item, or at the empty desktop cursor location.
-10. Left-clicking status items dispatches by item: Wi-Fi, Sound, Battery,
+11. Left-clicking status items dispatches by item: Wi-Fi, Sound, Battery,
     Search, Control Center, and Clock each have their own hit rectangle and
     action. Wi-Fi, Sound, and Battery open item-specific status menus; Search
     launches the app picker; Control Center opens quick controls; Clock toggles
     Notification Center.
-11. Layout computes a right-edge Notification Center overlay after the base
+12. Layout computes a right-edge Notification Center overlay after the base
     shell geometry, hit testing treats the overlay and Edit Widgets button as
     top-level shell targets, and the compositor maps Edit Widgets to Orange
     Settings.

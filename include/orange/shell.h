@@ -17,6 +17,10 @@
 #define ORANGE_NOTIFICATION_CENTER_CARD_MAX 8
 #define ORANGE_STATUS_ITEM_COUNT 6
 #define ORANGE_STATUS_TEXT_MAX 64
+#define ORANGE_APP_MENU_LABEL_MAX 64
+#define ORANGE_APP_MENU_TAB_COUNT 8
+#define ORANGE_APP_MENU_ITEM_MAX 16
+#define ORANGE_APP_MENU_ACTION_MAX 128
 
 struct orange_rect {
 	int x;
@@ -46,6 +50,17 @@ struct orange_shell_hit {
 	int index;
 };
 
+enum orange_app_menu_tab {
+	ORANGE_APP_MENU_TAB_APP,
+	ORANGE_APP_MENU_TAB_FILE,
+	ORANGE_APP_MENU_TAB_EDIT,
+	ORANGE_APP_MENU_TAB_VIEW,
+	ORANGE_APP_MENU_TAB_GO,
+	ORANGE_APP_MENU_TAB_WINDOW,
+	ORANGE_APP_MENU_TAB_TOOLS,
+	ORANGE_APP_MENU_TAB_HELP,
+};
+
 enum orange_widget_type {
 	ORANGE_WIDGET_CALENDAR,
 	ORANGE_WIDGET_WEATHER,
@@ -60,6 +75,16 @@ struct orange_widget {
 
 enum orange_context_menu_kind {
 	ORANGE_CONTEXT_MENU_NONE,
+	ORANGE_CONTEXT_MENU_APP,
+	ORANGE_CONTEXT_MENU_APP_FILE,
+	ORANGE_CONTEXT_MENU_APP_EDIT,
+	ORANGE_CONTEXT_MENU_APP_VIEW,
+	ORANGE_CONTEXT_MENU_APP_GO,
+	ORANGE_CONTEXT_MENU_APP_WINDOW,
+	ORANGE_CONTEXT_MENU_APP_HISTORY,
+	ORANGE_CONTEXT_MENU_APP_BOOKMARKS,
+	ORANGE_CONTEXT_MENU_APP_TOOLS,
+	ORANGE_CONTEXT_MENU_APP_HELP,
 	ORANGE_CONTEXT_MENU_DOCK,
 	ORANGE_CONTEXT_MENU_WIDGET,
 	ORANGE_CONTEXT_MENU_DESKTOP,
@@ -98,6 +123,22 @@ struct orange_status_state {
 	int battery_percent;
 };
 
+struct orange_app_menu_item {
+	char label[ORANGE_APP_MENU_LABEL_MAX];
+	char action[ORANGE_APP_MENU_ACTION_MAX];
+	bool enabled;
+	bool separator;
+};
+
+struct orange_app_menu_model {
+	bool available;
+	bool native;
+	int tab_count;
+	char tab_labels[ORANGE_APP_MENU_TAB_COUNT][ORANGE_APP_MENU_LABEL_MAX];
+	int item_counts[ORANGE_APP_MENU_TAB_COUNT];
+	struct orange_app_menu_item items[ORANGE_APP_MENU_TAB_COUNT][ORANGE_APP_MENU_ITEM_MAX];
+};
+
 /* Desktop item descriptor: either a .desktop entry index or a volume index. */
 enum orange_desktop_item_kind {
 	ORANGE_DESKTOP_ITEM_ENTRY,
@@ -116,6 +157,8 @@ struct orange_shell_layout {
 	struct orange_rect menu_bar;
 	struct orange_rect system_menu_button;
 	struct orange_rect app_menu_button;
+	struct orange_rect app_menu_items[ORANGE_APP_MENU_TAB_COUNT];
+	int app_menu_item_count;
 	struct orange_rect status_area;
 	struct orange_rect status_items[ORANGE_STATUS_ITEM_COUNT];
 	struct orange_rect notification_center_panel;
@@ -164,7 +207,9 @@ struct orange_shell_state {
 	const struct orange_volume_info *volumes;
 	int volume_count;
 	int desktop_volume_count;
+	struct orange_app_menu_model app_menu;
 	bool dock_open[ORANGE_DOCK_MAX];
+	char active_app_label[ORANGE_APP_MENU_LABEL_MAX];
 	int dock_drag_index;
 	int dock_drag_insert_before;
 	int dock_drag_x;
@@ -206,12 +251,17 @@ void orange_shell_layout_snap_to_grid(
 	int *x,
 	int *y,
 	const struct orange_config *config);
+void orange_shell_layout_set_app_menu_tabs(
+	struct orange_shell_layout *layout,
+	const char *active_app_label,
+	const struct orange_app_menu_model *app_menu);
 void orange_shell_layout_set_context_menu(
 	struct orange_shell_layout *layout,
 	enum orange_context_menu_kind kind,
 	int index,
 	int cursor_x,
-	int cursor_y);
+	int cursor_y,
+	const struct orange_app_menu_model *app_menu);
 void orange_shell_layout_set_notification_center(
 	struct orange_shell_layout *layout);
 
@@ -241,9 +291,11 @@ int orange_shell_dock_launcher_index(
 const char *orange_shell_dock_label(int index,
 	const struct orange_desktop_entry *entries, int entry_count,
 	const struct orange_config *config);
+const char *orange_shell_builtin_command(const char *app_id);
 const char *orange_shell_dock_command(int index,
 	const struct orange_desktop_entry *entries, int entry_count,
 	const struct orange_config *config);
+const char *orange_shell_active_app_label(const struct orange_shell_state *state);
 const char *orange_shell_menu_label(int index);
 const char *orange_shell_context_menu_label(
 	enum orange_context_menu_kind kind,

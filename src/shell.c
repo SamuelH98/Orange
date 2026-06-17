@@ -33,12 +33,18 @@ static const char *builtin_icon(const char *app_id) {
 	return NULL;
 }
 
-static const char *builtin_command(const char *app_id) {
+const char *orange_shell_builtin_command(const char *app_id) {
 	if (strcmp(app_id, "__launcher__") == 0) {
 		return "if [ -n \"$ORANGE_APP_PICKER\" ]; then $ORANGE_APP_PICKER; else wofi --show drun || rofi -show drun || true; fi";
 	}
 	if (strcmp(app_id, "__trash__") == 0) {
 		return "gio open trash:// || xdg-open trash:// || true";
+	}
+	if (strcmp(app_id, "orange-settings") == 0 ||
+			strcmp(app_id, "dev.orange.Settings") == 0 ||
+			strcmp(app_id, "settings") == 0 ||
+			strcmp(app_id, "org.gnome.Settings.desktop") == 0) {
+		return ORANGE_SETTINGS_COMMAND;
 	}
 	return NULL;
 }
@@ -124,10 +130,6 @@ static const char *fallback_icon(const char *app_id) {
 			app_id_matches(app_id, "calculator")) {
 		return "accessories-calculator";
 	}
-	if (app_id_matches(app_id, "org.gnome.TextEditor") ||
-			app_id_matches(app_id, "gedit")) {
-		return "org.gnome.Notes";
-	}
 	if (app_id_matches(app_id, "org.gnome.Settings") ||
 			app_id_matches(app_id, "control-center")) {
 		return "preferences-system";
@@ -152,6 +154,11 @@ static const char *fallback_icon(const char *app_id) {
 			app_id_matches(app_id, "maps")) {
 		return "maps-app";
 	}
+	if (app_id_matches(app_id, "org.gnome.Notes") ||
+			app_id_matches(app_id, "notes")) {
+		return "org.gnome.Notes";
+	}
+
 	if (app_id_matches(app_id, "org.gnome.Loupe") ||
 			app_id_matches(app_id, "loupe") ||
 			app_id_matches(app_id, "ImageViewer")) {
@@ -175,7 +182,7 @@ static const char *fallback_icon(const char *app_id) {
 static const char *dock_role_icon(const char *app_id) {
 	if (app_id_matches(app_id, "org.gnome.TextEditor") ||
 			app_id_matches(app_id, "gedit")) {
-		return "org.gnome.Notes";
+		return "accessories-text-editor";
 	}
 	if (app_id_matches(app_id, "org.gnome.Loupe") ||
 			app_id_matches(app_id, "loupe") ||
@@ -294,6 +301,180 @@ static const char *menu_icon_names[] = {
 	"system-lock-screen",
 	"system-log-out",
 };
+
+static const char *app_context_labels[] = {
+	"About App",
+	"Settings...",
+	"Services",
+	"Hide App",
+	"Hide Others",
+	"Show All",
+	"Quit App",
+};
+
+static const char *app_context_icon_names[] = {
+	"help-about",
+	"preferences-system",
+	"applications-system",
+	"view-hidden",
+	"view-hidden",
+	"view-visible",
+	"window-close",
+};
+
+static const int app_context_separator_before[] = {1, 2, 3, 6, -1};
+
+static const char *file_context_labels[] = {
+	"New",
+	"Open...",
+	"Open Recent",
+	"Close Window",
+	"Save",
+	"Save As...",
+	"Print...",
+};
+
+static const char *file_context_icon_names[] = {
+	"document-new",
+	"document-open",
+	"document-open-recent",
+	"window-close",
+	"document-save",
+	"document-save-as",
+	"document-print",
+};
+
+static const int file_context_separator_before[] = {2, 3, 4, 6, -1};
+
+static const char *edit_context_labels[] = {
+	"Undo",
+	"Redo",
+	"Cut",
+	"Copy",
+	"Paste",
+	"Select All",
+	"Find...",
+};
+
+static const char *edit_context_icon_names[] = {
+	"edit-undo",
+	"edit-redo",
+	"edit-cut",
+	"edit-copy",
+	"edit-paste",
+	"edit-select-all",
+	"edit-find",
+};
+
+static const int edit_context_separator_before[] = {2, 5, 6, -1};
+
+static const char *view_context_labels[] = {
+	"Zoom In",
+	"Zoom Out",
+	"Actual Size",
+	"Fit to Window",
+	"Enter Full Screen",
+};
+
+static const char *view_context_icon_names[] = {
+	"zoom-in",
+	"zoom-out",
+	"zoom-original",
+	"zoom-fit-best",
+	"view-fullscreen",
+};
+
+static const int view_context_separator_before[] = {4, -1};
+
+static const char *go_context_labels[] = {
+	"Home",
+	"Desktop",
+	"Documents",
+	"Downloads",
+	"Applications",
+};
+
+static const char *go_context_icon_names[] = {
+	"user-home",
+	"user-desktop",
+	"folder-documents",
+	"folder-download",
+	"applications-system",
+};
+
+static const int go_context_separator_before[] = {-1};
+
+static const char *window_context_labels[] = {
+	"Minimize",
+	"Zoom",
+	"Cycle Through Windows",
+	"Bring All to Front",
+};
+
+static const char *window_context_icon_names[] = {
+	"window-minimize",
+	"window-maximize",
+	"view-list-symbolic",
+	"go-top",
+};
+
+static const int window_context_separator_before[] = {2, -1};
+
+static const char *history_context_labels[] = {
+	"Back",
+	"Forward",
+	"Home",
+	"Show All History",
+	"Clear Recent History...",
+};
+
+static const char *history_context_icon_names[] = {
+	"go-previous",
+	"go-next",
+	"go-home",
+	"document-open-recent",
+	"edit-clear",
+};
+
+static const char *bookmarks_context_labels[] = {
+	"Bookmark Current Tab",
+	"Search Bookmarks",
+	"Bookmarks Sidebar",
+	"Manage Bookmarks",
+};
+
+static const char *bookmarks_context_icon_names[] = {
+	"user-bookmarks",
+	"edit-find",
+	"view-list",
+	"folder-bookmarks",
+};
+
+static const char *tools_context_labels[] = {
+	"Downloads",
+	"Add-ons and Themes",
+	"Browser Tools",
+	"Settings",
+};
+
+static const char *tools_context_icon_names[] = {
+	"folder-download",
+	"applications-system",
+	"applications-utilities",
+	"preferences-system",
+};
+
+static const char *help_context_labels[] = {
+	"Search",
+	"App Help",
+};
+
+static const char *help_context_icon_names[] = {
+	"system-search",
+	"help-contents",
+};
+
+static const int help_context_separator_before[] = {1, -1};
 
 static const char *dock_context_labels[] = {
 	"Open",
@@ -504,6 +685,107 @@ static struct orange_rect widget_rect_for_size(
 static double layout_scale(const struct orange_shell_layout *layout) {
 	return clamp((double)layout->menu_bar.height / 48.0,
 		MIN_UI_SCALE, MAX_UI_SCALE);
+}
+
+static int app_menu_tab_for_context_kind(enum orange_context_menu_kind kind) {
+	switch (kind) {
+	case ORANGE_CONTEXT_MENU_APP:
+		return ORANGE_APP_MENU_TAB_APP;
+	case ORANGE_CONTEXT_MENU_APP_FILE:
+		return ORANGE_APP_MENU_TAB_FILE;
+	case ORANGE_CONTEXT_MENU_APP_EDIT:
+		return ORANGE_APP_MENU_TAB_EDIT;
+	case ORANGE_CONTEXT_MENU_APP_VIEW:
+		return ORANGE_APP_MENU_TAB_VIEW;
+	case ORANGE_CONTEXT_MENU_APP_GO:
+		return ORANGE_APP_MENU_TAB_GO;
+	case ORANGE_CONTEXT_MENU_APP_WINDOW:
+		return ORANGE_APP_MENU_TAB_WINDOW;
+	case ORANGE_CONTEXT_MENU_APP_HISTORY:
+		return ORANGE_APP_MENU_TAB_GO;
+	case ORANGE_CONTEXT_MENU_APP_BOOKMARKS:
+		return ORANGE_APP_MENU_TAB_WINDOW;
+	case ORANGE_CONTEXT_MENU_APP_TOOLS:
+		return ORANGE_APP_MENU_TAB_TOOLS;
+	case ORANGE_CONTEXT_MENU_APP_HELP:
+		return ORANGE_APP_MENU_TAB_HELP;
+	default:
+		return -1;
+	}
+}
+
+static int app_menu_tab_text_width(
+		const char *label,
+		bool bold,
+		double s) {
+	int len = label != NULL ? (int)strlen(label) : 0;
+	int width = scaled_i((bold ? 13 : 11) * len + (bold ? 30 : 26), s);
+	int min_w = scaled_i(bold ? 60 : 42, s);
+	if (width < min_w) {
+		width = min_w;
+	}
+	int max_w = scaled_i(bold ? 280 : 174, s);
+	if (width > max_w) {
+		width = max_w;
+	}
+	return width;
+}
+
+static bool label_matches_token(const char *label, const char *token) {
+	return label != NULL && token != NULL && strcasestr(label, token) != NULL;
+}
+
+static bool app_menu_should_use_firefox_profile(const char *active_app_label) {
+	return label_matches_token(active_app_label, "firefox") ||
+		label_matches_token(active_app_label, "browser");
+}
+
+static const char *fallback_app_menu_tab_label(
+		int tab,
+		const char *active_app_label) {
+	if (tab == ORANGE_APP_MENU_TAB_APP) {
+		return active_app_label != NULL && active_app_label[0] != '\0' ?
+			active_app_label : "Files";
+	}
+	if (app_menu_should_use_firefox_profile(active_app_label)) {
+		static const char *firefox_labels[ORANGE_APP_MENU_TAB_COUNT] = {
+			"", "File", "Edit", "View", "History", "Bookmarks", "Tools", "Help",
+		};
+		return tab >= 0 && tab < ORANGE_APP_MENU_TAB_COUNT ?
+			firefox_labels[tab] : "";
+	}
+	static const char *generic_labels[ORANGE_APP_MENU_TAB_COUNT] = {
+		"", "File", "Edit", "View", "Go", "Window", "", "Help",
+	};
+	return tab >= 0 && tab < ORANGE_APP_MENU_TAB_COUNT ?
+		generic_labels[tab] : "";
+}
+
+static const char *app_menu_tab_label(
+		const struct orange_app_menu_model *app_menu,
+		int tab,
+		const char *active_app_label) {
+	if (app_menu != NULL && app_menu->available) {
+		if (tab >= 0 && tab < app_menu->tab_count &&
+				app_menu->tab_labels[tab][0] != '\0') {
+			return app_menu->tab_labels[tab];
+		}
+		return "";
+	}
+	return fallback_app_menu_tab_label(tab, active_app_label);
+}
+
+static int app_menu_item_count_for_kind(
+		enum orange_context_menu_kind kind,
+		const struct orange_app_menu_model *app_menu) {
+	int tab = app_menu_tab_for_context_kind(kind);
+	if (app_menu != NULL && app_menu->available) {
+		if (tab >= 0 && tab < app_menu->tab_count) {
+			return app_menu->item_counts[tab];
+		}
+		return 0;
+	}
+	return -1;
 }
 
 static const struct orange_config *state_config(
@@ -749,6 +1031,38 @@ static void draw_text(cairo_t *cr, const char *text, double x, double y,
 	set_source_rgba255(cr, r, g, b, alpha);
 	cairo_move_to(cr, x, y);
 	cairo_show_text(cr, text);
+}
+
+static void draw_menu_bar_text(cairo_t *cr,
+		const char *text,
+		struct orange_rect item,
+		double s,
+		int r,
+		int g,
+		int b,
+		bool bold) {
+	if (text == NULL || text[0] == '\0' || item.width <= 0) {
+		return;
+	}
+
+	double font_size = 24.0 * s;
+	cairo_select_font_face(cr, "Sans",
+		CAIRO_FONT_SLANT_NORMAL,
+		bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
+	cairo_set_font_size(cr, font_size);
+	cairo_text_extents_t extents;
+	cairo_text_extents(cr, text, &extents);
+
+	int pad = scaled_i(bold ? 10 : 9, s);
+	double x = item.x + pad;
+	double baseline = item.y +
+		((double)item.height - extents.height) * 0.5 - extents.y_bearing;
+
+	cairo_save(cr);
+	cairo_rectangle(cr, item.x, item.y, item.width, item.height);
+	cairo_clip(cr);
+	draw_text(cr, text, x, baseline, font_size, r, g, b, 0.95, bold);
+	cairo_restore(cr);
 }
 
 static const char *dock_icon_name(int launcher_idx,
@@ -1018,16 +1332,15 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 			28 * s, 255, 255, 255, 0.98, true);
 	}
 
-	const char *menus[] = {
-		"Files", "File", "Edit", "View", "Go", "Window", "Help",
-	};
-	double x = scaled_i(109, s);
-	for (size_t i = 0; i < sizeof(menus) / sizeof(menus[0]); i++) {
-		draw_text(cr, menus[i], x, scaled_i(36, s), 28 * s,
-			text_r, text_g, text_b, 0.95, i == 0);
-		cairo_text_extents_t extents;
-		cairo_text_extents(cr, menus[i], &extents);
-		x += extents.x_advance + scaled_i(36, s);
+	const char *app_label = orange_shell_active_app_label(state);
+	for (int i = 0; i < layout->app_menu_item_count; i++) {
+		const char *label = app_menu_tab_label(&state->app_menu, i, app_label);
+		if (label == NULL || label[0] == '\0') {
+			continue;
+		}
+		struct orange_rect item = layout->app_menu_items[i];
+		draw_menu_bar_text(cr, label, item, s, text_r, text_g, text_b,
+			i == ORANGE_APP_MENU_TAB_APP);
 	}
 
 	time_t now = state->now != 0 ? state->now : time(NULL);
@@ -1058,19 +1371,19 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 	struct orange_assets *assets = state->assets;
 	struct orange_rect control_rect = centered_rect_in(
 		layout->status_items[ORANGE_STATUS_ITEM_CONTROL_CENTER],
-		scaled_i(32, s), scaled_i(30, s));
+		scaled_i(40, s), scaled_i(40, s));
 	struct orange_rect search_rect = centered_rect_in(
 		layout->status_items[ORANGE_STATUS_ITEM_SEARCH],
-		scaled_i(30, s), scaled_i(30, s));
+		scaled_i(40, s), scaled_i(40, s));
 	struct orange_rect battery_rect = centered_rect_in(
 		layout->status_items[ORANGE_STATUS_ITEM_BATTERY],
-		scaled_i(38, s), scaled_i(28, s));
+		scaled_i(40, s), scaled_i(40, s));
 	struct orange_rect sound_rect = centered_rect_in(
 		layout->status_items[ORANGE_STATUS_ITEM_SOUND],
-		scaled_i(30, s), scaled_i(30, s));
+		scaled_i(40, s), scaled_i(40, s));
 	struct orange_rect wifi_rect = centered_rect_in(
 		layout->status_items[ORANGE_STATUS_ITEM_WIFI],
-		scaled_i(34, s), scaled_i(30, s));
+		scaled_i(40, s), scaled_i(40, s));
 
 	int variant = ORANGE_ASSET_ICON_LIGHT;
 	const char *wifi_name = state->status.network_icon[0] != '\0' ?
@@ -1078,28 +1391,28 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 	cairo_surface_t *wifi_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, wifi_name) : NULL;
 	if (wifi_icon != NULL) {
-		draw_image_fit(cr, wifi_icon, wifi_rect, 0.92);
+		draw_tinted_image_fit(cr, wifi_icon, wifi_rect, 0.92, 255, 255, 255);
 	}
 	const char *sound_name = state->status.sound_icon[0] != '\0' ?
 		state->status.sound_icon : "audio-volume-high";
 	cairo_surface_t *sound_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, sound_name) : NULL;
 	if (sound_icon != NULL) {
-		draw_image_fit(cr, sound_icon, sound_rect, 0.88);
+		draw_tinted_image_fit(cr, sound_icon, sound_rect, 0.88, 255, 255, 255);
 	}
 	const char *battery_name = state->status.battery_icon[0] != '\0' ?
 		state->status.battery_icon : "battery";
 	cairo_surface_t *battery_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, battery_name) : NULL;
 	if (battery_icon != NULL) {
-		draw_image_fit(cr, battery_icon, battery_rect, 0.92);
+		draw_tinted_image_fit(cr, battery_icon, battery_rect, 0.92, 255, 255, 255);
 	} else {
 		draw_status_battery(cr, battery_rect);
 	}
 	cairo_surface_t *search_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, "edit-find") : NULL;
 	if (search_icon != NULL) {
-		draw_image_fit(cr, search_icon, search_rect, 0.88);
+		draw_tinted_image_fit(cr, search_icon, search_rect, 0.88, 255, 255, 255);
 	}
 	cairo_surface_t *control_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, "control-center") : NULL;
@@ -1107,7 +1420,7 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 		control_icon = orange_assets_icon(assets, variant, "preferences-system");
 	}
 	if (control_icon != NULL) {
-		draw_image_fit(cr, control_icon, control_rect, 0.88);
+		draw_tinted_image_fit(cr, control_icon, control_rect, 0.88, 255, 255, 255);
 	}
 }
 
@@ -1418,7 +1731,7 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 				launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
 				state->dock_open[launcher_idx]) {
 			double item_s = (double)item.width / 106.0;
-			set_source_rgba255(cr, 34, 37, 42, 0.70);
+			set_source_rgba255(cr, dark ? 255 : 34, dark ? 255 : 37, dark ? 255 : 42, 0.70);
 			cairo_arc(cr, item.x + item.width / 2.0,
 				r.y + r.height - scaled_i(10, s),
 				4.5 * item_s, 0, 2.0 * M_PI);
@@ -1780,7 +2093,7 @@ static void draw_system_menu(cairo_t *cr,
 	bool dark = is_dark_config(config);
 	struct menu_palette palette = menu_palette_for_config(config);
 	draw_menu_glass(cr, &panel, 14 * s, dark);
-	int icon_size = scaled_i(18, s);
+		int icon_size = scaled_i(22, s);
 	for (int i = 0; i < layout->system_menu_item_count; i++) {
 		struct orange_rect item = layout->system_menu_items[i];
 		if (i > 0 && layout->system_menu_separator[i]) {
@@ -1797,7 +2110,7 @@ static void draw_system_menu(cairo_t *cr,
 				state->assets, palette.icon_variant, menu_icon_names[i]);
 			if (icon != NULL) {
 				struct orange_rect icon_rect = {
-					item.x + scaled_i(10, s),
+					item.x + scaled_i(12, s),
 					item.y + (item.height - icon_size) / 2,
 					icon_size,
 					icon_size,
@@ -1806,11 +2119,44 @@ static void draw_system_menu(cairo_t *cr,
 			}
 		}
 		draw_text(cr, orange_shell_menu_label(i),
-			item.x + scaled_i(36, s),
-			item.y + scaled_i(28, s),
-			20 * s,
+			item.x + scaled_i(40, s),
+			item.y + scaled_i(32, s),
+			22 * s,
 			palette.text_r, palette.text_g, palette.text_b,
 			palette.text_alpha, i == 0);
+	}
+}
+
+static const char *context_menu_label_for_draw(
+		enum orange_context_menu_kind kind,
+		int index,
+		const struct orange_shell_state *state,
+		char *buffer,
+		size_t buffer_size) {
+	int tab = app_menu_tab_for_context_kind(kind);
+	if (state != NULL && state->app_menu.available &&
+			tab >= 0 && tab < state->app_menu.tab_count &&
+			index >= 0 && index < state->app_menu.item_counts[tab] &&
+			state->app_menu.items[tab][index].label[0] != '\0') {
+		return state->app_menu.items[tab][index].label;
+	}
+	if (kind != ORANGE_CONTEXT_MENU_APP || buffer == NULL || buffer_size == 0) {
+		return orange_shell_context_menu_label(kind, index);
+	}
+
+	const char *app_label = orange_shell_active_app_label(state);
+	switch (index) {
+	case 0:
+		snprintf(buffer, buffer_size, "About %s", app_label);
+		return buffer;
+	case 3:
+		snprintf(buffer, buffer_size, "Hide %s", app_label);
+		return buffer;
+	case 6:
+		snprintf(buffer, buffer_size, "Quit %s", app_label);
+		return buffer;
+	default:
+		return orange_shell_context_menu_label(kind, index);
 	}
 }
 
@@ -1828,7 +2174,7 @@ static void draw_context_menu(cairo_t *cr,
 	bool dark = is_dark_config(config);
 	struct menu_palette palette = menu_palette_for_config(config);
 	draw_menu_glass(cr, &panel, 13 * s, dark);
-	int icon_size = scaled_i(18, s);
+	int icon_size = scaled_i(22, s);
 	for (int i = 0; i < layout->context_menu_item_count; i++) {
 		struct orange_rect item = layout->context_menu_items[i];
 		if (i > 0 && layout->context_menu_separator[i]) {
@@ -1848,7 +2194,7 @@ static void draw_context_menu(cairo_t *cr,
 					state->assets, palette.icon_variant, icon_name);
 				if (icon != NULL) {
 					struct orange_rect icon_rect = {
-						item.x + scaled_i(10, s),
+						item.x + scaled_i(12, s),
 						item.y + (item.height - icon_size) / 2,
 						icon_size,
 						icon_size,
@@ -1857,11 +2203,15 @@ static void draw_context_menu(cairo_t *cr,
 				}
 			}
 		}
+		char label_buffer[128];
+		const char *label = context_menu_label_for_draw(
+			layout->context_menu_kind, i, state,
+			label_buffer, sizeof(label_buffer));
 		draw_text(cr,
-			orange_shell_context_menu_label(layout->context_menu_kind, i),
-			item.x + scaled_i(36, s),
-			item.y + scaled_i(27, s),
-			19 * s,
+			label,
+			item.x + scaled_i(42, s),
+			item.y + scaled_i(32, s),
+			22 * s,
 			palette.text_r, palette.text_g, palette.text_b,
 			palette.text_alpha, false);
 	}
@@ -2235,8 +2585,6 @@ void orange_shell_layout_compute(
 	layout->menu_bar = (struct orange_rect){0, 0, width, scaled_i(48, s)};
 	layout->system_menu_button = (struct orange_rect){
 		scaled_i(31, s), 0, scaled_i(52, s), layout->menu_bar.height};
-	layout->app_menu_button = (struct orange_rect){
-		scaled_i(95, s), 0, scaled_i(116, s), layout->menu_bar.height};
 	int clock_w = scaled_i(320, s);
 	int status_right = width - scaled_i(30, s);
 	layout->status_items[ORANGE_STATUS_ITEM_CLOCK] = (struct orange_rect){
@@ -2247,18 +2595,18 @@ void orange_shell_layout_compute(
 	};
 	status_right = layout->status_items[ORANGE_STATUS_ITEM_CLOCK].x -
 		scaled_i(10, s);
-	int status_gap = scaled_i(8, s);
+	int status_gap = scaled_i(20, s);
 	layout->status_items[ORANGE_STATUS_ITEM_CONTROL_CENTER] =
-		status_item_before(&status_right, scaled_i(42, s),
+		status_item_before(&status_right, scaled_i(40, s),
+			layout->menu_bar.height, status_gap);
+	layout->status_items[ORANGE_STATUS_ITEM_SOUND] =
+		status_item_before(&status_right, scaled_i(40, s),
 			layout->menu_bar.height, status_gap);
 	layout->status_items[ORANGE_STATUS_ITEM_SEARCH] =
 		status_item_before(&status_right, scaled_i(40, s),
 			layout->menu_bar.height, status_gap);
 	layout->status_items[ORANGE_STATUS_ITEM_BATTERY] =
 		status_item_before(&status_right, scaled_i(50, s),
-			layout->menu_bar.height, status_gap);
-	layout->status_items[ORANGE_STATUS_ITEM_SOUND] =
-		status_item_before(&status_right, scaled_i(40, s),
 			layout->menu_bar.height, status_gap);
 	layout->status_items[ORANGE_STATUS_ITEM_WIFI] =
 		status_item_before(&status_right, scaled_i(44, s),
@@ -2270,6 +2618,7 @@ void orange_shell_layout_compute(
 			layout->status_items[ORANGE_STATUS_ITEM_WIFI].x,
 		layout->menu_bar.height,
 	};
+	orange_shell_layout_set_app_menu_tabs(layout, "Files", NULL);
 
 	layout->calendar_widget = widget_rect_for_size(ORANGE_WIDGET_CALENDAR,
 		config->calendar_widget_size, scaled_i(32, s), scaled_i(92, s), s);
@@ -2431,8 +2780,8 @@ void orange_shell_layout_compute(
 			(int)(sizeof(menu_labels) / sizeof(menu_labels[0]));
 		layout->system_menu_panel = (struct orange_rect){
 			scaled_i(18, s), layout->menu_bar.height + scaled_i(4, s),
-			scaled_i(290, s),
-			scaled_i(18, s) + layout->system_menu_item_count * scaled_i(42, s)};
+			scaled_i(310, s),
+			scaled_i(22, s) + layout->system_menu_item_count * scaled_i(54, s)};
 		memset(layout->system_menu_separator, 0,
 			sizeof(layout->system_menu_separator));
 		for (int si = 0; menu_separator_before[si] >= 0; si++) {
@@ -2444,9 +2793,9 @@ void orange_shell_layout_compute(
 		for (int i = 0; i < layout->system_menu_item_count; i++) {
 			layout->system_menu_items[i] = (struct orange_rect){
 				layout->system_menu_panel.x + scaled_i(8, s),
-				layout->system_menu_panel.y + scaled_i(9, s) + i * scaled_i(42, s),
+				layout->system_menu_panel.y + scaled_i(14, s) + i * scaled_i(54, s),
 				layout->system_menu_panel.width - scaled_i(16, s),
-				scaled_i(40, s),
+				scaled_i(48, s),
 			};
 		}
 	}
@@ -2535,12 +2884,54 @@ void orange_shell_layout_snap_to_grid(
 	*y = grid_top + row * cell_h_total;
 }
 
+void orange_shell_layout_set_app_menu_tabs(
+		struct orange_shell_layout *layout,
+		const char *active_app_label,
+		const struct orange_app_menu_model *app_menu) {
+	if (layout == NULL) {
+		return;
+	}
+	double s = layout_scale(layout);
+	int x = scaled_i(95, s);
+	int max_right = layout->status_area.x - scaled_i(18, s);
+	layout->app_menu_item_count = ORANGE_APP_MENU_TAB_COUNT;
+	for (int i = 0; i < ORANGE_APP_MENU_TAB_COUNT; i++) {
+		const char *label = app_menu_tab_label(app_menu, i, active_app_label);
+		if (label == NULL || label[0] == '\0') {
+			layout->app_menu_items[i] = (struct orange_rect){x, 0, 0, 0};
+			continue;
+		}
+		if (x >= max_right) {
+			layout->app_menu_items[i] = (struct orange_rect){x, 0, 0, 0};
+			continue;
+		}
+		bool bold = i == ORANGE_APP_MENU_TAB_APP;
+		int width = app_menu_tab_text_width(label, bold, s);
+		if (x + width > max_right) {
+			width = max_right - x;
+		}
+		if (width < scaled_i(42, s)) {
+			layout->app_menu_items[i] = (struct orange_rect){x, 0, 0, 0};
+			continue;
+		}
+		layout->app_menu_items[i] = (struct orange_rect){
+			x,
+			0,
+			width,
+			layout->menu_bar.height,
+		};
+		x += width;
+	}
+	layout->app_menu_button = layout->app_menu_items[ORANGE_APP_MENU_TAB_APP];
+}
+
 void orange_shell_layout_set_context_menu(
 		struct orange_shell_layout *layout,
 		enum orange_context_menu_kind kind,
 		int index,
 		int cursor_x,
-		int cursor_y) {
+		int cursor_y,
+		const struct orange_app_menu_model *app_menu) {
 	layout->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 	layout->context_menu_index = -1;
 	layout->context_menu_item_count = 0;
@@ -2559,6 +2950,66 @@ void orange_shell_layout_set_context_menu(
 		item_count = (int)(sizeof(dock_context_labels) /
 			sizeof(dock_context_labels[0]));
 		separator_before = dock_context_separator_before;
+	} else if (app_menu_tab_for_context_kind(kind) >= 0) {
+		int tab = app_menu_tab_for_context_kind(kind);
+		if (tab >= layout->app_menu_item_count) {
+			return;
+		}
+		anchor = layout->app_menu_items[tab];
+		item_count = app_menu_item_count_for_kind(kind, app_menu);
+		if (item_count < 0) {
+			switch (kind) {
+			case ORANGE_CONTEXT_MENU_APP:
+				item_count = (int)(sizeof(app_context_labels) /
+					sizeof(app_context_labels[0]));
+				separator_before = app_context_separator_before;
+				break;
+			case ORANGE_CONTEXT_MENU_APP_FILE:
+				item_count = (int)(sizeof(file_context_labels) /
+					sizeof(file_context_labels[0]));
+				separator_before = file_context_separator_before;
+				break;
+			case ORANGE_CONTEXT_MENU_APP_EDIT:
+				item_count = (int)(sizeof(edit_context_labels) /
+					sizeof(edit_context_labels[0]));
+				separator_before = edit_context_separator_before;
+				break;
+			case ORANGE_CONTEXT_MENU_APP_VIEW:
+				item_count = (int)(sizeof(view_context_labels) /
+					sizeof(view_context_labels[0]));
+				separator_before = view_context_separator_before;
+				break;
+			case ORANGE_CONTEXT_MENU_APP_GO:
+				item_count = (int)(sizeof(go_context_labels) /
+					sizeof(go_context_labels[0]));
+				separator_before = go_context_separator_before;
+				break;
+			case ORANGE_CONTEXT_MENU_APP_WINDOW:
+				item_count = (int)(sizeof(window_context_labels) /
+					sizeof(window_context_labels[0]));
+				separator_before = window_context_separator_before;
+				break;
+			case ORANGE_CONTEXT_MENU_APP_HISTORY:
+				item_count = (int)(sizeof(history_context_labels) /
+					sizeof(history_context_labels[0]));
+				break;
+			case ORANGE_CONTEXT_MENU_APP_BOOKMARKS:
+				item_count = (int)(sizeof(bookmarks_context_labels) /
+					sizeof(bookmarks_context_labels[0]));
+				break;
+			case ORANGE_CONTEXT_MENU_APP_TOOLS:
+				item_count = (int)(sizeof(tools_context_labels) /
+					sizeof(tools_context_labels[0]));
+				break;
+			case ORANGE_CONTEXT_MENU_APP_HELP:
+				item_count = (int)(sizeof(help_context_labels) /
+					sizeof(help_context_labels[0]));
+				separator_before = help_context_separator_before;
+				break;
+			default:
+				return;
+			}
+		}
 	} else if (kind == ORANGE_CONTEXT_MENU_WIDGET &&
 			index >= 0 && index < layout->widget_count &&
 			layout->widgets[index].visible) {
@@ -2607,29 +3058,45 @@ void orange_shell_layout_set_context_menu(
 	if (item_count > ORANGE_CONTEXT_MENU_ITEM_MAX) {
 		item_count = ORANGE_CONTEXT_MENU_ITEM_MAX;
 	}
+	if (item_count <= 0) {
+		return;
+	}
 
-	int item_h = scaled_i(40, s);
-	int panel_width_base = 250;
-	if (kind == ORANGE_CONTEXT_MENU_DOCK) {
-		panel_width_base = 214;
+	int item_h = scaled_i(48, s);
+	int panel_width_base = 270;
+	if (kind == ORANGE_CONTEXT_MENU_APP) {
+		panel_width_base = 340;
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_FILE ||
+			kind == ORANGE_CONTEXT_MENU_APP_EDIT ||
+			kind == ORANGE_CONTEXT_MENU_APP_VIEW ||
+			kind == ORANGE_CONTEXT_MENU_APP_WINDOW ||
+			kind == ORANGE_CONTEXT_MENU_APP_HELP) {
+		panel_width_base = 320;
+	} else if (kind == ORANGE_CONTEXT_MENU_APP_GO) {
+		panel_width_base = 280;
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK) {
+		panel_width_base = 234;
 	} else if (kind == ORANGE_CONTEXT_MENU_WIDGET) {
-		panel_width_base = 232;
+		panel_width_base = 256;
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP) {
-		panel_width_base = 366;
+		panel_width_base = 390;
 	} else if (kind == ORANGE_CONTEXT_MENU_STATUS) {
-		panel_width_base = 370;
+		panel_width_base = 400;
 	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_WIFI ||
 			kind == ORANGE_CONTEXT_MENU_STATUS_SOUND ||
 			kind == ORANGE_CONTEXT_MENU_STATUS_BATTERY) {
-		panel_width_base = 284;
+		panel_width_base = 306;
 	}
 	int panel_w = scaled_i(panel_width_base, s);
-	int panel_h = scaled_i(12, s) + item_count * item_h;
+	int panel_h = scaled_i(14, s) + item_count * item_h;
 	int x, y;
 	if (kind == ORANGE_CONTEXT_MENU_DESKTOP ||
 			kind == ORANGE_CONTEXT_MENU_DESKTOP_ICON) {
 		x = cursor_x;
 		y = cursor_y;
+	} else if (app_menu_tab_for_context_kind(kind) >= 0) {
+		x = anchor.x;
+		y = layout->menu_bar.height + scaled_i(6, s);
 	} else if (kind == ORANGE_CONTEXT_MENU_DOCK) {
 		x = anchor.x + anchor.width / 2 - panel_w / 2;
 		y = layout->dock.y - panel_h - scaled_i(10, s);
@@ -2686,9 +3153,9 @@ void orange_shell_layout_set_context_menu(
 	}
 	for (int i = 0; i < item_count; i++) {
 		layout->context_menu_items[i] = (struct orange_rect){
-			x + scaled_i(7, s),
-			y + scaled_i(6, s) + i * item_h,
-			panel_w - scaled_i(14, s),
+			x + scaled_i(8, s),
+			y + scaled_i(8, s) + i * item_h,
+			panel_w - scaled_i(16, s),
 			item_h,
 		};
 	}
@@ -2797,8 +3264,10 @@ struct orange_shell_hit orange_shell_hit_test(
 	if (rect_contains(&layout->system_menu_button, x, y)) {
 		return (struct orange_shell_hit){ORANGE_HIT_SYSTEM_MENU, -1};
 	}
-	if (rect_contains(&layout->app_menu_button, x, y)) {
-		return (struct orange_shell_hit){ORANGE_HIT_APP_MENU, -1};
+	for (int i = 0; i < layout->app_menu_item_count; i++) {
+		if (rect_contains(&layout->app_menu_items[i], x, y)) {
+			return (struct orange_shell_hit){ORANGE_HIT_APP_MENU, i};
+		}
 	}
 	for (int i = 0; i < ORANGE_STATUS_ITEM_COUNT; i++) {
 		if (rect_contains(&layout->status_items[i], x, y)) {
@@ -2881,11 +3350,14 @@ void orange_shell_draw_with_options(
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(width, height, state->system_menu_open, config,
 		state->desktop_entry_count, state->desktop_volume_count, &layout);
+	orange_shell_layout_set_app_menu_tabs(&layout,
+		orange_shell_active_app_label(state), &state->app_menu);
 	orange_shell_layout_set_context_menu(&layout,
 		state->context_menu_kind,
 		state->context_menu_index,
 		state->context_menu_cursor_x,
-		state->context_menu_cursor_y);
+		state->context_menu_cursor_y,
+		&state->app_menu);
 	if (state->notification_center_open) {
 		orange_shell_layout_set_notification_center(&layout);
 	}
@@ -2963,7 +3435,7 @@ const char *orange_shell_dock_command(int index,
 		return NULL;
 	}
 	const char *app_id = config->dock_apps[index];
-	const char *bc = builtin_command(app_id);
+	const char *bc = orange_shell_builtin_command(app_id);
 	if (bc != NULL) {
 		return bc;
 	}
@@ -2978,6 +3450,13 @@ const char *orange_shell_dock_command(int index,
 	return NULL;
 }
 
+const char *orange_shell_active_app_label(const struct orange_shell_state *state) {
+	if (state != NULL && state->active_app_label[0] != '\0') {
+		return state->active_app_label;
+	}
+	return "Files";
+}
+
 const char *orange_shell_menu_label(int index) {
 	if (index < 0 || index >= (int)(sizeof(menu_labels) / sizeof(menu_labels[0]))) {
 		return NULL;
@@ -2989,6 +3468,76 @@ const char *orange_shell_menu_label(int index) {
 		enum orange_context_menu_kind kind,
 		int index) {
 	switch (kind) {
+	case ORANGE_CONTEXT_MENU_APP:
+		if (index >= 0 &&
+				index < (int)(sizeof(app_context_labels) /
+					sizeof(app_context_labels[0]))) {
+			return app_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_FILE:
+		if (index >= 0 &&
+				index < (int)(sizeof(file_context_labels) /
+					sizeof(file_context_labels[0]))) {
+			return file_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_EDIT:
+		if (index >= 0 &&
+				index < (int)(sizeof(edit_context_labels) /
+					sizeof(edit_context_labels[0]))) {
+			return edit_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_VIEW:
+		if (index >= 0 &&
+				index < (int)(sizeof(view_context_labels) /
+					sizeof(view_context_labels[0]))) {
+			return view_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_GO:
+		if (index >= 0 &&
+				index < (int)(sizeof(go_context_labels) /
+					sizeof(go_context_labels[0]))) {
+			return go_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_WINDOW:
+		if (index >= 0 &&
+				index < (int)(sizeof(window_context_labels) /
+					sizeof(window_context_labels[0]))) {
+			return window_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_HISTORY:
+		if (index >= 0 &&
+				index < (int)(sizeof(history_context_labels) /
+					sizeof(history_context_labels[0]))) {
+			return history_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_BOOKMARKS:
+		if (index >= 0 &&
+				index < (int)(sizeof(bookmarks_context_labels) /
+					sizeof(bookmarks_context_labels[0]))) {
+			return bookmarks_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_TOOLS:
+		if (index >= 0 &&
+				index < (int)(sizeof(tools_context_labels) /
+					sizeof(tools_context_labels[0]))) {
+			return tools_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_HELP:
+		if (index >= 0 &&
+				index < (int)(sizeof(help_context_labels) /
+					sizeof(help_context_labels[0]))) {
+			return help_context_labels[index];
+		}
+		break;
 	case ORANGE_CONTEXT_MENU_DESKTOP_VOLUME: {
 		(void)index;
 		static const char *vol_labels[] = {
@@ -3084,6 +3633,76 @@ const char *orange_shell_volume_icon_name(const struct orange_volume_info *volum
 		enum orange_context_menu_kind kind,
 		int index) {
 	switch (kind) {
+	case ORANGE_CONTEXT_MENU_APP:
+		if (index >= 0 &&
+				index < (int)(sizeof(app_context_icon_names) /
+					sizeof(app_context_icon_names[0]))) {
+			return app_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_FILE:
+		if (index >= 0 &&
+				index < (int)(sizeof(file_context_icon_names) /
+					sizeof(file_context_icon_names[0]))) {
+			return file_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_EDIT:
+		if (index >= 0 &&
+				index < (int)(sizeof(edit_context_icon_names) /
+					sizeof(edit_context_icon_names[0]))) {
+			return edit_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_VIEW:
+		if (index >= 0 &&
+				index < (int)(sizeof(view_context_icon_names) /
+					sizeof(view_context_icon_names[0]))) {
+			return view_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_GO:
+		if (index >= 0 &&
+				index < (int)(sizeof(go_context_icon_names) /
+					sizeof(go_context_icon_names[0]))) {
+			return go_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_WINDOW:
+		if (index >= 0 &&
+				index < (int)(sizeof(window_context_icon_names) /
+					sizeof(window_context_icon_names[0]))) {
+			return window_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_HISTORY:
+		if (index >= 0 &&
+				index < (int)(sizeof(history_context_icon_names) /
+					sizeof(history_context_icon_names[0]))) {
+			return history_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_BOOKMARKS:
+		if (index >= 0 &&
+				index < (int)(sizeof(bookmarks_context_icon_names) /
+					sizeof(bookmarks_context_icon_names[0]))) {
+			return bookmarks_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_TOOLS:
+		if (index >= 0 &&
+				index < (int)(sizeof(tools_context_icon_names) /
+					sizeof(tools_context_icon_names[0]))) {
+			return tools_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_APP_HELP:
+		if (index >= 0 &&
+				index < (int)(sizeof(help_context_icon_names) /
+					sizeof(help_context_icon_names[0]))) {
+			return help_context_icon_names[index];
+		}
+		break;
 	case ORANGE_CONTEXT_MENU_DESKTOP_VOLUME: {
 		(void)index;
 		static const char *vol_icons[] = {

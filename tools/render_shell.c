@@ -13,7 +13,7 @@
 
 static void usage(const char *argv0) {
 	fprintf(stderr,
-		"usage: %s [--width N] [--height N] [--assets PATH] [--config PATH] [--timestamp N] [--foreground-only] [--notification-center] [--context-menu KIND] [--context-index N] [--context-x N] [--context-y N] output.png\n",
+		"usage: %s [--width N] [--height N] [--assets PATH] [--config PATH] [--timestamp N] [--active-app NAME] [--foreground-only] [--notification-center] [--context-menu KIND] [--context-index N] [--context-x N] [--context-y N] output.png\n",
 		argv0);
 }
 
@@ -22,6 +22,26 @@ static bool parse_context_menu_kind(
 		enum orange_context_menu_kind *kind) {
 	if (strcmp(value, "none") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_NONE;
+	} else if (strcmp(value, "app") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP;
+	} else if (strcmp(value, "app-file") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP_FILE;
+	} else if (strcmp(value, "app-edit") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP_EDIT;
+	} else if (strcmp(value, "app-view") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP_VIEW;
+	} else if (strcmp(value, "app-go") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP_GO;
+	} else if (strcmp(value, "app-window") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP_WINDOW;
+	} else if (strcmp(value, "app-history") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP_HISTORY;
+	} else if (strcmp(value, "app-bookmarks") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP_BOOKMARKS;
+	} else if (strcmp(value, "app-help") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP_HELP;
+	} else if (strcmp(value, "app-tools") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_APP_TOOLS;
 	} else if (strcmp(value, "dock") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_DOCK;
 	} else if (strcmp(value, "widget") == 0) {
@@ -52,6 +72,7 @@ int main(int argc, char **argv) {
 	time_t now = 1757638380;
 	bool foreground_only = false;
 	bool notification_center = false;
+	const char *active_app_label = NULL;
 	enum orange_context_menu_kind context_kind = ORANGE_CONTEXT_MENU_NONE;
 	int context_index = -1;
 	int context_x = -1;
@@ -69,6 +90,8 @@ int main(int argc, char **argv) {
 			config_path = argv[++i];
 		} else if (strcmp(argv[i], "--timestamp") == 0 && i + 1 < argc) {
 			now = (time_t)strtoll(argv[++i], NULL, 10);
+		} else if (strcmp(argv[i], "--active-app") == 0 && i + 1 < argc) {
+			active_app_label = argv[++i];
 		} else if (strcmp(argv[i], "--foreground-only") == 0) {
 			foreground_only = true;
 		} else if (strcmp(argv[i], "--notification-center") == 0) {
@@ -142,6 +165,10 @@ int main(int argc, char **argv) {
 		.context_menu_cursor_x = context_x,
 		.context_menu_cursor_y = context_y,
 	};
+	if (active_app_label != NULL && active_app_label[0] != '\0') {
+		snprintf(state.active_app_label, sizeof(state.active_app_label),
+			"%s", active_app_label);
+	}
 	if (foreground_only) {
 		const struct orange_shell_draw_options options = {
 			.draw_wallpaper = false,
