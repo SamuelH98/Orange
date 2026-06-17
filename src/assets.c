@@ -746,11 +746,6 @@ static bool find_icon_file(char *out,
 				bases, base_count, ICON_LOOKUP_SIZE, ICON_LOOKUP_SCALE, 0)) {
 		return true;
 	}
-	if (strcmp(theme, "gnome") != 0 &&
-			find_icon_helper(out, out_size, normalized, "gnome", assets,
-				bases, base_count, ICON_LOOKUP_SIZE, ICON_LOOKUP_SCALE, 0)) {
-		return true;
-	}
 	return lookup_fallback_icon(out, out_size, normalized, bases, base_count);
 }
 

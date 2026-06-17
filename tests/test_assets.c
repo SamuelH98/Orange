@@ -80,7 +80,6 @@ int main(void) {
 	mkdir_p("/tmp/orange-assets-test/data/icons/TestTheme/places/scalable");
 	mkdir_p("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps");
 	assert(setenv("XDG_DATA_HOME", "/tmp/orange-assets-test/data", 1) == 0);
-	assert(setenv("XDG_DATA_DIRS", "/tmp/orange-assets-test/data", 1) == 0);
 	write_index("/tmp/orange-assets-test/data/icons/TestTheme/index.theme", NULL);
 	write_index("/tmp/orange-assets-test/data/icons/hicolor/index.theme", NULL);
 	write_png("/tmp/orange-assets-test/data/icons/TestTheme/128x128/apps/test-app.png",
