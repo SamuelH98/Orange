@@ -814,14 +814,14 @@ static const char *const aliases_display[] = {
 static const char *const aliases_showtime[] = {
 	"org.gnome.Showtime", "Showtime",
 	"video-player", "multimedia-video-player",
-	"applications-multimedia", "video", "video-display",
-	"multimedia-player", NULL,
+	"applications-multimedia", "video",
+	"multimedia-player", "application-x-executable", NULL,
 };
 static const char *const aliases_video_player[] = {
 	"video-player", "multimedia-video-player",
 	"org.gnome.Showtime", "Showtime",
-	"applications-multimedia", "video", "video-display",
-	"multimedia-player", NULL,
+	"applications-multimedia", "video",
+	"multimedia-player", "application-x-executable", NULL,
 };
 static const char *const aliases_keyboard[] = {
 	"input-keyboard", "keyboard-brightness", "preferences-desktop-keyboard",
@@ -862,7 +862,7 @@ static const char *const aliases_calculator[] = {
 static const char *const aliases_notes_app[] = {
 	"org.gnome.Notes", "Gnome-notes", "Gnome-Notes",
 	"notes", "accessories-notes", "stock_notes",
-	"utilities-notes", NULL,
+	"utilities-notes", "application-x-executable", NULL,
 };
 static const char *const aliases_text_editor[] = {
 	"org.gnome.TextEditor", "gnome-text-editor",
@@ -871,10 +871,11 @@ static const char *const aliases_text_editor[] = {
 };
 static const char *const aliases_software[] = {
 	"org.gnome.Software", "system-software-install",
-	"software", NULL,
+	"software", "application-x-executable", NULL,
 };
 static const char *const aliases_terminal[] = {
-	"org.gnome.Terminal", "utilities-terminal", "terminal", NULL,
+	"org.gnome.Terminal", "utilities-terminal", "terminal",
+	"application-x-executable", NULL,
 };
 static const char *const aliases_folder[] = {
 	"folder", "inode-directory", "folder-new", "directory", NULL,
@@ -899,12 +900,17 @@ static const char *const aliases_image_ext[] = {
 };
 static const char *const aliases_address_book[] = {
 	"x-office-address-book", "org.gnome.Contacts", "contacts",
-	"address-book", "x-office-contact", NULL,
+	"address-book", "x-office-contact",
+	"application-x-executable", NULL,
 };
 static const char *const aliases_audio_generic[] = {
 	"multimedia-audio-player", "audio-player",
 	"org.gnome.Decibels", "applications-multimedia",
 	"audio-x-generic", "audio", "music", NULL,
+};
+static const char *const aliases_calendar[] = {
+	"x-office-calendar", "org.gnome.Calendar", "calendar",
+	"application-x-executable", NULL,
 };
 
 struct icon_alias_set {
@@ -970,6 +976,7 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"image-viewer", aliases_image_ext},
 	{"accessories-image-viewer", aliases_image_ext},
 	{"x-office-address-book", aliases_address_book},
+	{"x-office-calendar", aliases_calendar},
 	{"audio-x-generic", aliases_audio_generic},
 };
 
