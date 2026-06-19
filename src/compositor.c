@@ -170,6 +170,17 @@ struct orange_server {
 
 	bool system_menu_open;
 	bool notification_center_open;
+	bool launcher_open;
+	char launcher_query[ORANGE_LAUNCHER_QUERY_MAX];
+	int launcher_hot_app;
+	int launcher_app_indices[ORANGE_LAUNCHER_APP_MAX];
+	int launcher_app_count;
+	int launcher_current_mode;
+	int launcher_scroll;
+	bool launcher_search_focus;
+	char launcher_categories[ORANGE_LAUNCHER_CATEGORY_MAX][ORANGE_LAUNCHER_CATEGORY_NAME_MAX];
+	int launcher_category_count;
+	int launcher_category_active;
 	struct orange_status_state status;
 	struct orange_app_menu_model app_menu;
 	char app_menu_cache_key[128];
@@ -820,6 +831,83 @@ static void launch_app_picker(void) {
 	launch_command("wofi --show drun || rofi -show drun || true");
 }
 
+static void launcher_refresh_filter(struct orange_server *server) {
+	server->launcher_app_count = orange_launcher_filter(
+		server->desktop_entries, (int)server->desktop_entry_count,
+		server->launcher_query,
+		server->launcher_app_indices, ORANGE_LAUNCHER_APP_MAX);
+	if (server->launcher_hot_app >= server->launcher_app_count) {
+		server->launcher_hot_app = server->launcher_app_count - 1;
+	}
+	if (server->launcher_hot_app < 0) {
+		server->launcher_hot_app = 0;
+	}
+}
+
+static void launcher_open_overlay(struct orange_server *server, bool focus_search) {
+	server->launcher_open = true;
+	server->launcher_query[0] = '\0';
+	server->launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
+	server->launcher_scroll = 0;
+	server->launcher_hot_app = -1;
+	server->launcher_search_focus = focus_search;
+	server->system_menu_open = false;
+	server->notification_center_open = false;
+	/* Default category tabs for Apps mode */
+	const char *cats[] = {
+		"Utilities", "Productivity & Finance", "Social",
+		"Entertainment", "Photo & Video", "Information",
+	};
+	int nc = (int)(sizeof(cats) / sizeof(cats[0]));
+	if (nc > ORANGE_LAUNCHER_CATEGORY_MAX) {
+		nc = ORANGE_LAUNCHER_CATEGORY_MAX;
+	}
+	server->launcher_category_count = nc;
+	server->launcher_category_active = 0;
+	for (int i = 0; i < nc; i++) {
+		snprintf(server->launcher_categories[i],
+			sizeof(server->launcher_categories[i]),
+			"%s", cats[i]);
+	}
+	launcher_refresh_filter(server);
+	server_mark_shell_dirty(server);
+}
+
+static void launcher_close_overlay(struct orange_server *server) {
+	if (!server->launcher_open) {
+		return;
+	}
+	server->launcher_open = false;
+	server->launcher_query[0] = '\0';
+	server->launcher_hot_app = -1;
+	server->launcher_search_focus = false;
+	server_mark_shell_dirty(server);
+}
+
+static void launcher_toggle_overlay(struct orange_server *server, bool focus_search) {
+	if (server->launcher_open) {
+		launcher_close_overlay(server);
+	} else {
+		launcher_open_overlay(server, focus_search);
+	}
+}
+
+/* Forward declaration — defined later in this file. */
+static void launch_desktop_entry(const struct orange_desktop_entry *entry);
+
+/* Launch the app at a flat (filtered) index and close the overlay. */
+static void launcher_launch_index(struct orange_server *server, int flat_index) {
+	if (flat_index < 0 || flat_index >= server->launcher_app_count) {
+		return;
+	}
+	int entry_index = server->launcher_app_indices[flat_index];
+	if (entry_index >= 0 &&
+			entry_index < (int)server->desktop_entry_count) {
+		launch_desktop_entry(&server->desktop_entries[entry_index]);
+	}
+	launcher_close_overlay(server);
+}
+
 static uint32_t monotonic_time_msec(void) {
 	struct timespec ts;
 	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
@@ -998,8 +1086,20 @@ static void launch_dock_launcher(
 	}
 
 	const char *app_id = server->config.dock_apps[launcher_idx];
-	if (orange_shell_builtin_command(app_id) != NULL) {
-		launch_command(orange_shell_builtin_command(app_id));
+	/* The dock launcher grid icon opens the native Launchpad/Spotlight overlay
+	 * rather than an external picker. An external picker can still be forced
+	 * via the ORANGE_APP_PICKER environment variable. */
+	if (strcmp(app_id, "__launcher__") == 0) {
+		if (getenv("ORANGE_APP_PICKER") != NULL &&
+				getenv("ORANGE_APP_PICKER")[0] != '\0') {
+			launch_app_picker();
+		} else {
+			launcher_open_overlay(server, false);
+		}
+		return;
+	}
+	if (orange_dock_builtin_command(app_id) != NULL) {
+		launch_command(orange_dock_builtin_command(app_id));
 		return;
 	}
 	const struct orange_desktop_entry *entry =
@@ -1007,7 +1107,7 @@ static void launch_dock_launcher(
 	if (entry != NULL) {
 		launch_desktop_entry(entry);
 	} else {
-		const char *command = orange_shell_dock_command(launcher_idx,
+		const char *command = orange_dock_command(launcher_idx,
 			server->desktop_entries, (int)server->desktop_entry_count,
 			&server->config);
 		if (command != NULL) {
@@ -1026,7 +1126,7 @@ static int dock_launcher_for_visible_index(
 	int launchers[ORANGE_DOCK_MAX] = {0};
 	bool used[ORANGE_DOCK_MAX] = {0};
 	int visible = 0;
-	int dock_count = orange_shell_dock_count(&server->config);
+	int dock_count = orange_dock_count(&server->config);
 	for (int i = 0; i < dock_count && visible < ORANGE_DOCK_MAX; i++) {
 		int idx = server->config.dock_order[i];
 		if (idx < 0 || idx >= ORANGE_DOCK_MAX ||
@@ -1214,7 +1314,7 @@ static void server_active_app_label(
 
 	int launcher_idx = dock_launcher_for_view(server, server->focused_view);
 	const char *label = launcher_idx >= 0 ?
-		orange_shell_dock_label(launcher_idx,
+		orange_dock_label(launcher_idx,
 			server->desktop_entries,
 			(int)server->desktop_entry_count,
 			&server->config) : NULL;
@@ -1408,6 +1508,13 @@ static void compute_shell_layout_for_output(
 	if (server->notification_center_open) {
 		orange_shell_layout_set_notification_center(layout);
 	}
+	if (server->launcher_open) {
+		launcher_refresh_filter(server);
+		bool searching = server->launcher_query[0] != '\0';
+		layout->launcher_scroll = server->launcher_scroll;
+		layout->launcher_current_mode = server->launcher_current_mode;
+		orange_shell_layout_set_launcher(layout, searching);
+	}
 }
 
 static int dock_hover_index_for_pointer(
@@ -1556,8 +1663,22 @@ static void output_redraw_shell(struct orange_output *output) {
 		.context_menu_index = output->server->context_menu_index,
 		.context_menu_cursor_x = output->server->context_menu_cursor_x,
 		.context_menu_cursor_y = output->server->context_menu_cursor_y,
+		.launcher_open = output->server->launcher_open,
+		.launcher_hot_app = output->server->launcher_hot_app,
+		.launcher_app_count = output->server->launcher_app_count,
+		.launcher_scroll = output->server->launcher_scroll,
+		.launcher_current_mode = output->server->launcher_current_mode,
+		.launcher_search_focus = output->server->launcher_search_focus,
+		.launcher_category_count = output->server->launcher_category_count,
+		.launcher_category_active = output->server->launcher_category_active,
 	};
 	memcpy(state.dock_open, output->server->dock_open, sizeof(state.dock_open));
+	memcpy(state.launcher_query, output->server->launcher_query,
+		sizeof(state.launcher_query));
+	memcpy(state.launcher_app_indices, output->server->launcher_app_indices,
+		sizeof(state.launcher_app_indices));
+	memcpy(state.launcher_categories, output->server->launcher_categories,
+		sizeof(state.launcher_categories));
 	server_active_app_label(output->server,
 		state.active_app_label, sizeof(state.active_app_label));
 	state.app_menu = output->server->app_menu;
@@ -1737,49 +1858,53 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 		wlr_seat_pointer_notify_clear_focus(server->seat);
 	}
 
-	int local_x = 0;
-	int local_y = 0;
-	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
-	int new_hot = -1;
-	int dock_redraw_threshold = 16;
-	if (output != NULL) {
-		struct orange_shell_layout layout;
-		compute_shell_layout_for_output(server, output, &layout);
-		struct orange_shell_hit hit =
-			orange_shell_hit_test(&layout, local_x, local_y);
-		if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
-			new_hot = hit.index;
-		} else {
-			new_hot = dock_hover_index_for_pointer(&layout,
-				&server->config, local_x, local_y);
-		}
-		if (new_hot >= 0 && new_hot < layout.dock_item_count) {
-			int item_w = layout.dock_items[new_hot].width;
-			dock_redraw_threshold = item_w / 4;
-			if (dock_redraw_threshold < 12) {
-				dock_redraw_threshold = 12;
+	/* Skip dock-hover layout computation when the cursor is over a client
+	 * surface — the dock is behind the window and magnification is invisible. */
+	if (surface == NULL) {
+		int local_x = 0;
+		int local_y = 0;
+		struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+		int new_hot = -1;
+		int dock_redraw_threshold = 16;
+		if (output != NULL) {
+			struct orange_shell_layout layout;
+			compute_shell_layout_for_output(server, output, &layout);
+			struct orange_shell_hit hit =
+				orange_shell_hit_test(&layout, local_x, local_y);
+			if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
+				new_hot = hit.index;
+			} else {
+				new_hot = dock_hover_index_for_pointer(&layout,
+					&server->config, local_x, local_y);
 			}
-			if (dock_redraw_threshold > 28) {
-				dock_redraw_threshold = 28;
+			if (new_hot >= 0 && new_hot < layout.dock_item_count) {
+				int item_w = layout.dock_items[new_hot].width;
+				dock_redraw_threshold = item_w / 4;
+				if (dock_redraw_threshold < 12) {
+					dock_redraw_threshold = 12;
+				}
+				if (dock_redraw_threshold > 28) {
+					dock_redraw_threshold = 28;
+				}
 			}
 		}
-	}
-	if (new_hot != server->hot_dock_index) {
-		server->hot_dock_index = new_hot;
-		server->last_dock_pointer_x = local_x;
-		server->last_dock_pointer_y = local_y;
-		server_mark_shell_dirty(server);
-	} else if (new_hot >= 0 && server->config.dock_magnification) {
-		int dx = abs(local_x - server->last_dock_pointer_x);
-		int dy = abs(local_y - server->last_dock_pointer_y);
-		if (dx >= dock_redraw_threshold || dy >= dock_redraw_threshold) {
+		if (new_hot != server->hot_dock_index) {
+			server->hot_dock_index = new_hot;
 			server->last_dock_pointer_x = local_x;
 			server->last_dock_pointer_y = local_y;
 			server_mark_shell_dirty(server);
+		} else if (new_hot >= 0 && server->config.dock_magnification) {
+			int dx = abs(local_x - server->last_dock_pointer_x);
+			int dy = abs(local_y - server->last_dock_pointer_y);
+			if (dx >= dock_redraw_threshold || dy >= dock_redraw_threshold) {
+				server->last_dock_pointer_x = local_x;
+				server->last_dock_pointer_y = local_y;
+				server_mark_shell_dirty(server);
+			}
+		} else if (new_hot < 0) {
+			server->last_dock_pointer_x = INT_MIN;
+			server->last_dock_pointer_y = INT_MIN;
 		}
-	} else if (new_hot < 0) {
-		server->last_dock_pointer_x = INT_MIN;
-		server->last_dock_pointer_y = INT_MIN;
 	}
 }
 
@@ -1987,7 +2112,6 @@ static void clear_context_menu(struct orange_server *server) {
 		server->context_menu_index = -1;
 		server->context_menu_cursor_x = 0;
 		server->context_menu_cursor_y = 0;
-		server_mark_shell_dirty(server);
 	}
 }
 
@@ -2014,6 +2138,79 @@ static void remove_widget(struct orange_server *server, int target) {
 		return;
 	}
 	orange_config_save(&server->config, server->options->config_path);
+}
+
+static bool try_focused_app_dbus_action(
+		struct orange_server *server,
+		const char *action_name) {
+	if (server == NULL || action_name == NULL || action_name[0] == '\0') {
+		return false;
+	}
+	const char *app_id = focused_app_id(server);
+	if (app_id == NULL) {
+		return false;
+	}
+
+	char stripped_id[128];
+	strip_desktop_suffix(app_id, stripped_id, sizeof(stripped_id));
+	char active_label[ORANGE_APP_MENU_LABEL_MAX];
+	server_active_app_label(server, active_label, sizeof(active_label));
+
+	GError *error = NULL;
+	GDBusConnection *connection = g_bus_get_sync(
+		G_BUS_TYPE_SESSION, NULL, &error);
+	if (error != NULL) {
+		g_error_free(error);
+	}
+	if (connection == NULL) {
+		return false;
+	}
+
+	const char *candidates[5] = {NULL};
+	int count = 0;
+	if (stripped_id[0] != '\0') {
+		candidates[count++] = stripped_id;
+	}
+	if (contains_case(app_id, "firefox") ||
+			contains_case(active_label, "firefox")) {
+		candidates[count++] = "org.mozilla.firefox";
+	}
+	if (contains_case(app_id, "nautilus") ||
+			contains_case(active_label, "files")) {
+		candidates[count++] = "org.gnome.Nautilus";
+	}
+	if (contains_case(app_id, "code") ||
+			contains_case(active_label, "code") ||
+			contains_case(app_id, "vscode") ||
+			contains_case(active_label, "vscode")) {
+		candidates[count++] = "com.visualstudio.code";
+	}
+
+	static const char *paths[] = {
+		"/org/gtk/Actions",
+		"/org/gtk/actions",
+		NULL,
+	};
+	for (int i = 0; i < count; i++) {
+		for (int p = 0; paths[p] != NULL; p++) {
+			GDBusActionGroup *group = g_dbus_action_group_get(
+				connection, candidates[i], paths[p]);
+			if (group == NULL) {
+				continue;
+			}
+			GActionGroup *actions = G_ACTION_GROUP(group);
+			if (g_action_group_has_action(actions, action_name)) {
+				g_action_group_activate_action(
+					actions, action_name, NULL);
+				g_object_unref(group);
+				g_object_unref(connection);
+				return true;
+			}
+			g_object_unref(group);
+		}
+	}
+	g_object_unref(connection);
+	return false;
 }
 
 static bool activate_imported_app_menu_action(
@@ -2196,7 +2393,7 @@ static void handle_app_go_menu_action(
 		launch_command("xdg-open \"$HOME/Downloads\" || true");
 		break;
 	case 4:
-		launch_app_picker();
+		launcher_open_overlay(server, true);
 		break;
 	default:
 		break;
@@ -2305,18 +2502,24 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 	if (kind == ORANGE_CONTEXT_MENU_APP) {
 		switch (item_index) {
 		case 0:
-			if (!focus_view_for_app_id(server, ".About")) {
+			if (!try_focused_app_dbus_action(server, "about") &&
+					!focus_view_for_app_id(server, ".About")) {
 				launch_command("GSK_RENDERER=cairo build/orange-about || true");
 			}
 			break;
 		case 1:
-			if (!focus_view_for_app_id(server, "orange-settings") &&
+			if (!try_focused_app_dbus_action(server, "preferences") &&
+					!try_focused_app_dbus_action(server, "settings") &&
+					!focus_view_for_app_id(server, "orange-settings") &&
 					!focus_view_for_app_id(server, "settings")) {
 				launch_command(orange_settings_command);
 			}
 			break;
 		case 6:
-			send_focused_shortcut(server, KEY_Q, true, false, false);
+			if (!try_focused_app_dbus_action(server, "quit") &&
+					!try_focused_app_dbus_action(server, "app.quit")) {
+				send_focused_shortcut(server, KEY_Q, true, false, false);
+			}
 			break;
 		default:
 			break;
@@ -2339,7 +2542,7 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		handle_app_tools_menu_action(server, item_index);
 	} else if (kind == ORANGE_CONTEXT_MENU_APP_HELP) {
 		if (item_index == 0) {
-			launch_app_picker();
+			launcher_open_overlay(server, true);
 		} else if (item_index == 1) {
 			send_focused_shortcut(server, KEY_F1, false, false, false);
 		}
@@ -2523,7 +2726,6 @@ static void start_desktop_drag(struct orange_server *server,
 	server->desktop_drag_offset_y = local_y - item.y;
 	server->desktop_drag_start_x = local_x;
 	server->desktop_drag_start_y = local_y;
-	clear_context_menu(server);
 }
 
 static void process_desktop_drag(struct orange_server *server) {
@@ -2681,7 +2883,7 @@ static void finish_dock_drag(struct orange_server *server) {
 	server->dock_drag_index = -1;
 	server->dock_drag_insert_before = -1;
 
-	int dock_count = orange_shell_dock_count(&server->config);
+	int dock_count = orange_dock_count(&server->config);
 	if (moved && index >= 0 && index < dock_count &&
 			insert >= 0 && insert < dock_count) {
 		int order[ORANGE_DOCK_MAX];
@@ -2846,7 +3048,7 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 					hit.index, local_x, local_y);
 				break;
 			case ORANGE_STATUS_ITEM_SEARCH:
-				launch_app_picker();
+				launcher_open_overlay(server, true);
 				break;
 			case ORANGE_STATUS_ITEM_CONTROL_CENTER:
 				open_status_menu(server,
@@ -2894,6 +3096,36 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		start_desktop_drag(server, output, &layout, hit.index, local_x, local_y);
 		server_mark_shell_dirty(server);
 		break;
+	case ORANGE_HIT_LAUNCHER_SEARCH:
+		/* Clicking the search field just keeps focus there; the modal overlay
+		 * stays open. */
+		server->launcher_search_focus = true;
+		server_mark_shell_dirty(server);
+		break;
+	case ORANGE_HIT_LAUNCHER_MODE:
+		if (hit.index >= 0 && hit.index < ORANGE_LAUNCHER_MODE_COUNT) {
+			server->launcher_current_mode = hit.index;
+			server->launcher_scroll = 0;
+			server->launcher_hot_app = -1;
+			server->launcher_search_focus = false;
+			server_mark_shell_dirty(server);
+		}
+		break;
+	case ORANGE_HIT_LAUNCHER_CATEGORY:
+		if (hit.index >= 0 && hit.index < server->launcher_category_count) {
+			server->launcher_category_active = hit.index;
+			server->launcher_scroll = 0;
+			server->launcher_hot_app = -1;
+			server_mark_shell_dirty(server);
+		}
+		break;
+	case ORANGE_HIT_LAUNCHER_APP:
+		launcher_launch_index(server, hit.index);
+		break;
+	case ORANGE_HIT_LAUNCHER_BACKGROUND:
+		/* Clicking the dimmed backdrop closes the overlay, like macOS. */
+		launcher_close_overlay(server);
+		break;
 	case ORANGE_HIT_DESKTOP:
 	case ORANGE_HIT_NONE:
 		clear_context_menu(server);
@@ -2925,6 +3157,12 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 
 	server->system_menu_open = false;
 	server->notification_center_open = false;
+	if (server->launcher_open) {
+		launcher_close_overlay(server);
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
+		server->context_menu_index = -1;
+		return;
+	}
 	server->context_menu_cursor_x = local_x;
 	server->context_menu_cursor_y = local_y;
 	if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
@@ -2945,7 +3183,7 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 				hit.index, local_x, local_y);
 			break;
 		case ORANGE_STATUS_ITEM_SEARCH:
-			launch_app_picker();
+			launcher_open_overlay(server, true);
 			server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 			server->context_menu_index = -1;
 			break;
@@ -3092,7 +3330,7 @@ static bool handle_keybinding(
 		launch_terminal();
 		return true;
 	case XKB_KEY_space:
-		launch_app_picker();
+		launcher_toggle_overlay(server, true);
 		return true;
 	case XKB_KEY_q:
 	case XKB_KEY_Q:
@@ -3116,6 +3354,10 @@ static bool handle_keybinding(
 		}
 		return true;
 	case XKB_KEY_Escape:
+		if (server->launcher_open) {
+			launcher_close_overlay(server);
+			return true;
+		}
 		if (server->system_menu_open) {
 			server->system_menu_open = false;
 			server_mark_shell_dirty(server);
@@ -3132,6 +3374,8 @@ static bool handle_keybinding(
 	}
 }
 
+
+
 static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 	struct orange_keyboard *keyboard =
 		wl_container_of(listener, keyboard, key);
@@ -3147,6 +3391,138 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 		&syms);
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->keyboard);
 	bool logo = modifiers & WLR_MODIFIER_LOGO;
+
+	/* The launcher overlay is modal: it consumes all key presses so the user
+	 * can type a search query and navigate results without the focused client
+	 * receiving the keystrokes. Super+Space toggles it closed, Escape closes,
+	 * arrows/enter navigate, and printable keys feed the search field. */
+	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && server->launcher_open) {
+		bool consumed = false;
+		bool mode_switch = false;
+		for (int i = 0; i < nsyms; i++) {
+			xkb_keysym_t sym = syms[i];
+			if (sym == XKB_KEY_space && logo) {
+				launcher_close_overlay(server);
+				consumed = true;
+				break;
+			}
+			if (sym == XKB_KEY_Escape) {
+				launcher_close_overlay(server);
+				consumed = true;
+				break;
+			}
+			if (sym == XKB_KEY_Return || sym == XKB_KEY_KP_Enter) {
+				int target = server->launcher_hot_app >= 0 ?
+					server->launcher_hot_app : 0;
+				if (server->launcher_app_count > 0) {
+					launcher_launch_index(server, target);
+				}
+				consumed = true;
+				break;
+			}
+			if (sym == XKB_KEY_BackSpace) {
+				int qlen = (int)strlen(server->launcher_query);
+				if (qlen > 0) {
+					server->launcher_query[qlen - 1] = '\0';
+					server->launcher_hot_app = -1;
+					launcher_refresh_filter(server);
+					server_mark_shell_dirty(server);
+				}
+				consumed = true;
+				break;
+			}
+			/* Cmd+1/2/3/4 for browse mode switching (Tahoe Spotlight) */
+			if (logo && sym >= XKB_KEY_1 && sym <= XKB_KEY_4) {
+				int new_mode = sym - XKB_KEY_1;
+				if (new_mode >= 0 && new_mode < ORANGE_LAUNCHER_MODE_COUNT) {
+					server->launcher_current_mode = new_mode;
+					server->launcher_scroll = 0;
+					server->launcher_hot_app = -1;
+					server_mark_shell_dirty(server);
+				}
+				consumed = true;
+				mode_switch = true;
+				break;
+			}
+			if (sym == XKB_KEY_Left && !logo) {
+				if (server->launcher_hot_app > 0) {
+					server->launcher_hot_app--;
+					server_mark_shell_dirty(server);
+				}
+				consumed = true;
+				break;
+			}
+			if (sym == XKB_KEY_Right && !logo) {
+				if (server->launcher_hot_app + 1 <
+						server->launcher_app_count) {
+					server->launcher_hot_app++;
+					server_mark_shell_dirty(server);
+				}
+				consumed = true;
+				break;
+			}
+			if (sym == XKB_KEY_Up && !logo) {
+				if (server->launcher_hot_app - ORANGE_LAUNCHER_COLS >= 0) {
+					server->launcher_hot_app -= ORANGE_LAUNCHER_COLS;
+					server_mark_shell_dirty(server);
+				} else if (server->launcher_scroll > 0) {
+					server->launcher_scroll -= 20;
+					server_mark_shell_dirty(server);
+				}
+				consumed = true;
+				break;
+			}
+			if (sym == XKB_KEY_Down && !logo) {
+				if (server->launcher_hot_app + ORANGE_LAUNCHER_COLS <
+						server->launcher_app_count) {
+					server->launcher_hot_app += ORANGE_LAUNCHER_COLS;
+					server_mark_shell_dirty(server);
+				} else if (server->launcher_hot_app >= 0) {
+					server->launcher_scroll += 20;
+					server_mark_shell_dirty(server);
+				}
+				consumed = true;
+				break;
+			}
+		}
+		if (!consumed && !logo && !mode_switch) {
+			uint32_t cp = xkb_state_key_get_utf32(
+				keyboard->keyboard->xkb_state, keycode);
+			if (cp >= 0x20 && cp != 0x7f) {
+				int qlen = (int)strlen(server->launcher_query);
+				if (qlen + 1 < ORANGE_LAUNCHER_QUERY_MAX) {
+					char buf[5];
+					int n = 0;
+					if (cp < 0x80) {
+						buf[n++] = (char)cp;
+					} else if (cp < 0x800) {
+						buf[n++] = (char)(0xC0 | (cp >> 6));
+						buf[n++] = (char)(0x80 | (cp & 0x3F));
+					} else if (cp < 0x10000) {
+						buf[n++] = (char)(0xE0 | (cp >> 12));
+						buf[n++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+						buf[n++] = (char)(0x80 | (cp & 0x3F));
+					} else {
+						buf[n++] = (char)(0xF0 | (cp >> 18));
+						buf[n++] = (char)(0x80 | ((cp >> 12) & 0x3F));
+						buf[n++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+						buf[n++] = (char)(0x80 | (cp & 0x3F));
+					}
+					buf[n] = '\0';
+					if (qlen + n < ORANGE_LAUNCHER_QUERY_MAX) {
+						memcpy(server->launcher_query + qlen, buf, n + 1);
+						server->launcher_hot_app = -1;
+						launcher_refresh_filter(server);
+						server_mark_shell_dirty(server);
+					}
+				}
+				consumed = true;
+			}
+		}
+		if (consumed) {
+			return;
+		}
+	}
 
 	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && logo) {
 		for (int i = 0; i < nsyms; i++) {
@@ -3305,6 +3681,11 @@ static void handle_view_map(struct wl_listener *listener, void *data) {
 	wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
 	wlr_scene_node_set_enabled(&view->scene_tree->node, true);
 	view->mapped = true;
+	/* A newly mapped app dismisses the launcher overlay: the launch action is
+	 * complete, so the grid/Spotlight view should give way to the app. */
+	if (view->server->launcher_open) {
+		launcher_close_overlay(view->server);
+	}
 	focus_view(view, view->xdg_surface->surface);
 	server_mark_shell_dirty(view->server);
 }
@@ -3663,27 +4044,58 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 		output->height);
 }
 
+static bool volumes_changed_since(struct orange_server *server,
+		int prev_count, int prev_desktop_count,
+		const struct orange_volume_info prev[ORANGE_DESKTOP_VOLUME_MAX]) {
+	if (prev_count != server->volume_count ||
+			prev_desktop_count != server->desktop_volume_count) {
+		return true;
+	}
+	return memcmp(prev, server->volumes,
+		sizeof(server->volumes[0]) * prev_count) != 0;
+}
+
 static int handle_clock_timer(void *data) {
 	struct orange_server *server = data;
 	if (!server->desktop_drag_active) {
-		server_load_config(server, false);
 		if (server->desktop_entry_poll_ticks <= 0) {
+			server_load_config(server, false);
 			server_reload_desktop_entries(server);
 			server->desktop_entry_poll_ticks = DESKTOP_ENTRY_RELOAD_TICKS;
 		} else {
 			server->desktop_entry_poll_ticks--;
 		}
+		int prev_vc = server->volume_count;
+		int prev_dc = server->desktop_volume_count;
+		struct orange_volume_info prev[ORANGE_DESKTOP_VOLUME_MAX];
+		if (prev_vc > 0) {
+			memcpy(prev, server->volumes, sizeof(prev[0]) * prev_vc);
+		}
 		update_volumes(server);
-	}
-	bool status_changed = false;
-	if (server->status_poll_ticks <= 0) {
-		status_changed = server_update_status(server);
-		server->status_poll_ticks = 15;
+		bool need_redraw = volumes_changed_since(
+			server, prev_vc, prev_dc, prev);
+		bool status_changed = false;
+		if (server->status_poll_ticks <= 0) {
+			status_changed = server_update_status(server);
+			server->status_poll_ticks = 15;
+		} else {
+			server->status_poll_ticks--;
+		}
+		if (need_redraw || status_changed) {
+			server_mark_shell_dirty(server);
+		}
 	} else {
-		server->status_poll_ticks--;
+		bool status_changed = false;
+		if (server->status_poll_ticks <= 0) {
+			status_changed = server_update_status(server);
+			server->status_poll_ticks = 15;
+		} else {
+			server->status_poll_ticks--;
+		}
+		if (status_changed) {
+			server_mark_shell_dirty(server);
+		}
 	}
-	(void)status_changed;
-	server_mark_shell_dirty(server);
 	wl_event_source_timer_update(server->clock_timer, 1000);
 	return 0;
 }

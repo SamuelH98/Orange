@@ -13,7 +13,7 @@
 
 static void usage(const char *argv0) {
 	fprintf(stderr,
-		"usage: %s [--width N] [--height N] [--assets PATH] [--config PATH] [--timestamp N] [--active-app NAME] [--foreground-only] [--notification-center] [--context-menu KIND] [--context-index N] [--context-x N] [--context-y N] output.png\n",
+		"usage: %s [--width N] [--height N] [--assets PATH] [--config PATH] [--timestamp N] [--active-app NAME] [--foreground-only] [--launcher] [--launcher-mode N] [--launcher-query TEXT] [--notification-center] [--context-menu KIND] [--context-index N] [--context-x N] [--context-y N] output.png\n",
 		argv0);
 }
 
@@ -72,6 +72,9 @@ int main(int argc, char **argv) {
 	time_t now = 1757638380;
 	bool foreground_only = false;
 	bool notification_center = false;
+	bool launcher = false;
+	int launcher_mode = 0;
+	const char *launcher_query = NULL;
 	const char *active_app_label = NULL;
 	enum orange_context_menu_kind context_kind = ORANGE_CONTEXT_MENU_NONE;
 	int context_index = -1;
@@ -94,6 +97,12 @@ int main(int argc, char **argv) {
 			active_app_label = argv[++i];
 		} else if (strcmp(argv[i], "--foreground-only") == 0) {
 			foreground_only = true;
+		} else if (strcmp(argv[i], "--launcher") == 0) {
+			launcher = true;
+		} else if (strcmp(argv[i], "--launcher-mode") == 0 && i + 1 < argc) {
+			launcher_mode = atoi(argv[++i]);
+		} else if (strcmp(argv[i], "--launcher-query") == 0 && i + 1 < argc) {
+			launcher_query = argv[++i];
 		} else if (strcmp(argv[i], "--notification-center") == 0) {
 			notification_center = true;
 		} else if (strcmp(argv[i], "--context-menu") == 0 && i + 1 < argc) {
@@ -160,11 +169,34 @@ int main(int argc, char **argv) {
 		.config = &config,
 		.desktop_entries = desktop_entries,
 		.desktop_entry_count = (int)desktop_entry_count,
+		.launcher_open = launcher,
+		.launcher_current_mode = launcher_mode,
 		.context_menu_kind = context_kind,
 		.context_menu_index = context_index,
 		.context_menu_cursor_x = context_x,
 		.context_menu_cursor_y = context_y,
 	};
+	if (launcher_query != NULL && launcher_query[0] != '\0') {
+		snprintf(state.launcher_query, sizeof(state.launcher_query),
+			"%s", launcher_query);
+	}
+	if (launcher && launcher_mode == ORANGE_LAUNCHER_MODE_APPS) {
+		const char *cats[] = {
+			"Utilities", "Productivity & Finance", "Social",
+			"Entertainment", "Photo & Video", "Information",
+		};
+		int nc = (int)(sizeof(cats) / sizeof(cats[0]));
+		if (nc > ORANGE_LAUNCHER_CATEGORY_MAX) {
+			nc = ORANGE_LAUNCHER_CATEGORY_MAX;
+		}
+		state.launcher_category_count = nc;
+		state.launcher_category_active = 0;
+		for (int i = 0; i < nc; i++) {
+			snprintf(state.launcher_categories[i],
+				sizeof(state.launcher_categories[i]),
+				"%s", cats[i]);
+		}
+	}
 	if (active_app_label != NULL && active_app_label[0] != '\0') {
 		snprintf(state.active_app_label, sizeof(state.active_app_label),
 			"%s", active_app_label);

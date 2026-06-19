@@ -77,7 +77,10 @@ bool orange_desktop_entry_id_matches(const char *entry_id, const char *id) {
 	strip_desktop_suffix(id_normal);
 	const char *entry_tail = desktop_id_tail(entry_normal);
 	const char *id_tail = desktop_id_tail(id_normal);
-	return (entry_tail != entry_normal || id_tail != id_normal) &&
+	/* Require at least the entry to have had a separator (dot or underscore),
+	 * so "firefox_firefox" -> tail "firefox" matches query "firefox".
+	 * The query may itself be a plain short name with no separator. */
+	return entry_tail != entry_normal &&
 		strcmp(entry_tail, id_tail) == 0;
 }
 

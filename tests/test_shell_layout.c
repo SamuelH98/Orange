@@ -38,7 +38,7 @@ static void test_dock_hit(void) {
 	assert(hit.kind == ORANGE_HIT_DOCK_ITEM);
 	assert(hit.index == 0);
 	struct orange_desktop_entry entries[1];
-	assert(orange_shell_dock_command(hit.index, entries, 0, &config) != NULL);
+	assert(orange_dock_command(hit.index, entries, 0, &config) != NULL);
 }
 
 static void test_reordered_dock_hit_resolves_launcher(void) {
@@ -57,11 +57,11 @@ static void test_reordered_dock_hit_resolves_launcher(void) {
 		first.y + first.height / 2);
 	assert(hit.kind == ORANGE_HIT_DOCK_ITEM);
 	assert(hit.index == 0);
-	int launcher_idx = orange_shell_dock_launcher_index(&layout, hit.index);
+	int launcher_idx = orange_dock_launcher_index(&layout, hit.index);
 	assert(launcher_idx == 1);
-	assert(strcmp(orange_shell_dock_label(launcher_idx, NULL, 0, &config),
+	assert(strcmp(orange_dock_label(launcher_idx, NULL, 0, &config),
 		"") == 0);
-	const char *command = orange_shell_dock_command(launcher_idx,
+	const char *command = orange_dock_command(launcher_idx,
 		NULL, 0, &config);
 	assert(command != NULL);
 	assert(strstr(command, "ORANGE_APP_PICKER") != NULL);
@@ -70,10 +70,10 @@ static void test_reordered_dock_hit_resolves_launcher(void) {
 static void test_default_dock_apps_have_fallback_commands(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
-	int dock_count = orange_shell_dock_count(&config);
+	int dock_count = orange_dock_count(&config);
 	assert(dock_count > 0);
 	for (int i = 0; i < dock_count; i++) {
-		const char *command = orange_shell_dock_command(
+		const char *command = orange_dock_command(
 			i, NULL, 0, &config);
 		assert(command != NULL);
 		assert(command[0] != '\0');
@@ -94,9 +94,9 @@ static void test_firefox_dock_matches_snap_desktop_entry(void) {
 	};
 
 	assert(strcmp(config.dock_apps[2], "firefox.desktop") == 0);
-	assert(strcmp(orange_shell_dock_label(2, entries, 1, &config),
+	assert(strcmp(orange_dock_label(2, entries, 1, &config),
 		"Firefox") == 0);
-	const char *command = orange_shell_dock_command(2, entries, 1, &config);
+	const char *command = orange_dock_command(2, entries, 1, &config);
 	assert(command != NULL);
 	assert(strstr(command, "/snap/bin/firefox") != NULL);
 }
@@ -187,7 +187,7 @@ static void test_system_menu_hit(void) {
 	hit = orange_shell_hit_test(&open, item.x + 8, item.y + 10);
 	assert(hit.kind == ORANGE_HIT_SYSTEM_MENU_ITEM);
 	assert(hit.index == 3);
-	assert(orange_shell_menu_label(hit.index) != NULL);
+	assert(orange_menubar_menu_label(hit.index) != NULL);
 }
 
 static void test_app_menu_layout_and_labels(void) {
@@ -199,11 +199,11 @@ static void test_app_menu_layout_and_labels(void) {
 	assert_app_menu_tabs_do_not_overlap(&layout);
 
 	struct orange_shell_state default_state = {0};
-	assert(strcmp(orange_shell_active_app_label(&default_state), "Files") == 0);
+	assert(strcmp(orange_menubar_active_app_label(&default_state), "Files") == 0);
 	struct orange_shell_state active_state = {0};
 	snprintf(active_state.active_app_label,
 		sizeof(active_state.active_app_label), "%s", "Terminal");
-	assert(strcmp(orange_shell_active_app_label(&active_state), "Terminal") == 0);
+	assert(strcmp(orange_menubar_active_app_label(&active_state), "Terminal") == 0);
 
 	struct orange_rect app_tab =
 		layout.app_menu_items[ORANGE_APP_MENU_TAB_APP];
@@ -230,11 +230,11 @@ static void test_app_menu_layout_and_labels(void) {
 	assert(layout.context_menu_panel.x == layout.app_menu_items[
 		ORANGE_APP_MENU_TAB_APP].x);
 	assert(layout.context_menu_panel.y > layout.menu_bar.height);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_APP, 0), "About App") == 0);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_APP, 6), "Quit App") == 0);
-	assert(orange_shell_context_menu_icon_name(
+	assert(orange_menubar_context_menu_icon_name(
 		ORANGE_CONTEXT_MENU_APP, 0) != NULL);
 
 	struct orange_rect item = layout.context_menu_items[6];
@@ -251,17 +251,17 @@ static void test_app_menu_layout_and_labels(void) {
 	assert(layout.context_menu_item_count == 7);
 	assert(layout.context_menu_panel.x == layout.app_menu_items[
 		ORANGE_APP_MENU_TAB_FILE].x);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_APP_FILE, 1), "Open...") == 0);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_APP_FILE, 4), "Save") == 0);
-	assert(orange_shell_context_menu_icon_name(
+	assert(orange_menubar_context_menu_icon_name(
 		ORANGE_CONTEXT_MENU_APP_FILE, 1) != NULL);
 
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_APP_EDIT, -1, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP_EDIT);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_APP_EDIT, 3), "Copy") == 0);
 
 	orange_shell_layout_set_app_menu_tabs(&layout, "Firefox", NULL);
@@ -283,7 +283,7 @@ static void test_app_menu_layout_and_labels(void) {
 		ORANGE_CONTEXT_MENU_APP_BOOKMARKS, -1, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP_BOOKMARKS);
 	assert(layout.context_menu_item_count == 4);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_APP_BOOKMARKS, 0),
 		"Bookmark Current Tab") == 0);
 
@@ -291,7 +291,7 @@ static void test_app_menu_layout_and_labels(void) {
 		ORANGE_CONTEXT_MENU_APP_TOOLS, -1, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP_TOOLS);
 	assert(layout.context_menu_item_count == 4);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_APP_TOOLS, 1),
 		"Add-ons and Themes") == 0);
 
@@ -353,11 +353,11 @@ static void test_status_area_hit_and_menu(void) {
 		ORANGE_CONTEXT_MENU_STATUS, -1, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS);
 	assert(layout.context_menu_item_count == 10);
-	assert(orange_shell_context_menu_label(
+	assert(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_STATUS, 0) != NULL);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_STATUS, 9), "Control Center Settings...") == 0);
-	assert(orange_shell_context_menu_icon_name(
+	assert(orange_menubar_context_menu_icon_name(
 		ORANGE_CONTEXT_MENU_STATUS, 0) != NULL);
 
 	orange_shell_layout_set_context_menu(&layout,
@@ -365,21 +365,21 @@ static void test_status_area_hit_and_menu(void) {
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_WIFI);
 	assert(layout.context_menu_item_count == 3);
 	assert(layout.context_menu_panel.y > layout.menu_bar.height);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_STATUS_WIFI, 2), "Network Settings...") == 0);
-	assert(orange_shell_context_menu_icon_name(
+	assert(orange_menubar_context_menu_icon_name(
 		ORANGE_CONTEXT_MENU_STATUS_WIFI, 0) != NULL);
 
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_STATUS_SOUND, ORANGE_STATUS_ITEM_SOUND, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_SOUND);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_STATUS_SOUND, 2), "Sound Settings...") == 0);
 
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_STATUS_BATTERY, ORANGE_STATUS_ITEM_BATTERY, 0, 0, NULL);
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_BATTERY);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_STATUS_BATTERY, 1), "Power Settings...") == 0);
 }
 
@@ -437,7 +437,7 @@ static void test_small_width_dock_fits(void) {
 static void test_invalid_visible_dock_order_has_no_blank_slot(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
-	int dock_count = orange_shell_dock_count(&config);
+	int dock_count = orange_dock_count(&config);
 	assert(dock_count > 1);
 	config.dock_order[dock_count - 1] = dock_count;
 
@@ -447,8 +447,8 @@ static void test_invalid_visible_dock_order_has_no_blank_slot(void) {
 	for (int i = 0; i < layout.dock_item_count; i++) {
 		assert(layout.dock_items[i].width > 0);
 		assert(layout.dock_items[i].height > 0);
-		assert(orange_shell_dock_launcher_index(&layout, i) >= 0);
-		assert(orange_shell_dock_launcher_index(&layout, i) < dock_count);
+		assert(orange_dock_launcher_index(&layout, i) >= 0);
+		assert(orange_dock_launcher_index(&layout, i) < dock_count);
 	}
 }
 
@@ -545,7 +545,7 @@ static void test_context_menu_hit(void) {
 		item.y + item.height / 2);
 	assert(hit.kind == ORANGE_HIT_CONTEXT_MENU_ITEM);
 	assert(hit.index == 1);
-	assert(orange_shell_context_menu_label(ORANGE_CONTEXT_MENU_DOCK, hit.index) != NULL);
+	assert(orange_menubar_context_menu_label(ORANGE_CONTEXT_MENU_DOCK, hit.index) != NULL);
 
 	orange_shell_layout_set_context_menu(&layout, ORANGE_CONTEXT_MENU_DOCK,
 		layout.dock_item_count - 1, layout.width, layout.height, NULL);
@@ -576,9 +576,9 @@ static void test_widget_hit_and_context_menu(void) {
 		widget.y + widget.height / 2,
 		NULL);
 	assert(layout.context_menu_item_count == 5);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_WIDGET, 0), "Edit Widget") == 0);
-	assert(strcmp(orange_shell_context_menu_label(
+	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_WIDGET, 4), "Remove Widget") == 0);
 }
 

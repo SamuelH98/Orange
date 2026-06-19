@@ -8,7 +8,6 @@
 #include "orange/assets.h"
 #include "orange/config.h"
 #include "orange/desktop_entry.h"
-
 #define ORANGE_DESKTOP_MAX 32
 #define ORANGE_DESKTOP_GRID_COLS 6
 #define ORANGE_MENU_ITEM_MAX 20
@@ -21,6 +20,18 @@
 #define ORANGE_APP_MENU_TAB_COUNT 8
 #define ORANGE_APP_MENU_ITEM_MAX 16
 #define ORANGE_APP_MENU_ACTION_MAX 128
+#define ORANGE_LAUNCHER_COLS 4
+#define ORANGE_LAUNCHER_ROWS 5
+#define ORANGE_LAUNCHER_CELL_MAX 512
+#define ORANGE_LAUNCHER_MODE_COUNT 4
+#define ORANGE_LAUNCHER_MODE_APPS 0
+#define ORANGE_LAUNCHER_MODE_FILES 1
+#define ORANGE_LAUNCHER_MODE_ACTIONS 2
+#define ORANGE_LAUNCHER_MODE_CLIPBOARD 3
+#define ORANGE_LAUNCHER_QUERY_MAX 64
+#define ORANGE_LAUNCHER_APP_MAX 1024
+#define ORANGE_LAUNCHER_CATEGORY_MAX 16
+#define ORANGE_LAUNCHER_CATEGORY_NAME_MAX 64
 
 struct orange_rect {
 	int x;
@@ -43,6 +54,11 @@ enum orange_shell_hit_kind {
 	ORANGE_HIT_DESKTOP_ITEM,
 	ORANGE_HIT_DESKTOP,
 	ORANGE_HIT_CONTEXT_MENU_ITEM,
+	ORANGE_HIT_LAUNCHER_SEARCH,
+	ORANGE_HIT_LAUNCHER_MODE,
+	ORANGE_HIT_LAUNCHER_APP,
+	ORANGE_HIT_LAUNCHER_CATEGORY,
+	ORANGE_HIT_LAUNCHER_BACKGROUND,
 };
 
 struct orange_shell_hit {
@@ -190,6 +206,23 @@ struct orange_shell_layout {
 	struct orange_rect context_menu_items[ORANGE_CONTEXT_MENU_ITEM_MAX];
 	bool context_menu_separator[ORANGE_CONTEXT_MENU_ITEM_MAX];
 	int context_menu_item_count;
+
+	bool launcher_visible;
+	struct orange_rect launcher_search_field;
+	struct orange_rect launcher_mode_buttons[ORANGE_LAUNCHER_MODE_COUNT];
+	struct orange_rect launcher_category_tabs[ORANGE_LAUNCHER_CATEGORY_MAX];
+	int launcher_category_count;
+	int launcher_category_active;
+	struct orange_rect launcher_viewport;
+	struct orange_rect launcher_grid_cells[ORANGE_LAUNCHER_CELL_MAX];
+	int launcher_grid_cell_count;
+	int launcher_grid_cols;
+	int launcher_grid_cell_w;
+	int launcher_grid_cell_h;
+	int launcher_scroll;
+	int launcher_max_scroll;
+	bool launcher_searching;
+	int launcher_current_mode;
 };
 
 struct orange_shell_state {
@@ -220,11 +253,27 @@ struct orange_shell_state {
 	int context_menu_cursor_y;
 	int desktop_drag_target_index;
 	bool desktop_drag_swap;
+
+	bool launcher_open;
+	char launcher_query[ORANGE_LAUNCHER_QUERY_MAX];
+	int launcher_hot_app;
+	int launcher_app_indices[ORANGE_LAUNCHER_APP_MAX];
+	int launcher_app_count;
+	int launcher_scroll;
+	int launcher_current_mode;
+	bool launcher_search_focus;
+	char launcher_categories[ORANGE_LAUNCHER_CATEGORY_MAX][ORANGE_LAUNCHER_CATEGORY_NAME_MAX];
+	int launcher_category_count;
+	int launcher_category_active;
 };
 
 struct orange_shell_draw_options {
 	bool draw_wallpaper;
 };
+
+#include "orange/dock.h"
+#include "orange/launcher.h"
+#include "orange/menubar.h"
 
 void orange_shell_layout_compute(
 	int width,
@@ -264,6 +313,9 @@ void orange_shell_layout_set_context_menu(
 	const struct orange_app_menu_model *app_menu);
 void orange_shell_layout_set_notification_center(
 	struct orange_shell_layout *layout);
+void orange_shell_layout_set_launcher(
+	struct orange_shell_layout *layout,
+		bool searching);
 
 struct orange_shell_hit orange_shell_hit_test(
 	const struct orange_shell_layout *layout,
@@ -284,25 +336,6 @@ void orange_shell_draw_with_options(
 	const struct orange_shell_state *state,
 	const struct orange_shell_draw_options *options);
 
-int orange_shell_dock_count(const struct orange_config *config);
-int orange_shell_dock_launcher_index(
-	const struct orange_shell_layout *layout,
-	int visible_index);
-const char *orange_shell_dock_label(int index,
-	const struct orange_desktop_entry *entries, int entry_count,
-	const struct orange_config *config);
-const char *orange_shell_builtin_command(const char *app_id);
-const char *orange_shell_dock_command(int index,
-	const struct orange_desktop_entry *entries, int entry_count,
-	const struct orange_config *config);
-const char *orange_shell_active_app_label(const struct orange_shell_state *state);
-const char *orange_shell_menu_label(int index);
-const char *orange_shell_context_menu_label(
-	enum orange_context_menu_kind kind,
-	int index);
-const char *orange_shell_context_menu_icon_name(
-	enum orange_context_menu_kind kind,
-	int index);
 const char *orange_shell_volume_label(const struct orange_volume_info *volumes,
 	int volume_count, int index);
 const char *orange_shell_volume_icon_name(const struct orange_volume_info *volumes,

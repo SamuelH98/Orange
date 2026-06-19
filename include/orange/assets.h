@@ -33,6 +33,7 @@ struct orange_assets {
 	int wallpaper_dark_scaled_height;
 	struct orange_named_icon icons[ORANGE_ASSET_ICON_MAX];
 	int icon_count;
+	int icon_lookup[ORANGE_ASSET_ICON_MAX]; /* hash table for O(1) icon lookup */
 	char asset_root[4096];
 	char icon_theme[ORANGE_THEME_NAME_MAX];
 };

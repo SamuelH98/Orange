@@ -49,6 +49,9 @@ orange_core_sources = files(
   'src/assets.c',
   'src/config.c',
   'src/desktop_entry.c',
+  'src/dock.c',
+  'src/launcher.c',
+  'src/menubar.c',
   'src/shell.c',
 )
 

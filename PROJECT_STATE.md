@@ -191,204 +191,60 @@ Meson startup smoke test for custom headless compositor arguments.
 
 ## Current Work
 
-### Active Feature
+### Active Feature: macOS 26 Tahoe Spotlight Redesign
 
-Desktop icons now show volumes (drives) instead of XDG `.desktop` entries,
-matching macOS Finder behavior: the root filesystem and `/home` are discovered
-from `/proc/mounts`, removable media and external volumes are monitored through
-`GVolumeMonitor`. Icons are laid out on a snap-to-grid with configurable
-spacing (`desktop_grid_spacing`) and per-volume visibility toggles in Settings.
+The launcher/Spotlight overlay has been redesigned to match the macOS 26 Tahoe
+Spotlight appearance:
 
-The menu bar has been given the same glass translucency as the Dock using the
-shared `draw_dock_glass` function, with the Apple icon enlarged to 40×40 and
-menu text baselines adjusted for a more macOS-like appearance. Status icons are
-drawn in original icon-theme colors (no tinting) and clicking them no longer
-opens any menu — each icon slot is reserved for its future feature.
+- **Floating search bar**: A centered glass pill with magnifier icon,
+  "Spotlight Search" placeholder, and blinking caret on focus. No panel
+  backdrop — the bar floats directly on the wallpaper with the same
+  translucent glass material as the Dock.
+- **Four mode buttons**: Circular glass buttons to the right of the search
+  field with hand-drawn icon glyphs (compass=Apps, folder=Files,
+  tools=Actions, clipboard=Clipboard). Active button gets a lighter highlight.
+  Same glass material as the Dock.
+- **Category tabs**: Horizontal row of pill-shaped category filter buttons
+  (Utilities, Productivity & Finance, Social, Entertainment, Photo & Video,
+  Information) below the search row in Apps mode with no query. Same glass
+  material as the Dock.
+- **Mode-specific content views**:
+  - Apps mode: Scrollable 4-column app icon grid with hot selection highlight,
+    centered labels wrapped to two lines, icon shadows, and rounded corners.
+  - Files mode: Placeholder with "Recent Files" header.
+  - Actions mode: Placeholder with "Actions" header for future Quick Keys.
+  - Clipboard mode: Placeholder with "Clipboard History" header.
+- **No panel backdrop**: The old Liquid Glass panel has been removed. The search
+  bar and content float directly on the dimmed wallpaper, matching the macOS 26
+  Spotlight style.
+- **Keyboard shortcuts**: Cmd+1/2/3/4 switches between browse modes. Up/Down
+  with scroll, Left/Right for adjacent selection. Escape closes, Enter launches.
+- **render-shell support**: Added `--launcher`, `--launcher-mode N`, and
+  `--launcher-query TEXT` flags for visual testing. Category tabs render in
+  Apps mode by default.
 
-`assets/` remains wallpaper-only, GTK/icon theme names are config-driven, theme
-payloads are not stored under a repo `themes/` directory, and shell icons
-continue to come from installed freedesktop icon themes.
+All six tests pass. `orange-render-shell` renders the launcher overlay at every
+mode with correct geometry.
 
 ### Progress
 
 Current validation passes:
 
 - `ninja -C build`
-- `meson test -C build --print-errorlogs`
-- `./build/test-assets`
-- `./build/test-shell-visual` covers volume desktop icon drawing.
-- `./build/test-shell-layout` covers snap-to-grid, minimum slots, volume
-  positioning, and resolution scaling.
+- `meson test -C build --print-errorlogs` (6/6 tests)
 - `./build/orange-render-shell --width 1440 --height 900 --assets assets
-  --config orange.conf /tmp/orange-shell.png`
+  --config orange.conf --launcher /tmp/orange-tahoe-spotlight.png`
 - `./build/orange-render-shell --width 1440 --height 900 --assets assets
-  --config orange.conf --foreground-only /tmp/orange-shell-foreground.png`
-  passed.
+  --config orange.conf --launcher --launcher-mode 1
+  /tmp/orange-tahoe-files.png`
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets
+  --config orange.conf --launcher --launcher-mode 2
+  /tmp/orange-tahoe-actions.png`
+- `./build/orange-render-shell --width 1440 --height 900 --assets assets
+  --config orange.conf --launcher --launcher-mode 3
+  /tmp/orange-tahoe-clipboard.png`
 - `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once
   --width 1440 --height 900 --assets assets --config orange.conf`
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
-  --width 1440 --height 900 --assets assets --config orange.conf`
-
-Core desktop icons are now volume-driven with snap-to-grid, drag-to-reorder,
-and a macOS-style desktop icon context menu (Open, Get Info, Eject) plus
-background context menu (Clean Up, Sort By, Show View Options, etc.).
-
-Volume detection combines `/proc/mounts` for fixed filesystems with
-`GVolumeMonitor` for removable drives, deduplicating by mount path. The
-Settings app includes per-volume visibility toggles, Sort By dropdown, and
-Label Position dropdown. Grid layout respects `desktop_grid_spacing` and
-occupies a minimum 2×2 slot area even without volumes.
-
-### Top-Left App Menu
-
-The menu-bar app title is no longer a static `Files` placeholder. Shell state
-now carries an active app label from the focused view, resolved through Dock
-metadata when possible and falling back to app ID/title text. The menu bar now
-lays out the active app title plus File, Edit, View, Go, Window, and Help as
-separate hit targets. Clicking or right-clicking each tab opens a shell-rendered
-menu anchored beneath that tab.
-
-Generic app commands are routed to the focused client through standard keyboard
-accelerators where xdg-shell gives Orange a real mechanism: New/Open/Close/
-Save/Save As/Print, Undo/Redo/Cut/Copy/Paste/Select All/Find, Zoom, Full
-Screen, Help, and Quit. Window menu commands use compositor behavior where
-available. Arbitrary native app menu-tree extraction remains future work behind
-a DBusMenu/global-menu backend, because xdg-shell does not expose app menu
-models or native menu callbacks.
-
-The status-side Control Center slot and quick-controls menu were restored so
-the existing macOS-like status tests pass again.
-
-Validation from this pass:
-
-- `ninja -C build` passed.
-- `./build/test-shell-layout` passed.
-- `meson test -C build --print-errorlogs` passed 6/6 tests.
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets
-  --config orange.conf --foreground-only --active-app Photoshop --context-menu
-  app /tmp/orange-shell-photoshop-app-menu.png` passed.
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets
-  --config orange.conf --foreground-only --active-app Photoshop --context-menu
-  app-file /tmp/orange-shell-photoshop-file-menu.png` passed and visually shows
-  `Photoshop File Edit View Go Window Help` with File menu entries anchored
-  under the File tab.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once
-  --width 1440 --height 900 --assets assets --config orange.conf` passed,
-  with expected sandbox dconf/DBus warnings.
-
-### Dock Icon Alias Fix
-
-Completed a focused Dock icon fix for the default Image Viewer, Notes, and
-Video Player launchers. The Dock now requests configured role icons before
-scanned `.desktop` icon fields, using `image-viewer` and `video-player` for
-MacTahoe-style Image Viewer/Video Player artwork while keeping `org.gnome.Notes`
-for the Notes role. Generic image/video/text aliases continue to resolve
-through their own fallback lists.
-
-Validation:
-
-- `ninja -C build test-assets test-shell-visual`
-- `./build/test-assets`
-- `./build/test-shell-visual`
-- `meson test -C build --print-errorlogs`
-- `ninja -C build orange-render-shell`
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf /tmp/orange-assets-icons-check.png`
-
-### Orange Settings App
-
-Reworked `orange-settings` from a single scrolling form into a macOS-like
-System Settings shell: full-height translucent rounded sidebar well with drop
-shadow, About-style Cairo-drawn traffic-light window controls, rounded/clipped
-resizable app frame, rounded back/forward arrow capsule, searchable local
-account
-sidebar, Appearance-first landing pane, grouped rounded settings cards, and
-separate panels for the visible macOS-style categories. The Appearance pane now
-persists accent color, text highlight mode, icon/widget style, folder color
-mode, sidebar icon size, wallpaper tinting, and scroll-bar visibility alongside
-the existing light/dark, GTK theme, icon theme, desktop, Dock, widget, and
-cursor settings. Settings now applies the same dark-mode detection order as
-About Orange (`ORANGE_APPEARANCE`, `GTK_THEME`, GTK dark preference, then local
-config) and uses dark colors from the About palette.
-
-The launcher argument warning is fixed by keeping `orange.conf` as the app's
-own config-path argument while only passing the executable name through
-`g_application_run()`, so GTK no longer treats the config file as a document to
-open.
-
-Validation:
-
-- `ninja -C build orange-settings test-config`
-- `./build/test-config`
-- `git diff --check`
-- `ninja -C build`
-- `meson test -C build --print-errorlogs` still reaches the same two known
-  non-settings failures listed below.
-
-### GTK Theme Rounding, Files Icons, And Cursors
-
-About Orange and Orange Settings no longer hardcode a top-level app-window
-corner radius. Their custom root widgets inherit the GTK window theme's
-computed radius while keeping transparent app windows and clipped custom
-content.
-
-The compositor now propagates the configured GTK theme, icon theme, cursor
-theme, and cursor size to `org.gnome.desktop.interface` when a GNOME settings
-schema and session bus are available, so GTK apps such as Files can pick up the
-same theme/icon/cursor settings. Orange still exports `GTK_THEME`,
-`GTK_ICON_THEME`, `XCURSOR_THEME`, and `XCURSOR_SIZE` for launched clients.
-If `cursor_theme` is empty, Orange now falls back to the configured
-`icon_theme` as the cursor theme, which lets local icon themes such as
-MacTahoe provide their bundled `cursors/` directory without duplicating config.
-`XCURSOR_PATH` is initialized to the standard user and system icon roots when
-unset.
-
-Orange's own icon cache is reloaded when `icon_theme` changes. Asset coverage
-now includes resolving folder icons from a theme `places/scalable` directory,
-matching where themes commonly store Files/folder artwork.
-
-Validation:
-
-- `ninja -C build orange orange-about orange-settings test-assets test-config`
-- `./build/test-assets`
-- `./build/test-config`
-- `git diff --check`
-- `meson test -C build --print-errorlogs` still reaches the same two known
-  local failures in `shell-layout` and `shell-visual`.
-
-### Dock Glass And Files-First Defaults
-
-The Dock now defaults to Files first and Launchpad second, matching the checked
-in `orange.conf` order. Dock glass samples and scales the existing framebuffer
-behind the Dock before applying a lighter translucent shade, with tighter
-horizontal padding, a slimmer trash separator, larger running indicators, and
-updated tests for the reordered Launchpad hit target and role-icon lookup.
-Light/dark wallpapers were regenerated for the new default appearance pass.
-
-Menu bar and Dock share the same `draw_dock_glass` rendering path for
-consistent translucency. Dock outer padding = 22, corner radius = 44 × s,
-top padding = 16, bottom padding = 10, bottom margin = 8. Menu bar height =
-48px, Apple icon 40×40 at y = scaled_i(4, s), text baseline at
-scaled_i(36, s). Status icons render with original icon-theme colors
-(no white tinting) and no context menu on click.
-
-### Remaining Work
-
-Interactive testing under WSLg or a nested Wayland session is still needed.
-WSLg should use `WLR_BACKENDS=wayland WLR_RENDERER=pixman`; forcing wlroots
-Vulkan there can fail with `Cannot create Vulkan renderer: no DRM FD available`
-because the nested backend lacks the DRM render-node FD wlroots expects. GTK
-utility launch commands set `GSK_RENDERER=cairo` to avoid GTK's WSLg EGL/Zink
-path.
-Interactive nested Wayland runs are expected to keep running after logging
-`running on Wayland display wayland-N`; use `--headless --once` for startup
-tests that should exit by themselves.
-Pixel-level matching depends on the ignored private user assets. Automated visual
-coverage intentionally avoids checked-in reference-image comparison.
-More faithful behavior would require real app/menu integration, richer
-animation, and full desktop services.
-
-Individual status-icon features (Wi-Fi dropdown, volume slider, search, etc.)
-still need to be wired up.
 
 ---
 

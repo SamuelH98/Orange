@@ -41,19 +41,18 @@ struct icon_theme_info {
 	int dir_count;
 };
 
-static bool has_suffix(const char *name, const char *suffix) {
+static bool has_suffix(const char *name, const char *suffix, size_t suffix_len) {
 	size_t name_len = strlen(name);
-	size_t suffix_len = strlen(suffix);
 	return name_len > suffix_len &&
-		strcmp(name + name_len - suffix_len, suffix) == 0;
+		memcmp(name + name_len - suffix_len, suffix, suffix_len) == 0;
 }
 
 static bool has_png_suffix(const char *name) {
-	return has_suffix(name, ".png");
+	return has_suffix(name, ".png", 4);
 }
 
 static bool has_svg_suffix(const char *name) {
-	return has_suffix(name, ".svg") || has_suffix(name, ".svgz");
+	return has_suffix(name, ".svg", 4) || has_suffix(name, ".svgz", 5);
 }
 
 static cairo_surface_t *load_png(const char *path) {
@@ -370,6 +369,15 @@ static bool add_icon_base(char bases[ICON_THEME_BASE_MAX][4096],
 static void collect_icon_bases(const struct orange_assets *assets,
 		char bases[ICON_THEME_BASE_MAX][4096],
 		int *count) {
+	static char cached_bases[ICON_THEME_BASE_MAX][4096];
+	static int cached_count = 0;
+	static bool cached = false;
+	if (cached) {
+		memcpy(bases, cached_bases, sizeof(cached_bases));
+		*count = cached_count;
+		return;
+	}
+
 	*count = 0;
 	char path[4096];
 	(void)assets;
@@ -411,6 +419,46 @@ static void collect_icon_bases(const struct orange_assets *assets,
 		add_icon_base(bases, count, path);
 	}
 	add_icon_base(bases, count, "/usr/share/pixmaps");
+
+	cached = true;
+	cached_count = *count;
+	memcpy(cached_bases, bases, sizeof(cached_bases));
+}
+
+#define THEME_INFO_CACHE_SIZE 8
+
+static bool read_theme_info(const char *theme_name,
+	char bases[ICON_THEME_BASE_MAX][4096],
+	int base_count,
+	struct icon_theme_info *info);
+
+static struct theme_info_cache_entry {
+	char name[ORANGE_THEME_NAME_MAX];
+	struct icon_theme_info info;
+} theme_info_cache[THEME_INFO_CACHE_SIZE];
+static int theme_info_cache_count = 0;
+
+static bool cached_read_theme_info(const char *theme_name,
+		char bases[ICON_THEME_BASE_MAX][4096],
+		int base_count,
+		struct icon_theme_info *info) {
+	if (theme_name == NULL || theme_name[0] == '\0') {
+		return false;
+	}
+	for (int i = 0; i < theme_info_cache_count; i++) {
+		if (strcmp(theme_info_cache[i].name, theme_name) == 0) {
+			memcpy(info, &theme_info_cache[i].info, sizeof(*info));
+			return info->found;
+		}
+	}
+	bool ok = read_theme_info(theme_name, bases, base_count, info);
+	if (theme_info_cache_count < THEME_INFO_CACHE_SIZE) {
+		snprintf(theme_info_cache[theme_info_cache_count].name,
+			sizeof(theme_info_cache[0].name), "%s", theme_name);
+		memcpy(&theme_info_cache[theme_info_cache_count].info, info, sizeof(*info));
+		theme_info_cache_count++;
+	}
+	return ok;
 }
 
 static bool read_theme_info(const char *theme_name,
@@ -507,7 +555,7 @@ static bool try_icon_path(char *out,
 }
 
 static bool has_symbolic_suffix(const char *name) {
-	return has_suffix(name, "-symbolic");
+	return has_suffix(name, "-symbolic", 9);
 }
 
 static int generate_themed_icon_names(const char *name,
@@ -555,11 +603,16 @@ static int generate_themed_icon_names(const char *name,
 		}
 	}
 
+	/* "-symbolic" is 9 chars + NUL = 10; base must fit in the remaining space. */
+	static const char symbolic_suffix[] = "-symbolic";
+	static const int symbolic_base_max =
+		ORANGE_ASSET_ICON_NAME_MAX - (int)(sizeof(symbolic_suffix));
+
 	int count = 0;
 	for (int i = 0; i < split_count && count < max; i++) {
 		if (is_symbolic) {
 			snprintf(names[count], ORANGE_ASSET_ICON_NAME_MAX,
-				"%s-symbolic", splits[i]);
+				"%.*s%s", symbolic_base_max, splits[i], symbolic_suffix);
 		} else {
 			snprintf(names[count], ORANGE_ASSET_ICON_NAME_MAX,
 				"%s", splits[i]);
@@ -572,7 +625,7 @@ static int generate_themed_icon_names(const char *name,
 				"%s", splits[i]);
 		} else {
 			snprintf(names[count], ORANGE_ASSET_ICON_NAME_MAX,
-				"%s-symbolic", splits[i]);
+				"%.*s%s", symbolic_base_max, splits[i], symbolic_suffix);
 		}
 		count++;
 	}
@@ -588,32 +641,24 @@ static bool lookup_icon_in_theme(char *out,
 		int base_count,
 		int icon_size,
 		int icon_scale) {
-	for (int i = 0; i < info->dir_count; i++) {
-		const struct icon_dir_info *dir = &info->dirs[i];
-		if (!directory_matches_size(dir, icon_size, icon_scale)) {
-			continue;
-		}
-		for (int b = 0; b < base_count; b++) {
-			if (try_icon_path(out, out_size, bases[b], theme_name,
-					dir->name, icon_name)) {
-				return true;
-			}
-		}
-	}
-
 	int best_distance = INT_MAX;
 	int best_dir_size = 0;
 	enum icon_dir_type best_type = ICON_DIR_FIXED;
 	char best_path[4096] = "";
 	for (int i = 0; i < info->dir_count; i++) {
 		const struct icon_dir_info *dir = &info->dirs[i];
-		int distance = directory_size_distance(dir, icon_size, icon_scale);
+		bool exact = directory_matches_size(dir, icon_size, icon_scale);
 		for (int b = 0; b < base_count; b++) {
 			char candidate[4096];
 			if (!try_icon_path(candidate, sizeof(candidate), bases[b],
 					theme_name, dir->name, icon_name)) {
 				continue;
 			}
+			if (exact) {
+				snprintf(out, out_size, "%s", candidate);
+				return true;
+			}
+			int distance = directory_size_distance(dir, icon_size, icon_scale);
 			bool better = false;
 			if (best_path[0] == '\0') {
 				better = true;
@@ -681,7 +726,7 @@ static bool find_icon_helper(char *out,
 	}
 
 	struct icon_theme_info info;
-	if (!read_theme_info(theme_name, bases, base_count, &info)) {
+	if (!cached_read_theme_info(theme_name, bases, base_count, &info)) {
 		return false;
 	}
 	if (lookup_icon_in_theme(out, out_size, icon_name, theme_name, &info,
@@ -714,9 +759,9 @@ static bool normalize_icon_name(const char *name,
 	snprintf(normalized, ORANGE_ASSET_ICON_NAME_MAX, "%s", name);
 	if (has_png_suffix(normalized)) {
 		normalized[strlen(normalized) - 4] = '\0';
-	} else if (has_suffix(normalized, ".svg")) {
+	} else if (has_suffix(normalized, ".svg", 4)) {
 		normalized[strlen(normalized) - 4] = '\0';
-	} else if (has_suffix(normalized, ".svgz")) {
+	} else if (has_suffix(normalized, ".svgz", 5)) {
 		normalized[strlen(normalized) - 5] = '\0';
 	}
 	return normalized[0] != '\0';
@@ -729,9 +774,41 @@ static bool find_icon_file(char *out,
 	if (icon_name == NULL || icon_name[0] == '\0') {
 		return false;
 	}
-	if (icon_name[0] == '/' && file_exists(icon_name)) {
-		snprintf(out, out_size, "%s", icon_name);
-		return true;
+
+	char bases[ICON_THEME_BASE_MAX][4096];
+	int base_count = 0;
+	const char *theme = NULL;
+
+	/* For absolute paths, try to derive a theme-lookup name first so that
+	 * user icon overrides are honoured.  Snap packages set Icon= to an
+	 * absolute path inside /snap/<name>/...; extract <name> and run the
+	 * normal themed lookup with it before falling back to the raw path.
+	 * All other absolute paths are honoured directly as before. */
+	if (icon_name[0] == '/') {
+		if (strncmp(icon_name, "/snap/", 6) == 0) {
+			const char *p = icon_name + 6;
+			const char *sl = strchr(p, '/');
+			if (sl != NULL && sl > p) {
+				char snap_name[ORANGE_ASSET_ICON_NAME_MAX];
+				snprintf(snap_name, sizeof(snap_name),
+					"%.*s", (int)(sl - p), p);
+
+				collect_icon_bases(assets, bases, &base_count);
+				theme = assets->icon_theme[0] != '\0' ?
+					assets->icon_theme : "hicolor";
+
+				if (base_count > 0 && find_icon_helper(out, out_size,
+						snap_name, theme, assets, bases, base_count,
+						ICON_LOOKUP_SIZE, ICON_LOOKUP_SCALE, 0)) {
+					return true;
+				}
+			}
+		}
+		if (file_exists(icon_name)) {
+			snprintf(out, out_size, "%s", icon_name);
+			return true;
+		}
+		return false;
 	}
 
 	char normalized[ORANGE_ASSET_ICON_NAME_MAX];
@@ -739,15 +816,16 @@ static bool find_icon_file(char *out,
 		return false;
 	}
 
-	char bases[ICON_THEME_BASE_MAX][4096];
-	int base_count = 0;
-	collect_icon_bases(assets, bases, &base_count);
+	if (base_count == 0) {
+		collect_icon_bases(assets, bases, &base_count);
+	}
 	if (base_count == 0) {
 		return false;
 	}
-
-	const char *theme = assets->icon_theme[0] != '\0' ?
-		assets->icon_theme : "hicolor";
+	if (theme == NULL) {
+		theme = assets->icon_theme[0] != '\0' ?
+			assets->icon_theme : "hicolor";
+	}
 
 	if (find_icon_helper(out, out_size, normalized, theme, assets,
 			bases, base_count, ICON_LOOKUP_SIZE, ICON_LOOKUP_SCALE, 0)) {
@@ -990,6 +1068,7 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"x-office-address-book", aliases_address_book},
 	{"x-office-calendar", aliases_calendar},
 	{"audio-x-generic", aliases_audio_generic},
+	{"org.gnome.Decibels", aliases_audio_generic},
 };
 
 static const char *const *aliases_for_icon(const char *name) {
@@ -1001,6 +1080,19 @@ static const char *const *aliases_for_icon(const char *name) {
 	return NULL;
 }
 
+/* Snap packages set Icon=snapname_appname in their .desktop files.
+ * Strip the prefix so "firefox_firefox" -> "firefox", etc.
+ * Returns true if an underscore was found and the suffix is non-empty. */
+static bool strip_snap_prefix(const char *name,
+		char stripped[ORANGE_ASSET_ICON_NAME_MAX]) {
+	const char *underscore = strchr(name, '_');
+	if (underscore == NULL || underscore == name || *(underscore + 1) == '\0') {
+		return false;
+	}
+	snprintf(stripped, ORANGE_ASSET_ICON_NAME_MAX, "%s", underscore + 1);
+	return true;
+}
+
 static cairo_surface_t *resolve_icon_surface(
 		const struct orange_assets *assets,
 		const char *name) {
@@ -1009,11 +1101,22 @@ static cairo_surface_t *resolve_icon_surface(
 	}
 
 	char path[4096];
-	if (find_icon_file_with_fallbacks(path, sizeof(path), name, assets)) {
+	if (find_icon_file(path, sizeof(path), name, assets)) {
 		return load_icon_file(path);
 	}
 
-	const char *const *aliases = aliases_for_icon(name);
+	/* If the name looks like a snap icon (prefix_name), try the stripped
+	 * name and its aliases before the original name's aliases. */
+	char snap_stripped[ORANGE_ASSET_ICON_NAME_MAX];
+	bool is_snap = strip_snap_prefix(name, snap_stripped);
+	const char *effective = is_snap ? snap_stripped : name;
+
+
+	if (is_snap && find_icon_file(path, sizeof(path), effective, assets)) {
+		return load_icon_file(path);
+	}
+
+	const char *const *aliases = aliases_for_icon(effective);
 	if (aliases != NULL) {
 		for (int i = 0; aliases[i] != NULL; i++) {
 			if (find_icon_file(path, sizeof(path), aliases[i], assets)) {
@@ -1022,7 +1125,23 @@ static cairo_surface_t *resolve_icon_surface(
 		}
 	}
 
-	if (strcmp(name, "application-x-executable") != 0 &&
+	/* Also check aliases on the original prefixed name. */
+	if (is_snap) {
+		const char *const *orig_aliases = aliases_for_icon(name);
+		if (orig_aliases != NULL) {
+			for (int i = 0; orig_aliases[i] != NULL; i++) {
+				if (find_icon_file(path, sizeof(path), orig_aliases[i], assets)) {
+					return load_icon_file(path);
+				}
+			}
+		}
+	}
+
+	if (find_icon_file_with_fallbacks(path, sizeof(path), effective, assets)) {
+		return load_icon_file(path);
+	}
+
+	if (strcmp(effective, "application-x-executable") != 0 &&
 			find_icon_file_with_fallbacks(path, sizeof(path),
 				"application-x-executable", assets)) {
 		return load_icon_file(path);
@@ -1036,28 +1155,68 @@ static cairo_surface_t *resolve_icon_surface(
 	return NULL;
 }
 
+static unsigned icon_name_hash(const char *str) {
+	unsigned hash = 5381;
+	int c;
+	while ((c = *str++)) {
+		hash = ((hash << 5) + hash) + c;
+	}
+	return hash;
+}
+
 static struct orange_named_icon *find_cached_icon(
-		struct orange_named_icon *icons,
-		int *count,
-		int capacity,
+		struct orange_assets *assets,
 		const char *name) {
-	for (int i = 0; i < *count; i++) {
+	int *lookup = assets->icon_lookup;
+	struct orange_named_icon *icons = assets->icons;
+
+	unsigned h = icon_name_hash(name);
+	unsigned slot = h & (ORANGE_ASSET_ICON_MAX - 1);
+	unsigned insert_slot = slot;
+
+	for (unsigned i = 0; i < ORANGE_ASSET_ICON_MAX; i++) {
+		int idx = lookup[insert_slot];
+		if (idx < 0) {
+			break;
+		}
+		if (strcmp(icons[idx].name, name) == 0) {
+			return &icons[idx];
+		}
+		insert_slot = (insert_slot + 1) & (ORANGE_ASSET_ICON_MAX - 1);
+	}
+
+	/* Fallback: linear scan for entries inserted without the hash table
+	 * (e.g., tests that write directly to assets.icons[]). */
+	for (int i = 0; i < assets->icon_count; i++) {
 		if (strcmp(icons[i].name, name) == 0) {
+			/* Back-populate the hash table so future lookups are fast. */
+			unsigned hs = icon_name_hash(name);
+			unsigned ss = hs & (ORANGE_ASSET_ICON_MAX - 1);
+			while (lookup[ss] >= 0) {
+				ss = (ss + 1) & (ORANGE_ASSET_ICON_MAX - 1);
+			}
+			lookup[ss] = i;
 			return &icons[i];
 		}
 	}
-	if (*count >= capacity) {
+
+	if (assets->icon_count >= ORANGE_ASSET_ICON_MAX) {
 		return NULL;
 	}
-	struct orange_named_icon *icon = &icons[*count];
+
+	struct orange_named_icon *icon = &icons[assets->icon_count];
 	memset(icon, 0, sizeof(*icon));
 	snprintf(icon->name, sizeof(icon->name), "%s", name);
-	(*count)++;
+	lookup[insert_slot] = assets->icon_count;
+	assets->icon_count++;
 	return icon;
 }
 
 void orange_assets_init(struct orange_assets *assets) {
 	memset(assets, 0, sizeof(*assets));
+	for (int i = 0; i < ORANGE_ASSET_ICON_MAX; i++) {
+		assets->icon_lookup[i] = -1;
+	}
 }
 
 bool orange_assets_load(
@@ -1105,6 +1264,9 @@ void orange_assets_finish(struct orange_assets *assets) {
 		}
 	}
 	assets->icon_count = 0;
+	for (int i = 0; i < ORANGE_ASSET_ICON_MAX; i++) {
+		assets->icon_lookup[i] = -1;
+	}
 	assets->asset_root[0] = '\0';
 	assets->icon_theme[0] = '\0';
 	assets->wallpaper_checked = false;
@@ -1156,9 +1318,7 @@ cairo_surface_t *orange_assets_icon(
 			variant < 0 || variant >= ORANGE_ASSET_ICON_VARIANTS) {
 		return NULL;
 	}
-
-	struct orange_named_icon *icon = find_cached_icon(assets->icons,
-		&assets->icon_count, ORANGE_ASSET_ICON_MAX, name);
+	struct orange_named_icon *icon = find_cached_icon(assets, name);
 	if (icon == NULL) {
 		return NULL;
 	}
@@ -1166,18 +1326,19 @@ cairo_surface_t *orange_assets_icon(
 	if (icon->surface[variant] != NULL) {
 		return icon->surface[variant];
 	}
-	enum orange_asset_icon_variant fallback =
-		variant == ORANGE_ASSET_ICON_DARK ?
-		ORANGE_ASSET_ICON_LIGHT : ORANGE_ASSET_ICON_DARK;
-	if (icon->surface[fallback] != NULL) {
-		return icon->surface[fallback];
-	}
-	if (!icon->resolved[variant]) {
+	/* Only skip resolution if we previously succeeded. A NULL resolved
+	 * surface means the last attempt failed (e.g. icon not yet installed,
+	 * or stale cache from before a code fix); retry so transient failures
+	 * don't permanently poison the cache. */
+	if (!icon->resolved[variant] || icon->surface[variant] == NULL) {
 		icon->surface[variant] = resolve_icon_surface(assets, name);
-		icon->resolved[variant] = true;
+		icon->resolved[variant] = icon->surface[variant] != NULL;
 	}
 	if (icon->surface[variant] != NULL) {
 		return icon->surface[variant];
 	}
+	enum orange_asset_icon_variant fallback =
+		variant == ORANGE_ASSET_ICON_DARK ?
+		ORANGE_ASSET_ICON_LIGHT : ORANGE_ASSET_ICON_DARK;
 	return icon->surface[fallback];
 }
