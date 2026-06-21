@@ -84,6 +84,7 @@ struct orange_output {
 	bool overlay_bounds_valid;
 	struct orange_rect overlay_bounds;
 	bool commit_pending;
+	bool commit_failed;
 };
 
 struct orange_view {
@@ -1759,7 +1760,8 @@ static void server_mark_shell_dirty(struct orange_server *server) {
 	wl_list_for_each(output, &server->outputs, link) {
 		output->shell_dirty = true;
 		output->overlay_dirty = true;
-		if (!output->commit_pending && !output->wlr_output->frame_pending) {
+		if (!output->commit_pending && !output->wlr_output->frame_pending
+				&& !output->commit_failed) {
 			wlr_output_schedule_frame(output->wlr_output);
 		}
 	}
@@ -1769,7 +1771,8 @@ static void server_mark_overlay_dirty(struct orange_server *server) {
 	struct orange_output *output;
 	wl_list_for_each(output, &server->outputs, link) {
 		output->overlay_dirty = true;
-		if (!output->commit_pending && !output->wlr_output->frame_pending) {
+		if (!output->commit_pending && !output->wlr_output->frame_pending
+				&& !output->commit_failed) {
 			wlr_output_schedule_frame(output->wlr_output);
 		}
 	}
@@ -5218,17 +5221,25 @@ static void handle_output_frame(struct wl_listener *listener, void *data) {
 	if (output->commit_pending || output->wlr_output->frame_pending) {
 		return;
 	}
-	output_redraw_shell(output);
-	output_redraw_overlay(output);
+	if (output->commit_failed) {
+		return;
+	}
 	if (!output->wlr_output->needs_frame && !output->server->options->once) {
 		return;
 	}
+	output_redraw_shell(output);
+	output_redraw_overlay(output);
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	if (!wlr_scene_output_commit(output->scene_output, NULL)) {
-		wlr_log(WLR_ERROR, "failed to commit scene output");
+		if (!output->commit_failed) {
+			wlr_log(WLR_ERROR, "failed to commit scene output"
+				" (rate-limited)");
+			output->commit_failed = true;
+		}
 		return;
 	}
+	output->commit_failed = false;
 	output->commit_pending = true;
 	wlr_scene_output_send_frame_done(output->scene_output, &now);
 
@@ -5242,6 +5253,7 @@ static void handle_output_present(struct wl_listener *listener, void *data) {
 	struct orange_output *output = wl_container_of(listener, output, present);
 	(void)data;
 	output->commit_pending = false;
+	output->commit_failed = false;
 	struct orange_server *server = output->server;
 	if (server->dock_bounce_active) {
 		uint32_t now = monotonic_time_msec();
