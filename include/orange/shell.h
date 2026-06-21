@@ -20,8 +20,8 @@
 #define ORANGE_APP_MENU_TAB_COUNT 8
 #define ORANGE_APP_MENU_ITEM_MAX 16
 #define ORANGE_APP_MENU_ACTION_MAX 128
-#define ORANGE_LAUNCHER_COLS 4
-#define ORANGE_LAUNCHER_ROWS 5
+#define ORANGE_LAUNCHER_COLS 5
+#define ORANGE_LAUNCHER_ROWS 4
 #define ORANGE_LAUNCHER_CELL_MAX 512
 #define ORANGE_LAUNCHER_MODE_COUNT 4
 #define ORANGE_LAUNCHER_MODE_APPS 0
@@ -32,6 +32,12 @@
 #define ORANGE_LAUNCHER_APP_MAX 1024
 #define ORANGE_LAUNCHER_CATEGORY_MAX 16
 #define ORANGE_LAUNCHER_CATEGORY_NAME_MAX 64
+#define ORANGE_LAUNCHER_SECTION_MAX 4
+
+enum orange_launcher_mode {
+	ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY,
+	ORANGE_LAUNCHER_DISPLAY_FULL,
+};
 
 struct orange_rect {
 	int x;
@@ -50,6 +56,7 @@ enum orange_shell_hit_kind {
 	ORANGE_HIT_NOTIFICATION_CENTER,
 	ORANGE_HIT_NOTIFICATION_CENTER_EDIT,
 	ORANGE_HIT_DOCK_ITEM,
+	ORANGE_HIT_DOCK_SEPARATOR,
 	ORANGE_HIT_WIDGET,
 	ORANGE_HIT_DESKTOP_ITEM,
 	ORANGE_HIT_DESKTOP,
@@ -58,6 +65,7 @@ enum orange_shell_hit_kind {
 	ORANGE_HIT_LAUNCHER_MODE,
 	ORANGE_HIT_LAUNCHER_APP,
 	ORANGE_HIT_LAUNCHER_CATEGORY,
+	ORANGE_HIT_LAUNCHER_SCROLLBAR,
 	ORANGE_HIT_LAUNCHER_BACKGROUND,
 };
 
@@ -102,6 +110,7 @@ enum orange_context_menu_kind {
 	ORANGE_CONTEXT_MENU_APP_TOOLS,
 	ORANGE_CONTEXT_MENU_APP_HELP,
 	ORANGE_CONTEXT_MENU_DOCK,
+	ORANGE_CONTEXT_MENU_DOCK_SEPARATOR,
 	ORANGE_CONTEXT_MENU_WIDGET,
 	ORANGE_CONTEXT_MENU_DESKTOP,
 	ORANGE_CONTEXT_MENU_DESKTOP_ICON,
@@ -197,6 +206,8 @@ struct orange_shell_layout {
 
 	struct orange_rect dock;
 	struct orange_rect dock_items[ORANGE_DOCK_MAX];
+	struct orange_rect dock_separator;
+	enum orange_dock_position dock_position;
 	int dock_launcher_indices[ORANGE_DOCK_MAX];
 	int dock_item_count;
 
@@ -208,18 +219,32 @@ struct orange_shell_layout {
 	int context_menu_item_count;
 
 	bool launcher_visible;
+	enum orange_launcher_mode launcher_display_mode;
+	bool launcher_position_set;
+	int launcher_x;
+	int launcher_y;
+	struct orange_rect launcher_panel;
 	struct orange_rect launcher_search_field;
 	struct orange_rect launcher_mode_buttons[ORANGE_LAUNCHER_MODE_COUNT];
 	struct orange_rect launcher_category_tabs[ORANGE_LAUNCHER_CATEGORY_MAX];
 	int launcher_category_count;
 	int launcher_category_active;
+	struct orange_rect launcher_section_headers[ORANGE_LAUNCHER_SECTION_MAX];
+	int launcher_section_starts[ORANGE_LAUNCHER_SECTION_MAX];
+	int launcher_section_lengths[ORANGE_LAUNCHER_SECTION_MAX];
+	int launcher_section_count;
 	struct orange_rect launcher_viewport;
+	struct orange_rect launcher_scroll_track;
+	struct orange_rect launcher_scroll_thumb;
 	struct orange_rect launcher_grid_cells[ORANGE_LAUNCHER_CELL_MAX];
+	int launcher_grid_indices[ORANGE_LAUNCHER_CELL_MAX];
 	int launcher_grid_cell_count;
 	int launcher_grid_cols;
 	int launcher_grid_cell_w;
 	int launcher_grid_cell_h;
+	int launcher_grid_icon_size;
 	int launcher_scroll;
+	int launcher_scroll_row;
 	int launcher_max_scroll;
 	bool launcher_searching;
 	int launcher_current_mode;
@@ -247,6 +272,7 @@ struct orange_shell_state {
 	int dock_drag_insert_before;
 	int dock_drag_x;
 	int dock_drag_y;
+	bool dock_drag_remove;
 	enum orange_context_menu_kind context_menu_kind;
 	int context_menu_index;
 	int context_menu_cursor_x;
@@ -255,13 +281,22 @@ struct orange_shell_state {
 	bool desktop_drag_swap;
 
 	bool launcher_open;
+	enum orange_launcher_mode launcher_display_mode;
+	bool launcher_position_set;
+	int launcher_x;
+	int launcher_y;
 	char launcher_query[ORANGE_LAUNCHER_QUERY_MAX];
 	int launcher_hot_app;
 	int launcher_app_indices[ORANGE_LAUNCHER_APP_MAX];
 	int launcher_app_count;
 	int launcher_scroll;
+	int launcher_scroll_row;
 	int launcher_current_mode;
 	bool launcher_search_focus;
+	bool launcher_app_drag_active;
+	int launcher_app_drag_x;
+	int launcher_app_drag_y;
+	int launcher_app_drag_entry_index;
 	char launcher_categories[ORANGE_LAUNCHER_CATEGORY_MAX][ORANGE_LAUNCHER_CATEGORY_NAME_MAX];
 	int launcher_category_count;
 	int launcher_category_active;
@@ -269,6 +304,7 @@ struct orange_shell_state {
 
 struct orange_shell_draw_options {
 	bool draw_wallpaper;
+	bool skip_transient_overlays;
 };
 
 #include "orange/dock.h"
@@ -313,9 +349,13 @@ void orange_shell_layout_set_context_menu(
 	const struct orange_app_menu_model *app_menu);
 void orange_shell_layout_set_notification_center(
 	struct orange_shell_layout *layout);
+struct orange_rect orange_shell_layout_work_area(
+	const struct orange_shell_layout *layout);
 void orange_shell_layout_set_launcher(
 	struct orange_shell_layout *layout,
-		bool searching);
+	bool searching,
+		enum orange_launcher_mode display_mode,
+		int app_count);
 
 struct orange_shell_hit orange_shell_hit_test(
 	const struct orange_shell_layout *layout,
@@ -335,6 +375,25 @@ void orange_shell_draw_with_options(
 	int stride,
 	const struct orange_shell_state *state,
 	const struct orange_shell_draw_options *options);
+void orange_shell_draw_overlay(
+	uint32_t *pixels,
+	int width,
+	int height,
+	int stride,
+	const struct orange_shell_state *state);
+bool orange_shell_overlay_bounds(
+	int width,
+	int height,
+	const struct orange_shell_state *state,
+	struct orange_rect *out_bounds);
+void orange_shell_draw_overlay_with_backdrop(
+	uint32_t *pixels,
+	int width,
+	int height,
+	int stride,
+	const uint32_t *backdrop_pixels,
+	int backdrop_stride,
+	const struct orange_shell_state *state);
 
 const char *orange_shell_volume_label(const struct orange_volume_info *volumes,
 	int volume_count, int index);

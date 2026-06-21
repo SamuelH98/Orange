@@ -1,3 +1,4 @@
+#include "orange/launcher.h"
 #include "orange/shell.h"
 
 #include <assert.h>
@@ -39,6 +40,19 @@ static void test_dock_hit(void) {
 	assert(hit.index == 0);
 	struct orange_desktop_entry entries[1];
 	assert(orange_dock_command(hit.index, entries, 0, &config) != NULL);
+
+	assert(layout.dock_separator.width > 0);
+	hit = orange_shell_hit_test(
+		&layout,
+		layout.dock_separator.x + layout.dock_separator.width / 2,
+		layout.dock_separator.y + layout.dock_separator.height / 2);
+	assert(hit.kind == ORANGE_HIT_DOCK_SEPARATOR);
+	assert(hit.index == -1);
+	struct orange_rect work = orange_shell_layout_work_area(&layout);
+	assert(work.x == 0);
+	assert(work.y == layout.menu_bar.height);
+	assert(work.x + work.width == layout.width);
+	assert(work.y + work.height == layout.dock.y);
 }
 
 static void test_reordered_dock_hit_resolves_launcher(void) {
@@ -60,11 +74,57 @@ static void test_reordered_dock_hit_resolves_launcher(void) {
 	int launcher_idx = orange_dock_launcher_index(&layout, hit.index);
 	assert(launcher_idx == 1);
 	assert(strcmp(orange_dock_label(launcher_idx, NULL, 0, &config),
-		"") == 0);
+		"Launcher") == 0);
 	const char *command = orange_dock_command(launcher_idx,
 		NULL, 0, &config);
 	assert(command != NULL);
 	assert(strstr(command, "ORANGE_APP_PICKER") != NULL);
+}
+
+static void test_dock_position_layout(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.dock_position = ORANGE_DOCK_POSITION_LEFT;
+
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	assert(layout.dock_position == ORANGE_DOCK_POSITION_LEFT);
+	assert(layout.dock.x < 80);
+	assert(layout.dock.height > layout.dock.width);
+	assert(layout.dock_items[1].y > layout.dock_items[0].y);
+	assert(layout.dock_separator.width > layout.dock_separator.height);
+	struct orange_rect work = orange_shell_layout_work_area(&layout);
+	assert(work.x == layout.dock.x + layout.dock.width);
+	assert(work.y == layout.menu_bar.height);
+	assert(work.x + work.width == layout.width);
+	assert(work.y + work.height == layout.height);
+	struct orange_shell_hit hit = orange_shell_hit_test(
+		&layout,
+		layout.dock_separator.x + layout.dock_separator.width / 2,
+		layout.dock_separator.y + layout.dock_separator.height / 2);
+	assert(hit.kind == ORANGE_HIT_DOCK_SEPARATOR);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, -1, 0, 0, NULL);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR);
+	assert(layout.context_menu_panel.x >=
+		layout.dock.x + layout.dock.width);
+
+	config.dock_position = ORANGE_DOCK_POSITION_RIGHT;
+	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	assert(layout.dock_position == ORANGE_DOCK_POSITION_RIGHT);
+	assert(layout.dock.x > layout.width / 2);
+	assert(layout.dock.height > layout.dock.width);
+	assert(layout.dock_items[1].y > layout.dock_items[0].y);
+	work = orange_shell_layout_work_area(&layout);
+	assert(work.x == 0);
+	assert(work.y == layout.menu_bar.height);
+	assert(work.x + work.width == layout.dock.x);
+	assert(work.y + work.height == layout.height);
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, -1, 0, 0, NULL);
+	assert(layout.context_menu_panel.x + layout.context_menu_panel.width <=
+		layout.dock.x);
 }
 
 static void test_default_dock_apps_have_fallback_commands(void) {
@@ -119,6 +179,56 @@ static void test_dock_trash_spacing_is_balanced(void) {
 	trailing = layout.dock.x + layout.dock.width -
 		(layout.dock_items[last].x + layout.dock_items[last].width);
 	assert(abs(first_leading - trailing) <= 1);
+}
+
+static void test_dock_remove_visible_compacts_aliases(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	int original_count = orange_dock_count(&config);
+	assert(original_count > 4);
+	assert(orange_dock_config_remove_visible(&config, 2));
+	assert(orange_dock_count(&config) == original_count - 1);
+	assert(!orange_dock_config_contains_app(&config, "firefox.desktop"));
+	for (int i = 0; i < orange_dock_count(&config); i++) {
+		assert(config.dock_apps[i][0] != '\0');
+		assert(config.dock_order[i] == i);
+	}
+	assert(!orange_dock_config_remove_visible(&config, 1));
+	assert(orange_dock_config_contains_app(&config, "__launcher__"));
+	assert(!orange_dock_config_remove_visible(&config,
+		orange_dock_count(&config) - 1));
+	assert(orange_dock_config_contains_app(&config, "__trash__"));
+}
+
+static void test_dock_insert_from_launcher_clamps_before_trash(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	int original_count = orange_dock_count(&config);
+	assert(original_count > 2);
+	assert(orange_dock_config_insert_app(&config,
+		"org.example.NewApp.desktop", original_count));
+	assert(orange_dock_count(&config) == original_count + 1);
+	assert(strcmp(config.dock_apps[original_count - 1],
+		"org.example.NewApp.desktop") == 0);
+	assert(strcmp(config.dock_apps[original_count], "__trash__") == 0);
+	assert(!orange_dock_config_insert_app(&config,
+		"org.example.NewApp.desktop", 0));
+	assert(!orange_dock_config_insert_app(&config,
+		"org.example.NewApp", 0));
+}
+
+static void test_dock_reorder_visible_keeps_permanent_items_fixed(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	int original_count = orange_dock_count(&config);
+	assert(original_count > 4);
+	assert(!orange_dock_config_reorder_visible(&config, 1, 0));
+	assert(strcmp(config.dock_apps[1], "__launcher__") == 0);
+	assert(orange_dock_config_reorder_visible(&config, 2, 0));
+	assert(strcmp(config.dock_apps[0], "firefox.desktop") == 0);
+	assert(orange_dock_config_reorder_visible(&config, 0, original_count));
+	assert(strcmp(config.dock_apps[original_count - 2], "firefox.desktop") == 0);
+	assert(strcmp(config.dock_apps[original_count - 1], "__trash__") == 0);
 }
 
 static void test_desktop_hit(void) {
@@ -420,6 +530,231 @@ static void test_notification_center_layout_and_hit(void) {
 	assert(hit.index == ORANGE_STATUS_ITEM_CLOCK);
 }
 
+static void test_launcher_full_layout_scrolls_all_apps(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
+	layout.launcher_category_count = 6;
+	layout.launcher_category_active = 2;
+	orange_shell_layout_set_launcher(&layout, false,
+		ORANGE_LAUNCHER_DISPLAY_FULL, 80);
+
+	assert(layout.launcher_panel.width > 0);
+	assert(layout.launcher_panel.width <= (int)(layout.width * 0.58));
+	assert(layout.launcher_panel.height <= (int)(layout.height * 0.70));
+	assert(layout.launcher_viewport.x - layout.launcher_panel.x <= 24);
+	assert(layout.launcher_panel.y + layout.launcher_panel.height -
+		(layout.launcher_viewport.y + layout.launcher_viewport.height) <= 4);
+	assert(layout.launcher_grid_cols == ORANGE_LAUNCHER_COLS);
+	assert(layout.launcher_section_count == 1);
+	assert(layout.launcher_category_count == 6);
+	assert(layout.launcher_category_active == 2);
+	assert(layout.launcher_category_tabs[0].width > 0);
+	assert(layout.launcher_viewport.y >
+		layout.launcher_category_tabs[0].y +
+		layout.launcher_category_tabs[0].height);
+	assert(layout.launcher_grid_cell_count > 0);
+	assert(layout.launcher_grid_indices[0] == 0);
+	assert(layout.launcher_max_scroll > 0);
+	assert(layout.launcher_scroll_track.width > 0);
+	assert(layout.launcher_scroll_thumb.height > 0);
+
+	struct orange_rect first = layout.launcher_grid_cells[0];
+	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
+		first.x + first.width / 2,
+		first.y + first.height / 2);
+	assert(hit.kind == ORANGE_HIT_LAUNCHER_APP);
+	assert(hit.index == 0);
+
+	struct orange_rect tab = layout.launcher_category_tabs[2];
+	hit = orange_shell_hit_test(&layout,
+		tab.x + tab.width / 2,
+		tab.y + tab.height / 2);
+	assert(hit.kind == ORANGE_HIT_LAUNCHER_CATEGORY);
+	assert(hit.index == 2);
+
+	struct orange_rect thumb = layout.launcher_scroll_thumb;
+	hit = orange_shell_hit_test(&layout,
+		thumb.x + thumb.width / 2,
+		thumb.y + thumb.height / 2);
+	assert(hit.kind == ORANGE_HIT_LAUNCHER_SCROLLBAR);
+
+	layout.launcher_scroll_row = 2;
+	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
+	layout.launcher_category_count = 6;
+	layout.launcher_category_active = 2;
+	orange_shell_layout_set_launcher(&layout, false,
+		ORANGE_LAUNCHER_DISPLAY_FULL, 80);
+	assert(layout.launcher_scroll_row == 2);
+	assert(layout.launcher_grid_indices[0] == ORANGE_LAUNCHER_COLS * 2);
+	first = layout.launcher_grid_cells[0];
+	hit = orange_shell_hit_test(&layout,
+		first.x + first.width / 2,
+		first.y + first.height / 2);
+	assert(hit.kind == ORANGE_HIT_LAUNCHER_APP);
+	assert(hit.index == ORANGE_LAUNCHER_COLS * 2);
+}
+
+static void test_launcher_search_mode_transforms_to_overlay(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
+	layout.launcher_category_count = 6;
+	layout.launcher_category_active = 0;
+	orange_shell_layout_set_launcher(&layout, false,
+		ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY, 0);
+
+	assert(layout.launcher_display_mode == ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY);
+	assert(layout.launcher_panel.width > 0);
+	assert(layout.launcher_panel.width == layout.launcher_search_field.width);
+	assert(layout.launcher_panel.height == layout.launcher_search_field.height);
+	assert(layout.launcher_grid_cell_count == 0);
+	assert(layout.launcher_viewport.width == 0);
+	for (int i = 0; i < ORANGE_LAUNCHER_MODE_COUNT; i++) {
+		assert(layout.launcher_mode_buttons[i].width > 0);
+		assert(layout.launcher_mode_buttons[i].x >
+			layout.launcher_search_field.x + layout.launcher_search_field.width);
+	}
+	assert(layout.launcher_search_field.x > layout.width / 4);
+	assert(layout.launcher_search_field.x < layout.width / 2);
+	assert(layout.launcher_search_field.y > layout.height / 4);
+	assert(layout.launcher_search_field.y < layout.height / 2);
+
+	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
+		layout.launcher_search_field.x + layout.launcher_search_field.width / 2,
+		layout.launcher_search_field.y + layout.launcher_search_field.height / 2);
+	assert(hit.kind == ORANGE_HIT_LAUNCHER_SEARCH);
+
+	struct orange_rect mode = layout.launcher_mode_buttons[0];
+	hit = orange_shell_hit_test(&layout,
+		mode.x + mode.width / 2,
+		mode.y + mode.height / 2);
+	assert(hit.kind == ORANGE_HIT_LAUNCHER_MODE);
+	assert(hit.index == 0);
+
+	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
+	layout.launcher_category_count = 6;
+	layout.launcher_category_active = 0;
+	orange_shell_layout_set_launcher(&layout, true,
+		ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY, 24);
+
+	assert(layout.launcher_display_mode == ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY);
+	assert(layout.launcher_panel.width > 0);
+	assert(layout.launcher_panel.width == layout.launcher_search_field.width);
+	assert(layout.launcher_viewport.width == 0);
+	assert(layout.launcher_grid_cell_count == 0);
+	assert(layout.launcher_mode_buttons[0].width > 0);
+	assert(layout.launcher_mode_buttons[1].width > 0);
+
+	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
+	layout.launcher_category_count = 6;
+	layout.launcher_category_active = 0;
+	orange_shell_layout_set_launcher(&layout, true,
+		ORANGE_LAUNCHER_DISPLAY_FULL, 24);
+
+	assert(layout.launcher_display_mode == ORANGE_LAUNCHER_DISPLAY_FULL);
+	assert(layout.launcher_panel.width > 0);
+	assert(layout.launcher_panel.width < layout.width / 2);
+	assert(layout.launcher_panel.height < layout.height / 2);
+	assert(layout.launcher_viewport.width > 0);
+	assert(layout.launcher_grid_cell_count > 0);
+	assert(layout.launcher_mode_buttons[0].width > 0);
+	assert(layout.launcher_mode_buttons[1].width == 0);
+	assert(layout.launcher_search_field.x >= layout.launcher_panel.x);
+	assert(layout.launcher_search_field.y >= layout.launcher_panel.y);
+	assert(layout.launcher_search_field.x + layout.launcher_search_field.width <=
+		layout.launcher_panel.x + layout.launcher_panel.width);
+
+	hit = orange_shell_hit_test(&layout,
+		layout.launcher_search_field.x + layout.launcher_search_field.width / 2,
+		layout.launcher_search_field.y + layout.launcher_search_field.height / 2);
+	assert(hit.kind == ORANGE_HIT_LAUNCHER_SEARCH);
+
+	struct orange_rect first = layout.launcher_grid_cells[0];
+	hit = orange_shell_hit_test(&layout,
+		first.x + first.width / 2,
+		first.y + first.height / 2);
+	assert(hit.kind == ORANGE_HIT_LAUNCHER_APP);
+	assert(hit.index == 0);
+
+	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	layout.launcher_position_set = true;
+	layout.launcher_x = 320;
+	layout.launcher_y = 280;
+	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
+	orange_shell_layout_set_launcher(&layout, true,
+		ORANGE_LAUNCHER_DISPLAY_FULL, 24);
+	assert(layout.launcher_search_field.x == 320);
+	assert(layout.launcher_search_field.y == 280);
+}
+
+static bool filter_contains_id(
+		const struct orange_desktop_entry *entries,
+		const int *indices,
+		int count,
+		const char *id) {
+	for (int i = 0; i < count; i++) {
+		if (strcmp(entries[indices[i]].id, id) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void test_launcher_category_filter(void) {
+	struct orange_desktop_entry entries[4] = {
+		{
+			.id = "terminal",
+			.name = "Terminal",
+			.icon = "utilities-terminal",
+			.exec = "terminal",
+			.categories = "Utility;System;",
+		},
+		{
+			.id = "contacts",
+			.name = "Contacts",
+			.icon = "x-office-address-book",
+			.exec = "contacts",
+			.categories = "Office;ContactManagement;",
+		},
+		{
+			.id = "viewer",
+			.name = "Image Viewer",
+			.icon = "image-viewer",
+			.exec = "viewer",
+			.categories = "Graphics;Photography;",
+		},
+		{
+			.id = "chat",
+			.name = "Chat",
+			.icon = "chat",
+			.exec = "chat",
+			.categories = "Network;Chat;",
+		},
+	};
+	int indices[4];
+	int count = orange_launcher_filter(entries, 4, "", "Utilities",
+		indices, 4);
+	assert(count == 1);
+	assert(filter_contains_id(entries, indices, count, "terminal"));
+	count = orange_launcher_filter(entries, 4, "", "Productivity",
+		indices, 4);
+	assert(count == 1);
+	assert(filter_contains_id(entries, indices, count, "contacts"));
+	count = orange_launcher_filter(entries, 4, "", "Media", indices, 4);
+	assert(count == 1);
+	assert(filter_contains_id(entries, indices, count, "viewer"));
+	count = orange_launcher_filter(entries, 4, "cha", "Social", indices, 4);
+	assert(count == 1);
+	assert(filter_contains_id(entries, indices, count, "chat"));
+}
+
 static void test_small_width_dock_fits(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
@@ -554,6 +889,24 @@ static void test_context_menu_hit(void) {
 		layout.width);
 	assert(layout.context_menu_panel.y + layout.context_menu_panel.height <=
 		layout.dock.y);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, -1, 0, 0, NULL);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR);
+	assert(layout.context_menu_item_count == 5);
+	assert(layout.context_menu_panel.y + layout.context_menu_panel.height <=
+		layout.dock.y);
+	assert(layout.context_menu_separator[1]);
+	assert(layout.context_menu_separator[4]);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, 0),
+		"Turn Magnification On/Off") == 0);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, 2),
+		"Position on Screen") == 0);
+	assert(strcmp(orange_menubar_context_menu_icon_name(
+		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, 3),
+		"window-minimize") == 0);
 }
 
 static void test_widget_hit_and_context_menu(void) {
@@ -674,9 +1027,13 @@ static void test_widget_layer_exists(void) {
 int main(void) {
 	test_dock_hit();
 	test_reordered_dock_hit_resolves_launcher();
+	test_dock_position_layout();
 	test_default_dock_apps_have_fallback_commands();
 	test_firefox_dock_matches_snap_desktop_entry();
 	test_dock_trash_spacing_is_balanced();
+	test_dock_remove_visible_compacts_aliases();
+	test_dock_insert_from_launcher_clamps_before_trash();
+	test_dock_reorder_visible_keeps_permanent_items_fixed();
 	test_desktop_hit();
 	test_desktop_requires_volumes();
 	test_desktop_custom_position_snaps_to_grid();
@@ -685,6 +1042,9 @@ int main(void) {
 	test_app_menu_layout_and_labels();
 	test_status_area_hit_and_menu();
 	test_notification_center_layout_and_hit();
+	test_launcher_full_layout_scrolls_all_apps();
+	test_launcher_search_mode_transforms_to_overlay();
+	test_launcher_category_filter();
 	test_small_width_dock_fits();
 	test_invalid_visible_dock_order_has_no_blank_slot();
 	test_resolution_scaling();

@@ -2,15 +2,19 @@
 
 ## Goal
 
-Create Orange, a native Linux wlroots compositor prototype in C that follows
-the provided macOS-like desktop screenshot visually and behaves like a usable
-macOS-like shell prototype.
+Create Orange, a native Linux wlroots compositor in C that follows the provided
+macOS-like desktop screenshot visually and behaves like a usable macOS-like
+shell.
 
 ## Functional Requirements
 
 - Start a Wayland compositor using wlroots.
 - Use the wlroots renderer abstraction and report whether the selected renderer
   is Vulkan when `WLR_RENDERER=vulkan` is requested.
+- Follow the relevant Wayland and freedesktop specifications for surfaces that
+  Orange implements: stable xdg-shell toplevel handling, xdg-decoration
+  client-side preference, Desktop Entry launch parsing, Icon Theme lookup,
+  Icon Naming names, and XDG data-directory discovery.
 - Render a full-output desktop shell with:
   - clear lake/mountain-style wallpaper,
   - fully transparent menu bar with system menu glyph area and menu
@@ -36,7 +40,8 @@ macOS-like shell prototype.
 - Provide a persistent desktop configuration model:
   - global light/dark appearance,
   - desktop shortcut visibility, grid spacing, text label size, and icon scale,
-  - Dock scale, icon scale, magnification, and active indicator visibility,
+  - Dock scale, icon scale, magnification, screen position, window minimize
+    effect preference, and active indicator visibility,
   - widget visibility and small/medium/large sizing,
   - cursor theme name and cursor size,
   - GTK light/dark theme names and icon theme name.
@@ -71,9 +76,25 @@ macOS-like shell prototype.
 - Clicking the date/time/status area opens a macOS-like Notification Center
   overlay from the right edge; clicking outside it or pressing Escape closes it.
 - Individual status items expose distinct actions: Wi-Fi, Sound, and Battery
-  open item-specific status menus with settings actions; Search opens the app
-  picker; Control Center opens quick controls; and the clock/date opens
-  Notification Center.
+  open item-specific status menus with settings actions; Search opens a
+  centered compact Spotlight-style glass pill with adjacent round mode buttons;
+  typing stays in the pill; the first adjacent button transforms it into the
+  app-launcher overlay; Control Center opens quick controls; and the clock/date
+  opens Notification Center.
+- The Search pill and launcher overlay must be draggable by the search/header
+  area. The Dock launcher and Super/Logo+Space open a smaller centered
+  app-launcher overlay; the menu-bar Search item starts in compact search mode.
+- Dock icons must support responsive drag interactions: app aliases can be
+  reordered within the app section, dragged clearly off the Dock to remove the
+  alias without uninstalling the app, and dragged from the Tahoe-style
+  Apps/Spotlight launcher back into the Dock. Permanent shell affordances such
+  as the launcher and Trash remain available. Insertion feedback should use
+  macOS-like icon displacement/gaps rather than a static line marker.
+- Right-clicking the Dock separator must open a compact glass bubble context
+  menu with Dock-wide controls: turn magnification on/off, adjust Dock size,
+  change screen position, choose the minimize effect preference, and open Dock
+  settings. Dock size, position, magnification, and minimize-effect choices
+  must persist to `orange.conf`.
 - Notification Center renders missed-notification cards, widget cards, and an
   Edit Widgets affordance that opens Orange Settings for widget preferences.
 - Avoid launching `gnome-control-center` from Orange fallback actions because
@@ -86,8 +107,8 @@ macOS-like shell prototype.
   decorations for xdg-decoration and KDE server-decoration protocols.
 - Replace static desktop shortcut placeholders with XDG `.desktop` entries.
 - Allow desktop shortcuts to be dragged to custom persisted positions.
-- Provide right-click context menus for desktop shortcuts, widgets, and Dock
-  items.
+- Provide right-click context menus for desktop shortcuts, widgets, Dock items,
+  the Dock separator, and empty desktop background.
 - Fix visible layout bugs:
   - menu bar item spacing,
   - tray glyph replacement with local battery/Wi-Fi/control icons,
@@ -125,7 +146,7 @@ macOS-like shell prototype.
   feature because xdg-shell does not expose arbitrary app menu trees.
 - Provide keyboard shortcuts modeled after a Mac-like Command key flow:
   - Super/Logo+Return launches a terminal,
-  - Super/Logo+Space launches an app picker if available,
+  - Super/Logo+Space opens the centered app launcher overlay,
   - Super/Logo+Q closes the focused window,
   - Super/Logo+Tab cycles focus.
 
@@ -139,7 +160,8 @@ macOS-like shell prototype.
 
 ## Scope Boundaries
 
-- This is a visual/technical shell prototype, not a full macOS implementation.
+- This is a visual/technical shell implementation, not a full macOS
+  implementation.
 - Full macOS behavior, proprietary animations, WindowServer compatibility,
   proprietary desktop services, real Dock app launching, and platform-private APIs
   are out of scope.
@@ -150,6 +172,10 @@ macOS-like shell prototype.
   are only loaded if the user provides or installs licensed local files. The
   runtime is designed to source wallpapers from `./assets/` and icons from
   installed icon themes.
+- "All freedesktop specs" is out of scope as a blanket claim. Orange documents
+  and tests the subset it implements; protocols such as StatusNotifierHost,
+  global-menu DBus backends, layer-shell, output-management, portals, and
+  accessibility remain separate feature tracks.
 
 ## Acceptance Criteria
 
@@ -169,4 +195,10 @@ macOS-like shell prototype.
 - Shell render tests cover light/dark rendering and foreground context-menu
   glass/scaling without requiring a checked-in visual reference image.
 - Shell render tests cover missing desktop shortcut icon fallback drawing.
+- Shell render tests cover live-compositor overlay separation so launcher and
+  menu dismissal cannot leave stale scene-buffer pixels behind.
+- Dock add/remove/reorder tests cover alias compaction, duplicate prevention,
+  and keeping permanent Dock affordances available.
+- Documentation lists the Wayland/freedesktop specs implemented in the current
+  surface area and explicitly scopes non-implemented specs.
 - `PROJECT_STATE.md` documents status, risks, and continuation steps.

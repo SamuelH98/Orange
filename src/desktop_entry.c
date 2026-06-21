@@ -239,6 +239,8 @@ bool orange_desktop_entry_load(
 			copy_value(entry->icon, sizeof(entry->icon), value);
 		} else if (strcmp(key, "Exec") == 0) {
 			copy_value(entry->exec, sizeof(entry->exec), value);
+		} else if (strcmp(key, "Categories") == 0) {
+			copy_value(entry->categories, sizeof(entry->categories), value);
 		} else if (strcmp(key, "Terminal") == 0) {
 			entry->terminal = strcmp(value, "true") == 0 ||
 				strcmp(value, "1") == 0;

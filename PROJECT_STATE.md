@@ -8,20 +8,22 @@ Orange
 
 ### Goal
 
-Build Orange, a C/wlroots Linux compositor prototype that follows the supplied
+Build Orange, a C/wlroots Linux compositor that follows the supplied
 macOS-like desktop reference and behaves like a usable macOS-like shell,
 with optional local private asset overrides and Vulkan renderer support through
 wlroots.
 
 ### Current Status
 
-Functional macOS-like shell prototype with volume-based desktop icons (drives
+Functional macOS-like shell compositor with volume-based desktop icons (drives
 only, like macOS), grid layout with snap-to-grid positioning, translucent menu
-bar with dock-style glass effect, compact Dock with even glass transparency,
+bar with dock-style glass effect, launcher glass matching Dock/menu/context
+transparency, compact Dock with even glass transparency,
 wlroots compositor, scalable widgets, basic xdg-shell window management, Dock
 launchers, keyboard shortcuts, cursor customization, GTK/icon theme
-configuration, lazy freedesktop icon lookup, PNG render export, foreground-only
-visual smoke coverage, and headless one-shot validation.
+configuration, lazy freedesktop icon lookup, scoped Wayland/freedesktop spec
+compliance documentation, PNG render export, foreground-only visual smoke
+coverage, and headless one-shot validation.
 
 ---
 
@@ -39,7 +41,7 @@ Local dependency versions were checked with `pkg-config`, `meson`, `ninja`, and
 `tests/test_shell_layout.c` covers Dock/menu/desktop hit testing, resolution
 scaling, and a render smoke test.
 
-### Functional Compositor Prototype
+### Functional Compositor
 
 #### Validation
 
@@ -189,62 +191,135 @@ Meson startup smoke test for custom headless compositor arguments.
 - Config load/save coverage for widget visibility and size.
 - Foreground visual test for context-menu glass/scaling.
 
+### Shared Glass Renderer & Bounded Overlay
+
+#### Implemented
+
+- Shared `orange_glass_draw()` in `src/glass.c`/`include/orange/glass.h` used by
+  Dock, menu bar, menu panels, launcher/search surfaces, and shell liquid panels
+  instead of local duplicate blur code.
+- Glass blur uses a sliding-window box blur with downscaled backdrop, upscaled
+  to device resolution for clean rounded-edge antialiasing, with padded backdrop
+  sampling and radius-zero rectangle fallback.
+- Overlay buffer separation: transient launcher/menu/notification UI draws only
+  in a transparent overlay scene buffer; base shell buffer skips transient
+  overlays. Overlay clears when no transient surface remains active.
+- Overlay glass renders against the current base shell buffer before unblending
+  back to a transparent layer, so launcher/search glass opacity matches
+  Dock/menu-bar glass.
+- Conservative overlay bounds computed from the union of all active transient
+  rects; compositor clears, redraws, unblends, and damages only that union
+  instead of the full output.
+- Overlay-only dirty marking for launcher/menu/notification open, close, drag,
+  scroll, and keyboard navigation paths avoids unnecessary wallpaper, widget,
+  desktop icon, and Dock redraws.
+
+#### Bug Fixes
+
+- Fixed stale launcher/menu pixels by clearing and damaging the overlay buffer
+  when no transient overlay is active.
+- Fixed first-use menu/dropdown lag by warming the small menu-bar/system-menu/
+  status icon set after asset loading, caching icon lookup misses during preload,
+  and probing the discovered theme path first before scanning secondary XDG icon
+  bases for the same theme name.
+- Replaced the old Cairo blur pass with a real sliding-window blur for direct
+  CPU cost reduction on context menus, dropdowns, launcher glass, and Dock glass.
+
+#### Tests Added
+
+- Base shell transient overlay suppression test (`skip_transient_overlays`).
+- Overlay clear test (draw with no active overlay produces transparent buffer).
+- Menu overlay bounds are tight and exclude most of the output.
+- Backdrop overlay composition matches direct launcher rendering to within
+  3 color values for full and search-only launcher modes.
+- Split-theme icon lookup test in `test_assets`.
+- Icon warm/preload test in `test_assets`.
+
+### macOS 26 Tahoe Search And Launcher Refinement
+
+#### Implemented
+
+- **Compact Search pill**: Menu-bar Search and Help search open a centered
+  Spotlight-style glass pill with four adjacent round mode buttons. Typing
+  stays in the pill and does not expose hidden launch results.
+- **First-button transform**: Clicking the first adjacent mode button transforms
+  the pill into a smaller glass app-launcher panel anchored to the same
+  search/header position.
+- **Smaller app launcher**: Dock launcher and Super+Space open the centered app
+  launcher panel directly at a reduced scale.
+- **Draggable placement**: Compact pill and expanded/full launcher panels can be
+  dragged by the search/header area. Drag position is session-local and clears
+  when the launcher closes.
+- **Header/icons**: Left launcher icon renders as a normal themed icon. Compact
+  mode uses adjacent circular themed icon buttons. Right-side options affordance
+  uses a themed horizontal-more icon with a drawn fallback.
+- **Filters**: Compact pill filters (`All`, `Utilities`, `Productivity`,
+  `Social`, `Media`, `Info`) appear in the full Apps launcher and use parsed
+  `.desktop` `Categories=` metadata to filter the app list.
+- **Scrollable app grid**: Five-column theme-icon grid, white labels, no
+  generated gray icon backplates, tight side/bottom insets, label ellipsizing
+  for long app names, and scrollbar tied to row-scroll state.
+
+#### Tests Added
+
+- Full launcher layout scrolls all apps, hit-tests app cells, categories, and
+  scrollbar.
+- Search mode layout transforms to overlay on mode-button click.
+- Category filter coverage for Utilities/Productivity/Media/Social groups.
+
+### Responsive Dock Dragging & Separator Controls
+
+#### Implemented
+
+- Dock drag feedback uses the overlay buffer: moving icon ghost and Remove
+  affordance draw over the active damage union; base Dock redraws only when the
+  insertion target changes.
+- Reordering uses icon displacement/gaps instead of a blue insertion line.
+  Launcher-to-Dock drags part the Dock around the target slot.
+- Dragging a removable Dock app off the Dock shows a `Remove` bubble; release
+  removes only the Dock alias without uninstalling the app.
+- Apps can be dragged from the launcher onto the Dock to create a new alias.
+  Duplicate aliases are rejected; launcher and Trash are permanent.
+- Remove/reorder/insert commands share centralized Dock config mutation helpers
+  that compact `dock_apps` and reset visible order consistently.
+- Right-clicking the Dock separator opens a Dock-wide glass bubble context menu
+  with Magnification On/Off, Dock Size (small/medium/large), Position on Screen
+  (bottom/left/right), Minimize Using (Genie/Scale), and Dock Settings.
+- Magnification toggles and Dock size/position/minimize-effect choices persist
+  to `orange.conf`.
+- xdg-toplevel minimize requests hide the view, clear focus/grabs, keep the app
+  indicated as open in the Dock, and restore the minimized view on Dock launch.
+- Side Dock positions (left/right) with vertical item geometry, rotated separator
+  drawing, side-aware drag insertion, and maximize bounds that reserve the Dock
+  strip.
+- Shared Dock-aware work-area rectangle for app placement, dragged windows,
+  maximized windows, fullscreen work areas, and dragged desktop icons.
+
+#### Tests Added
+
+- Dock separator hit target and context-menu geometry.
+- Left/right Dock position layout, work-area clamping, and context-menu placement.
+- `dock_position`/`minimize_effect` config round-tripping.
+- Dock alias removal compacts `dock_apps` and protects launcher/Trash.
+- Launcher-to-Dock insertion clamps before Trash, rejects duplicates.
+- Dock reorder keeps permanent items fixed.
+
+### Desktop Entry Categories
+
+#### Implemented
+
+- `.desktop` parser now reads `Categories=` field and stores it in the entry
+  struct. Categories filtering via `orange_launcher_filter()` for launcher
+  category tabs.
+
+#### Tests Added
+
+- Desktop entry parser test covers `Categories=` field.
+- `test_launcher_category_filter` covers category-based filtering.
+
 ## Current Work
 
-### Active Feature: macOS 26 Tahoe Spotlight Redesign
-
-The launcher/Spotlight overlay has been redesigned to match the macOS 26 Tahoe
-Spotlight appearance:
-
-- **Floating search bar**: A centered glass pill with magnifier icon,
-  "Spotlight Search" placeholder, and blinking caret on focus. No panel
-  backdrop — the bar floats directly on the wallpaper with the same
-  translucent glass material as the Dock.
-- **Four mode buttons**: Circular glass buttons to the right of the search
-  field with hand-drawn icon glyphs (compass=Apps, folder=Files,
-  tools=Actions, clipboard=Clipboard). Active button gets a lighter highlight.
-  Same glass material as the Dock.
-- **Category tabs**: Horizontal row of pill-shaped category filter buttons
-  (Utilities, Productivity & Finance, Social, Entertainment, Photo & Video,
-  Information) below the search row in Apps mode with no query. Same glass
-  material as the Dock.
-- **Mode-specific content views**:
-  - Apps mode: Scrollable 4-column app icon grid with hot selection highlight,
-    centered labels wrapped to two lines, icon shadows, and rounded corners.
-  - Files mode: Placeholder with "Recent Files" header.
-  - Actions mode: Placeholder with "Actions" header for future Quick Keys.
-  - Clipboard mode: Placeholder with "Clipboard History" header.
-- **No panel backdrop**: The old Liquid Glass panel has been removed. The search
-  bar and content float directly on the dimmed wallpaper, matching the macOS 26
-  Spotlight style.
-- **Keyboard shortcuts**: Cmd+1/2/3/4 switches between browse modes. Up/Down
-  with scroll, Left/Right for adjacent selection. Escape closes, Enter launches.
-- **render-shell support**: Added `--launcher`, `--launcher-mode N`, and
-  `--launcher-query TEXT` flags for visual testing. Category tabs render in
-  Apps mode by default.
-
-All six tests pass. `orange-render-shell` renders the launcher overlay at every
-mode with correct geometry.
-
-### Progress
-
-Current validation passes:
-
-- `ninja -C build`
-- `meson test -C build --print-errorlogs` (6/6 tests)
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets
-  --config orange.conf --launcher /tmp/orange-tahoe-spotlight.png`
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets
-  --config orange.conf --launcher --launcher-mode 1
-  /tmp/orange-tahoe-files.png`
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets
-  --config orange.conf --launcher --launcher-mode 2
-  /tmp/orange-tahoe-actions.png`
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets
-  --config orange.conf --launcher --launcher-mode 3
-  /tmp/orange-tahoe-clipboard.png`
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once
-  --width 1440 --height 900 --assets assets --config orange.conf`
+None. All recent feature and bug-fix work has been merged.
 
 ---
 
@@ -263,7 +338,7 @@ Current validation passes:
 
 ### Open Questions
 
-None blocking for the prototype.
+None blocking for the compositor.
 
 ### Known Issues
 
@@ -338,8 +413,8 @@ build here. They remain conditional for systems without GTK4 development files.
   date/time item opens a right-edge Notification Center card stack with missed
   notification cards, Calendar/Screen Time/Weather widget cards, and an Edit
   Widgets button that opens Orange Settings. Wi-Fi, Sound, and Battery now have
-  separate hit targets and item-specific status menus; Search opens the app
-  picker; Control Center opens the existing quick-control menu.
+  separate hit targets and item-specific status menus; Search opens the compact
+  Spotlight-style pill; Control Center opens the existing quick-control menu.
 - **Notification/status validation added**: `test-shell-layout` covers status
   item hit targets, item-specific status menus, Notification Center layout,
   Edit Widgets hit testing, scaling, and the absence of
@@ -383,22 +458,17 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Latest Validation
 
-- `ninja -C build` passed after desktop-entry refresh and icon precedence
-  changes.
-- `./build/test-assets`, `./build/test-shell-visual`, and
-  `./build/test-shell-layout` passed.
-- `meson test -C build --print-errorlogs` passed.
-- `./build/orange-render-shell /tmp/orange-shell.png` passed after installing
-  the available GNOME dock apps.
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf /tmp/orange-shell-maps-fixed.png`
-  passed and the rendered Dock shows the installed Maps map-pin icon.
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf /tmp/orange-shell-firefox-fixed.png`
-  passed and the rendered Dock shows the Snap-installed Firefox icon.
-- `ninja -C build` passed.
-- `meson test -C build --print-errorlogs` passed.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once --width 1440 --height 900 --assets assets --config orange.conf` passed; DBus status probes logged sandbox connection errors but did not fail startup.
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf --notification-center /tmp/orange-notification-center.png` passed and was visually inspected.
-- `./build/orange-render-shell --width 1440 --height 900 --assets assets --config orange.conf --foreground-only --context-menu status-wifi /tmp/orange-status-wifi.png` passed and was visually inspected.
+- `ninja -C build` passed after all feature merges.
+- `meson test -C build --print-errorlogs` passed (6/6 tests).
+- `build/orange-render-shell --width 1440 --height 900 --launcher-search /tmp/orange-search-pill.png` passed.
+- `build/orange-render-shell --width 1440 --height 900 --launcher-search --launcher-query cal /tmp/orange-search-pill-typed.png` passed.
+- `build/orange-render-shell --width 1440 --height 900 --launcher /tmp/orange-launcher-small.png` passed.
+- `build/orange-render-shell --width 1440 --height 900 --launcher /tmp/orange-shared-glass-launcher-final.png` passed.
+- `build/orange-render-shell --width 1440 --height 900 --foreground-only --context-menu desktop /tmp/orange-context-bounded-overlay.png` passed.
+- `build/orange-render-shell --width 1440 --height 900 --foreground-only --context-menu app /tmp/orange-menubar-bounded-overlay.png` passed.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once --width 1440 --height 900 --assets assets --config orange.conf` exited 0 with sandbox dconf/GIO warnings.
+- Headless one-shot smoke checks with `dock_position=left` and `dock_position=right` configs exited 0.
+- `./build/test-assets`, `./build/test-shell-layout`, `./build/test-shell-visual`, `./build/test-config`, and `./build/test-desktop-entry` all passed.
 
 #### Current GTK Settings Validation
 

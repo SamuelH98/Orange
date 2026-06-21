@@ -61,6 +61,17 @@ enum orange_scroll_bar_visibility {
 	ORANGE_SCROLL_BARS_ALWAYS,
 };
 
+enum orange_dock_position {
+	ORANGE_DOCK_POSITION_BOTTOM,
+	ORANGE_DOCK_POSITION_LEFT,
+	ORANGE_DOCK_POSITION_RIGHT,
+};
+
+enum orange_minimize_effect {
+	ORANGE_MINIMIZE_EFFECT_GENIE,
+	ORANGE_MINIMIZE_EFFECT_SCALE,
+};
+
 struct orange_desktop_icon_position {
 	bool valid;
 	int x;
@@ -111,6 +122,8 @@ struct orange_config {
 	double dock_icon_scale;
 	bool dock_magnification;
 	double dock_magnification_scale;
+	enum orange_dock_position dock_position;
+	enum orange_minimize_effect minimize_effect;
 	bool dock_show_indicators;
 	int dock_order[ORANGE_DOCK_MAX];
 

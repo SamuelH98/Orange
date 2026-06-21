@@ -33,11 +33,54 @@ when the Vulkan renderer headers are available. On this machine, the headless
 backend cannot create a Vulkan renderer because wlroots has no DRM file
 descriptor in that mode; headless validation uses Pixman.
 
+wlroots 0.18 should not be treated as the fix for Orange's context-menu and
+menu-bar dropdown latency by itself. The relevant scene API already exists in
+the installed 0.17.1 headers: `wlr_scene_buffer_set_buffer_with_damage()`
+accepts buffer-local damage, and `wlr_scene_buffer_set_source_box()` can crop
+the sampled region. The measured local issue was Orange's own full-output
+overlay path: tiny menus caused full-screen backdrop copies, full-screen
+unblend scans, and full-screen scene-buffer damage. The fix is therefore to
+compute conservative overlay bounds, copy/unblend only those bounds, and submit
+damage for the previous/current overlay union. A future wlroots 0.18 port can
+still be useful for platform support, but it should not replace correct damage
+tracking in the compositor.
+
+If context menu/dropdown lag disappears after the same menu has been used a few
+times, the remaining cause is cold icon/theme cache work rather than scene
+damage. Menu drawing resolves themed icons lazily, and missing icon names can
+force expensive fallback directory walks. Orange now warms the small shell
+chrome icon set after asset loading, caches preload misses, and resolves icons
+inside the discovered theme path first. It then checks the same theme name in
+secondary XDG icon bases so split theme installs still work, without returning
+to the old every-base/every-directory cold-cache scan.
+
+## Wayland And Freedesktop Spec Notes
+
+- Desktop Entry Specification 1.5 is the current referenced launch contract.
+  Orange removes no-file field codes such as `%f`, `%F`, `%u`, and `%U` for
+  Dock/desktop launches and treats `Icon=` as either an absolute path or a
+  themed icon name.
+- Icon Theme Specification 0.13 defines lookup through `$HOME/.icons`,
+  `$XDG_DATA_DIRS/icons`, theme inheritance, mandatory `hicolor` fallback, and
+  `/usr/share/pixmaps`. Orange follows that practical lookup model with lazy
+  positive and negative caches.
+- Icon Naming Specification 0.8.90 defines the standard semantic icon names
+  and naming constraints used by Orange's shell aliases.
+- Stable xdg-shell version 7 is the Wayland protocol surface for desktop-style
+  toplevels and popups. Orange delegates protocol mechanics to wlroots and
+  implements toplevel map/unmap/focus/move/resize/maximize/fullscreen/close
+  behavior in compositor state.
+- wlroots documentation keeps `wlr_renderer_autocreate()` as the renderer
+  selection path; Vulkan is requested through the environment/backend renderer
+  path and checked with `wlr_renderer_is_vk()`. A raw Vulkan compositor port is
+  therefore a separate renderer-backend project, not a prerequisite for this
+  bug-fix pass.
+
 ## Visual Reference Notes
 
 The visual reference uses Apple's Liquid Glass-era design language:
 translucent UI materials that adapt to surrounding content and include
-real-time highlights. For this prototype, that is approximated with:
+real-time highlights. In Orange, that is approximated with:
 
 - blurred/translucent glass panels,
 - rounded widgets and dock,
@@ -94,7 +137,9 @@ icon name and size to theme files, searched through base directories, theme
 inheritance, and finally `hicolor`. Orange keeps a compact in-memory cache but
 should still honor the practical directory shapes used by XDG themes:
 `$XDG_DATA_DIRS/icons/<theme>/...`, `$HOME/.icons/<theme>/...`,
-and `/usr/share/pixmaps`.
+and `/usr/share/pixmaps`. The same named theme may have files spread across
+multiple XDG bases, so lookup cannot stop at the first base containing
+`index.theme`.
 The Freedesktop Icon Naming Specification provides standard icon names for the
 Linux-facing shell contract, including `start-here`, `system-search`,
 `system-shutdown`, `system-lock-screen`, `network-wireless`, `network-offline`,
@@ -108,7 +153,7 @@ that user-facing shape while resolving images and launch targets through
 freedesktop desktop entries, icon themes, and standard Linux control commands.
 This requires separate hit targets for Wi-Fi, sound, battery, search, Control
 Center, and date/time rather than a single generic status-area button.
-The closest Linux prototype behavior is: Wi-Fi opens a network status menu with
+The closest Linux-facing behavior is: Wi-Fi opens a network status menu with
 network settings actions; Sound opens a sound status menu with output/settings
 actions; Battery opens a power status menu; Spotlight maps to Orange's app
 picker; Control Center maps to Orange's quick-control menu; date/time maps to
@@ -122,9 +167,9 @@ Apple's Notification Centre guide says the surface opens from the menu-bar
 date/time area, closes when the user clicks the desktop or the date/time area
 again, and combines missed notifications with widgets. It also describes
 grouped notification stacks, notification actions, clear actions, and app
-notification settings. For Orange's current shell prototype, the implementable
-core is a right-edge overlay opened from the date/time/status area, closed from
-outside clicks or Escape, with notification-style cards above widgets.
+notification settings. For Orange's current shell, the implemented core is a
+right-edge overlay opened from the date/time/status area, closed from outside
+clicks or Escape, with notification-style cards above widgets.
 
 Apple's widget guide says Notification Centre widgets are added from the Edit
 Widgets button at the bottom of Notification Centre, can be rearranged within
@@ -181,11 +226,15 @@ the installed MacTahoe dark GTK named colors used during testing:
 
 Apple's Desktop & Dock settings documentation describes Dock size as
 slider-controlled, Dock magnification as icon magnification when the pointer
-moves over icons, and open applications as indicated by a small dot below the
-app icon. Dock behavior references also describe dynamic resizing to fit and
+moves over icons, Dock screen position as left/bottom/right, minimized-window
+animation as a selectable effect, and open applications as indicated by a small
+dot below the app icon. Apple's Dock usage documentation also says the Dock
+separator line can be Control-clicked to open a shortcut menu and dragged to
+adjust Dock size. Dock behavior references describe dynamic resizing to fit and
 labels appearing on pointer hover. The shell Dock therefore avoids a circular
-hover halo, keeps the small running indicator dot, and uses icon magnification
-plus a compact label bubble for hover feedback.
+hover halo, keeps the small running indicator dot, uses icon magnification plus
+a compact label bubble for hover feedback, and exposes Dock-wide controls from
+the separator context menu.
 
 Apple's System Settings guide shows the current System Settings interaction
 shape: launchable from the Dock or Apple menu, a searchable sidebar, and grouped
@@ -198,6 +247,33 @@ The public GNOME Settings source is useful as a Linux settings-panel taxonomy
 reference, but it is GPL-2.0 and uses GNOME-specific panel/back-end code.
 Orange therefore keeps the implementation original and GTK4-only while using
 GNOME's broad categories as inspiration for sidebar grouping.
+
+macOS Tahoe 26 changes Spotlight from a narrow search launcher into a broader
+command and browsing surface. Apple's June 9, 2025 Tahoe preview describes it
+as the biggest Spotlight update, with intelligently ranked results for apps,
+files, folders, events, messages, and more; browse views for apps, files,
+clipboard history, and related content; direct actions such as sending email or
+creating notes; App Intents integration for third-party actions; and quick keys
+for action shortcuts. Hands-on reports from the Tahoe beta describe the visible
+interaction model as a glass Spotlight bar that exposes command-number browse
+modes: Cmd+1 for Apps, Cmd+2 for Files, Cmd+3 for Shortcuts/Actions, and Cmd+4
+for Clipboard. The Apps browse mode behaves like a compact Launchpad/App
+Library replacement, while Spotlight still begins from a lightweight search
+entry with nearby browse-mode buttons. Orange should model that by opening
+menu-bar Search as a centered glass pill that remains compact while the user
+types, then transforms into the Apps launcher only when the first adjacent mode
+button is clicked. Dock launcher and Super+Space can open the centered Apps
+overlay directly.
+
+Apple's Tahoe Mac User Guide keeps the long-standing Dock customization model:
+apps are added by dragging them into the app side of the Dock, removing a Dock
+item removes only the Dock alias once the Remove affordance is shown, and items
+can be rearranged by dragging. The Tahoe app browser is now part of Spotlight:
+the Dock Apps icon or menu-bar Spotlight can open the apps browsing view, and
+Apple documents dragging an app from that apps browsing window to the Dock.
+Orange should therefore make Dock removal a drag-off alias operation, keep
+Trash and the launcher available as permanent shell affordances, and let app
+icons from the launcher become Dock aliases when dropped on the Dock.
 
 ## Risks
 
@@ -235,6 +311,10 @@ GNOME's broad categories as inspiration for sidebar grouping.
   https://support.apple.com/guide/mac-help/quickly-change-settings-mchl50f94f8f/mac
 - Apple Support, "Search for anything with Spotlight on Mac":
   https://support.apple.com/guide/mac-help/search-with-spotlight-mchlp1008/mac
+- Apple Support, "Use the Dock on Mac":
+  https://support.apple.com/guide/mac-help/open-apps-from-the-dock-mh35859/mac
+- Apple Support, "View and open apps on Mac":
+  https://support.apple.com/guide/mac-help/open-apps-in-spotlight-mh35840/26/mac/26
 - Apple Support, "Use a light or dark appearance on your Mac":
   https://support.apple.com/guide/mac-help/use-a-light-or-dark-appearance-mchl52e1c2d2/mac
 - Apple Support, "Find out which macOS your Mac is using":
@@ -255,10 +335,18 @@ GNOME's broad categories as inspiration for sidebar grouping.
   https://specifications.freedesktop.org/icon-naming-spec/latest/
 - Freedesktop Desktop Entry Specification:
   https://specifications.freedesktop.org/desktop-entry-spec/latest/
+- Wayland xdg-shell protocol:
+  https://wayland.app/protocols/xdg-shell
+- wlroots renderer documentation:
+  https://wlroots.pages.freedesktop.org/wlroots/wlr/render/wlr_renderer.h.html
+- wlroots Vulkan renderer documentation:
+  https://wlroots.pages.freedesktop.org/wlroots/wlr/render/vulkan.h.html
 - Freedesktop StatusNotifierItem:
   https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/
 - Apple Support, "Change Desktop & Dock settings on Mac":
   https://support.apple.com/guide/mac-help/change-desktop-dock-settings-mchlp1119/mac
+- Apple Support, "Use the Dock on Mac":
+  https://support.apple.com/guide/mac-help/open-apps-from-the-dock-mh35859/mac
 - Apple Support, "System Settings on your Mac":
   https://support.apple.com/guide/imac/system-settings-apda966cb8af/mac
 - GNOME Settings source mirror:
@@ -272,5 +360,13 @@ GNOME's broad categories as inspiration for sidebar grouping.
 - Apple Newsroom, "Apple introduces a delightful and elegant new software
   design":
   https://www.apple.com/newsroom/2025/06/apple-introduces-a-delightful-and-elegant-new-software-design/
+- Apple Newsroom, "macOS Tahoe 26 makes the Mac more capable, productive, and
+  intelligent than ever":
+  https://www.apple.com/newsroom/2025/06/macos-tahoe-26-makes-the-mac-more-capable-productive-and-intelligent-than-ever/
+- The Verge, "Hands on with macOS Tahoe 26: Liquid Glass, new theme options,
+  and Spotlight":
+  https://www.theverge.com/apple/685052/apple-macos-tahoe-26-beta-hands-on-liquid-glass-themes-spotlight
+- TechRadar, "How to use Spotlight in macOS Tahoe":
+  https://www.techradar.com/computing/mac-os/how-to-use-spotlight-in-macos-tahoe
 - wlroots 0.17 local headers and online renderer documentation.
 - Khronos Vulkan documentation for Vulkan instance/rendering concepts.

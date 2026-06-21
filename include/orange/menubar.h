@@ -3,6 +3,8 @@
 
 #include "orange/shell.h"
 
+struct orange_assets;
+
 void orange_menubar_draw(
 	cairo_t *cr,
 	const struct orange_shell_layout *layout,
@@ -38,5 +40,6 @@ int orange_menubar_app_menu_item_count(
 	const struct orange_app_menu_model *app_menu);
 enum orange_app_menu_tab orange_menubar_tab_for_context_kind(
 	enum orange_context_menu_kind kind);
+void orange_menubar_warm_assets(struct orange_assets *assets);
 
 #endif

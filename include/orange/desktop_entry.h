@@ -11,6 +11,7 @@ struct orange_desktop_entry {
 	char name[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
 	char icon[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
 	char exec[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
+	char categories[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
 	bool terminal;
 };
 

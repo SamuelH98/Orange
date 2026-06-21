@@ -1,7 +1,6 @@
 # Orange
 
-A small wlroots compositor prototype for Linux with a macOS-like desktop UI
-drawn in C.
+A wlroots compositor for Linux with a macOS-like desktop UI drawn in C.
 
 The committed `assets/` directory is wallpaper-only. Shell, Dock, desktop, menu,
 and status icons are resolved from the configured freedesktop icon theme.
@@ -105,9 +104,10 @@ widget-specific edit, size, and remove actions.
 
 Click the date/time text to open the right-edge Notification Center overlay.
 Click it again, click the desktop, or press Escape to close it. Wi-Fi, sound,
-and battery open item-specific status menus; search opens the app picker; and
-Control Center opens quick controls. The Edit Widgets button opens Orange
-Settings for widget preferences.
+and battery open item-specific status menus; search opens a centered draggable
+Spotlight-style glass pill with adjacent round buttons; the first button opens
+the app launcher. Control Center opens quick controls. The Edit Widgets button
+opens Orange Settings for widget preferences.
 
 Theme names are config-driven:
 

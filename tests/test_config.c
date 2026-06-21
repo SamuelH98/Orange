@@ -25,6 +25,8 @@ int main(void) {
 	config.dock_icon_scale = 1.15;
 	config.dock_magnification = false;
 	config.dock_magnification_scale = 1.50;
+	config.dock_position = ORANGE_DOCK_POSITION_LEFT;
+	config.minimize_effect = ORANGE_MINIMIZE_EFFECT_SCALE;
 	config.dock_show_indicators = false;
 	config.calendar_widget_visible = false;
 	config.weather_widget_visible = true;
@@ -63,6 +65,8 @@ int main(void) {
 	assert(!loaded.dock_magnification);
 	assert(loaded.dock_magnification_scale > 1.49 &&
 		loaded.dock_magnification_scale < 1.51);
+	assert(loaded.dock_position == ORANGE_DOCK_POSITION_LEFT);
+	assert(loaded.minimize_effect == ORANGE_MINIMIZE_EFFECT_SCALE);
 	assert(!loaded.dock_show_indicators);
 	assert(!loaded.calendar_widget_visible);
 	assert(loaded.weather_widget_visible);

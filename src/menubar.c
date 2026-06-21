@@ -8,6 +8,7 @@
 #include "orange/assets.h"
 #include "orange/config.h"
 #include "orange/desktop_entry.h"
+#include "orange/glass.h"
 #include "orange/shell.h"
 #include "orange/util.h"
 
@@ -223,6 +224,22 @@ static const char *dock_context_icon_names[] = {
 	"preferences-system",
 };
 
+static const char *dock_separator_context_labels[] = {
+	"Turn Magnification On/Off",
+	"Adjust Dock Size...",
+	"Position on Screen",
+	"Minimize Using",
+	"Dock Settings...",
+};
+
+static const char *dock_separator_context_icon_names[] = {
+	"zoom-in",
+	"zoom-fit-best",
+	"preferences-desktop-display",
+	"window-minimize",
+	"preferences-system",
+};
+
 
 static const char *widget_context_labels[] = {
 	"Edit Widget",
@@ -371,40 +388,23 @@ static void rounded_rect(cairo_t *cr, double x, double y,
 	cairo_close_path(cr);
 }
 
-static void draw_image_fit(cairo_t *cr, cairo_surface_t *surface,
-		struct orange_rect r, double opacity) {
-	int sw = cairo_image_surface_get_width(surface);
-	int sh = cairo_image_surface_get_height(surface);
-	if (sw <= 0 || sh <= 0) {
-		return;
-	}
-	double scale = fmin((double)r.width / (double)sw,
-		(double)r.height / (double)sh);
-	double tx = r.x + ((double)r.width - sw * scale) * 0.5;
-	double ty = r.y + ((double)r.height - sh * scale) * 0.5;
-	cairo_save(cr);
-	cairo_translate(cr, tx, ty);
-	cairo_scale(cr, scale, scale);
-	cairo_set_source_surface(cr, surface, 0, 0);
-	cairo_paint_with_alpha(cr, opacity);
-	cairo_restore(cr);
-}
-
 /* Paint a surface's alpha channel as a solid color (silhouette tint).
  * Useful for forcing monochrome-style icons (e.g. the launcher grid) to a
  * fixed color regardless of the source icon's palette. */
-static void draw_tinted_image_fit(cairo_t *cr, cairo_surface_t *surface,
+static void draw_tinted_image_cover(cairo_t *cr, cairo_surface_t *surface,
 		struct orange_rect r, double opacity, int red, int green, int blue) {
 	int sw = cairo_image_surface_get_width(surface);
 	int sh = cairo_image_surface_get_height(surface);
 	if (sw <= 0 || sh <= 0) {
 		return;
 	}
-	double scale = fmin((double)r.width / (double)sw,
+	double scale = fmax((double)r.width / (double)sw,
 		(double)r.height / (double)sh);
 	double tx = r.x + ((double)r.width - sw * scale) * 0.5;
 	double ty = r.y + ((double)r.height - sh * scale) * 0.5;
 	cairo_save(cr);
+	cairo_rectangle(cr, r.x, r.y, r.width, r.height);
+	cairo_clip(cr);
 	cairo_translate(cr, tx, ty);
 	cairo_scale(cr, scale, scale);
 	cairo_set_source_rgba(cr,
@@ -414,96 +414,6 @@ static void draw_tinted_image_fit(cairo_t *cr, cairo_surface_t *surface,
 		opacity);
 	cairo_mask_surface(cr, surface, 0, 0);
 	cairo_restore(cr);
-}
-
-static void draw_dock_glass(cairo_t *cr, const struct orange_rect *rect,
-		double radius, bool dark) {
-	cairo_surface_t *main = cairo_get_target(cr);
-	cairo_surface_flush(main);
-
-	double blur_scale = 0.25;
-	int sw = (int)(rect->width * blur_scale);
-	int sh = (int)(rect->height * blur_scale);
-	if (sw < 1) sw = 1;
-	if (sh < 1) sh = 1;
-
-	cairo_surface_t *blurred = cairo_image_surface_create(
-		CAIRO_FORMAT_ARGB32, sw, sh);
-	cairo_t *blur_cr = cairo_create(blurred);
-	cairo_scale(blur_cr, blur_scale, blur_scale);
-	cairo_set_source_surface(blur_cr, main, -rect->x, -rect->y);
-	cairo_pattern_set_filter(cairo_get_source(blur_cr), CAIRO_FILTER_BILINEAR);
-	cairo_paint(blur_cr);
-	cairo_destroy(blur_cr);
-
-	cairo_save(cr);
-	cairo_translate(cr, rect->x, rect->y);
-	cairo_scale(cr, 1.0 / blur_scale, 1.0 / blur_scale);
-	cairo_set_source_surface(cr, blurred, 0, 0);
-	cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BILINEAR);
-	cairo_paint(cr);
-	cairo_restore(cr);
-	cairo_surface_destroy(blurred);
-
-	cairo_save(cr);
-	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
-	cairo_clip(cr);
-
-	cairo_pattern_t *shade = cairo_pattern_create_linear(
-		rect->x, rect->y, rect->x, rect->y + rect->height);
-	if (dark) {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.12, 0.14, 0.18, 0.35);
-		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.10, 0.12, 0.15, 0.30);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.04, 0.05, 0.07, 0.25);
-	} else {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.50, 0.50, 0.50, 0.22);
-		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.45, 0.45, 0.45, 0.18);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.40, 0.40, 0.40, 0.14);
-	}
-	cairo_rectangle(cr, rect->x, rect->y, rect->width, rect->height);
-	cairo_set_source(cr, shade);
-	cairo_fill(cr);
-	cairo_pattern_destroy(shade);
-
-	cairo_restore(cr);
-}
-
-static void draw_menu_glass(cairo_t *cr, const struct orange_rect *rect,
-		double radius, bool dark) {
-	rounded_rect(cr, rect->x, rect->y + 3.0, rect->width, rect->height, radius);
-	set_source_rgba255(cr, 0, 0, 0, dark ? 0.20 : 0.12);
-	cairo_fill(cr);
-
-	cairo_save(cr);
-	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
-	cairo_clip(cr);
-
-	cairo_pattern_t *shade = cairo_pattern_create_linear(
-		rect->x, rect->y, rect->x, rect->y + rect->height);
-	if (dark) {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.17, 0.18, 0.20, 0.65);
-		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.12, 0.13, 0.15, 0.62);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.07, 0.08, 0.10, 0.58);
-	} else {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 1.0, 1.0, 1.0, 0.70);
-		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.96, 0.97, 0.98, 0.66);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.80, 0.84, 0.88, 0.60);
-	}
-	cairo_rectangle(cr, rect->x, rect->y, rect->width, rect->height);
-	cairo_set_source(cr, shade);
-	cairo_fill(cr);
-	cairo_pattern_destroy(shade);
-
-	cairo_restore(cr);
-
-	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
-	set_source_rgba255(cr, 255, 255, 255, dark ? 0.20 : 0.48);
-	cairo_set_line_width(cr, 1.0);
-	cairo_stroke(cr);
-	rounded_rect(cr, rect->x + 1.5, rect->y + 1.5,
-		rect->width - 3.0, rect->height - 3.0, radius - 1.5);
-	set_source_rgba255(cr, 255, 255, 255, dark ? 0.07 : 0.18);
-	cairo_stroke(cr);
 }
 
 static void draw_status_battery(cairo_t *cr, struct orange_rect r) {
@@ -544,18 +454,21 @@ static void draw_menu_bar_text(cairo_t *cr,
 		return;
 	}
 
-	double font_size = 24.0 * s;
+	double font_size = 28.0 * s;
 	cairo_select_font_face(cr, "Sans",
-		CAIRO_FONT_SLANT_NORMAL,
-		bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, font_size);
-	cairo_text_extents_t extents;
-	cairo_text_extents(cr, text, &extents);
+	cairo_font_extents_t fe;
+	cairo_font_extents(cr, &fe);
 
-	int pad = scaled_i(bold ? 10 : 9, s);
+	int pad = scaled_i(16, s);
 	double x = item.x + pad;
 	double baseline = item.y +
-		((double)item.height - extents.height) * 0.5 - extents.y_bearing;
+		((double)item.height - fe.ascent - fe.descent) * 0.5 + fe.ascent;
+	if (bold) {
+		cairo_select_font_face(cr, "Sans",
+			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+	}
 
 	cairo_save(cr);
 	cairo_rectangle(cr, item.x, item.y, item.width, item.height);
@@ -580,9 +493,9 @@ static struct menu_palette menu_palette_for_config(
 		const struct orange_config *config) {
 	bool dark = is_dark_config(config);
 	return (struct menu_palette){
-		.text_r = dark ? 244 : 23,
-		.text_g = dark ? 245 : 26,
-		.text_b = dark ? 247 : 30,
+	.text_r = 255,
+	.text_g = 255,
+	.text_b = 255,
 		.text_alpha = dark ? 0.94 : 0.92,
 		.separator_r = dark ? 255 : 32,
 		.separator_g = dark ? 255 : 36,
@@ -682,7 +595,7 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 	double s = layout_scale(layout);
 	bool dark = config != NULL &&
 		config->appearance == ORANGE_APPEARANCE_DARK;
-	draw_dock_glass(cr, &layout->menu_bar, 0, dark);
+	orange_glass_draw(cr, &layout->menu_bar, 0, dark);
 	int text_r = 255;
 	int text_g = 255;
 	int text_b = 255;
@@ -690,7 +603,7 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 	cairo_surface_t *orange_menu = state->assets != NULL ?
 		orange_assets_icon(state->assets, ORANGE_ASSET_ICON_LIGHT, "orange-menu") : NULL;
 	if (orange_menu != NULL) {
-		draw_tinted_image_fit(cr, orange_menu,
+		draw_tinted_image_cover(cr, orange_menu,
 			(struct orange_rect){
 				scaled_i(37, s),
 				scaled_i(4, s),
@@ -766,28 +679,28 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 	cairo_surface_t *wifi_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, wifi_name) : NULL;
 	if (wifi_icon != NULL) {
-		draw_tinted_image_fit(cr, wifi_icon, wifi_rect, 0.92, 255, 255, 255);
+		draw_tinted_image_cover(cr, wifi_icon, wifi_rect, 0.92, 255, 255, 255);
 	}
 	const char *sound_name = state->status.sound_icon[0] != '\0' ?
 		state->status.sound_icon : "audio-volume-high";
 	cairo_surface_t *sound_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, sound_name) : NULL;
 	if (sound_icon != NULL) {
-		draw_tinted_image_fit(cr, sound_icon, sound_rect, 0.88, 255, 255, 255);
+		draw_tinted_image_cover(cr, sound_icon, sound_rect, 0.88, 255, 255, 255);
 	}
 	const char *battery_name = state->status.battery_icon[0] != '\0' ?
 		state->status.battery_icon : "battery";
 	cairo_surface_t *battery_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, battery_name) : NULL;
 	if (battery_icon != NULL) {
-		draw_tinted_image_fit(cr, battery_icon, battery_rect, 0.92, 255, 255, 255);
+		draw_tinted_image_cover(cr, battery_icon, battery_rect, 0.92, 255, 255, 255);
 	} else {
 		draw_status_battery(cr, battery_rect);
 	}
 	cairo_surface_t *search_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, "edit-find") : NULL;
 	if (search_icon != NULL) {
-		draw_tinted_image_fit(cr, search_icon, search_rect, 0.88, 255, 255, 255);
+		draw_tinted_image_cover(cr, search_icon, search_rect, 0.88, 255, 255, 255);
 	}
 	cairo_surface_t *control_icon = assets != NULL ?
 		orange_assets_icon(assets, variant, "control-center") : NULL;
@@ -795,7 +708,7 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 		control_icon = orange_assets_icon(assets, variant, "preferences-system");
 	}
 	if (control_icon != NULL) {
-		draw_tinted_image_fit(cr, control_icon, control_rect, 0.88, 255, 255, 255);
+		draw_tinted_image_cover(cr, control_icon, control_rect, 0.88, 255, 255, 255);
 	}
 }
 
@@ -811,8 +724,8 @@ static void draw_system_menu(cairo_t *cr,
 	struct orange_rect panel = layout->system_menu_panel;
 	bool dark = is_dark_config(config);
 	struct menu_palette palette = menu_palette_for_config(config);
-	draw_menu_glass(cr, &panel, 14 * s, dark);
-		int icon_size = scaled_i(22, s);
+	orange_glass_draw(cr, &panel, 14 * s, dark);
+	int icon_size = scaled_i(22, s);
 	for (int i = 0; i < layout->system_menu_item_count; i++) {
 		struct orange_rect item = layout->system_menu_items[i];
 		if (i > 0 && layout->system_menu_separator[i]) {
@@ -834,7 +747,7 @@ static void draw_system_menu(cairo_t *cr,
 					icon_size,
 					icon_size,
 				};
-				draw_image_fit(cr, icon, icon_rect, 0.85);
+				draw_tinted_image_cover(cr, icon, icon_rect, 0.85, 255, 255, 255);
 			}
 		}
 		draw_text(cr, orange_menubar_menu_label(i),
@@ -850,6 +763,7 @@ static const char *context_menu_label_for_draw(
 		enum orange_context_menu_kind kind,
 		int index,
 		const struct orange_shell_state *state,
+		const struct orange_config *config,
 		char *buffer,
 		size_t buffer_size) {
 	int tab = app_menu_tab_for_context_kind(kind);
@@ -858,6 +772,40 @@ static const char *context_menu_label_for_draw(
 			index >= 0 && index < state->app_menu.item_counts[tab] &&
 			state->app_menu.items[tab][index].label[0] != '\0') {
 		return state->app_menu.items[tab][index].label;
+	}
+	if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR && index == 0 &&
+			config != NULL) {
+		return config->dock_magnification ?
+			"Turn Magnification Off" : "Turn Magnification On";
+	}
+	if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR && index == 1 &&
+			config != NULL) {
+		const char *size = "Medium";
+		if (config->dock_scale < 0.93) {
+			size = "Small";
+		} else if (config->dock_scale > 1.09) {
+			size = "Large";
+		}
+		snprintf(buffer, buffer_size, "Dock Size: %s", size);
+		return buffer;
+	}
+	if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR && index == 2 &&
+			config != NULL) {
+		const char *position = "Bottom";
+		if (config->dock_position == ORANGE_DOCK_POSITION_LEFT) {
+			position = "Left";
+		} else if (config->dock_position == ORANGE_DOCK_POSITION_RIGHT) {
+			position = "Right";
+		}
+		snprintf(buffer, buffer_size, "Position on Screen: %s", position);
+		return buffer;
+	}
+	if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR && index == 3 &&
+			config != NULL) {
+		snprintf(buffer, buffer_size, "Minimize Using: %s",
+			config->minimize_effect == ORANGE_MINIMIZE_EFFECT_SCALE ?
+				"Scale Effect" : "Genie Effect");
+		return buffer;
 	}
 	if (kind != ORANGE_CONTEXT_MENU_APP || buffer == NULL || buffer_size == 0) {
 		return orange_menubar_context_menu_label(kind, index);
@@ -892,7 +840,67 @@ static void draw_context_menu(cairo_t *cr,
 	struct orange_rect panel = layout->context_menu_panel;
 	bool dark = is_dark_config(config);
 	struct menu_palette palette = menu_palette_for_config(config);
-	draw_menu_glass(cr, &panel, 13 * s, dark);
+	orange_glass_draw(cr, &panel, 13 * s, dark);
+	if (layout->context_menu_kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR &&
+			layout->dock_separator.width > 0) {
+		double tail_w = scaled_i(22, s);
+		double tail_h = scaled_i(12, s);
+		double center_x = layout->dock_separator.x +
+			layout->dock_separator.width / 2.0;
+		double center_y = layout->dock_separator.y +
+			layout->dock_separator.height / 2.0;
+		if (layout->dock_position == ORANGE_DOCK_POSITION_LEFT) {
+			double min_center = panel.y + scaled_i(24, s);
+			double max_center = panel.y + panel.height - scaled_i(24, s);
+			if (center_y < min_center) {
+				center_y = min_center;
+			}
+			if (center_y > max_center) {
+				center_y = max_center;
+			}
+			cairo_move_to(cr, panel.x + 1, center_y - tail_w / 2.0);
+			cairo_line_to(cr, panel.x + 1, center_y + tail_w / 2.0);
+			cairo_line_to(cr, panel.x - tail_h, center_y);
+		} else if (layout->dock_position == ORANGE_DOCK_POSITION_RIGHT) {
+			double min_center = panel.y + scaled_i(24, s);
+			double max_center = panel.y + panel.height - scaled_i(24, s);
+			if (center_y < min_center) {
+				center_y = min_center;
+			}
+			if (center_y > max_center) {
+				center_y = max_center;
+			}
+			cairo_move_to(cr, panel.x + panel.width - 1,
+				center_y - tail_w / 2.0);
+			cairo_line_to(cr, panel.x + panel.width - 1,
+				center_y + tail_w / 2.0);
+			cairo_line_to(cr, panel.x + panel.width + tail_h, center_y);
+		} else {
+			double min_center = panel.x + scaled_i(24, s);
+			double max_center = panel.x + panel.width - scaled_i(24, s);
+			if (center_x < min_center) {
+				center_x = min_center;
+			}
+			if (center_x > max_center) {
+				center_x = max_center;
+			}
+			cairo_move_to(cr, center_x - tail_w / 2.0,
+				panel.y + panel.height - 1);
+			cairo_line_to(cr, center_x + tail_w / 2.0,
+				panel.y + panel.height - 1);
+			cairo_line_to(cr, center_x, panel.y + panel.height + tail_h);
+		}
+		cairo_close_path(cr);
+		set_source_rgba255(cr,
+			dark ? 42 : 246,
+			dark ? 45 : 248,
+			dark ? 52 : 252,
+			dark ? 0.78 : 0.84);
+		cairo_fill_preserve(cr);
+		set_source_rgba255(cr, 255, 255, 255, dark ? 0.08 : 0.28);
+		cairo_set_line_width(cr, fmax(1.0, s));
+		cairo_stroke(cr);
+	}
 	int icon_size = scaled_i(22, s);
 	for (int i = 0; i < layout->context_menu_item_count; i++) {
 		struct orange_rect item = layout->context_menu_items[i];
@@ -918,13 +926,13 @@ static void draw_context_menu(cairo_t *cr,
 						icon_size,
 						icon_size,
 					};
-					draw_image_fit(cr, icon, icon_rect, 0.85);
+					draw_tinted_image_cover(cr, icon, icon_rect, 0.85, 255, 255, 255);
 				}
 			}
 		}
 		char label_buffer[128];
 		const char *label = context_menu_label_for_draw(
-			layout->context_menu_kind, i, state,
+			layout->context_menu_kind, i, state, config,
 			label_buffer, sizeof(label_buffer));
 		draw_text(cr,
 			label,
@@ -948,6 +956,159 @@ const char *orange_menubar_menu_label(int index) {
 		return NULL;
 	}
 	return menu_labels[index];
+}
+
+static bool seen_icon_name(char seen[][ORANGE_ASSET_ICON_NAME_MAX],
+		int *seen_count,
+		int seen_capacity,
+		const char *name) {
+	if (name == NULL || name[0] == '\0' || seen == NULL ||
+			seen_count == NULL) {
+		return true;
+	}
+	for (int i = 0; i < *seen_count; i++) {
+		if (strcmp(seen[i], name) == 0) {
+			return true;
+		}
+	}
+	if (*seen_count < seen_capacity) {
+		snprintf(seen[*seen_count], ORANGE_ASSET_ICON_NAME_MAX, "%s", name);
+		(*seen_count)++;
+	}
+	return false;
+}
+
+static void warm_icon_surface(struct orange_assets *assets,
+		const char *name,
+		char seen[][ORANGE_ASSET_ICON_NAME_MAX],
+		int *seen_count,
+		int seen_capacity) {
+	if (assets == NULL ||
+			seen_icon_name(seen, seen_count, seen_capacity, name)) {
+		return;
+	}
+	(void)orange_assets_icon(assets, ORANGE_ASSET_ICON_LIGHT, name);
+	(void)orange_assets_icon(assets, ORANGE_ASSET_ICON_DARK, name);
+}
+
+static void preload_icon_path(struct orange_assets *assets,
+		const char *name,
+		char seen[][ORANGE_ASSET_ICON_NAME_MAX],
+		int *seen_count,
+		int seen_capacity) {
+	if (assets == NULL ||
+			seen_icon_name(seen, seen_count, seen_capacity, name)) {
+		return;
+	}
+	orange_assets_preload_icon(assets, name);
+}
+
+static void warm_icon_array(struct orange_assets *assets,
+		const char *const *names,
+		int count,
+		char seen[][ORANGE_ASSET_ICON_NAME_MAX],
+		int *seen_count,
+		int seen_capacity) {
+	for (int i = 0; i < count; i++) {
+		warm_icon_surface(assets, names[i], seen, seen_count,
+			seen_capacity);
+	}
+}
+
+static void preload_context_kind(struct orange_assets *assets,
+		enum orange_context_menu_kind kind,
+		char seen[][ORANGE_ASSET_ICON_NAME_MAX],
+		int *seen_count,
+		int seen_capacity) {
+	for (int i = 0; i < ORANGE_CONTEXT_MENU_ITEM_MAX; i++) {
+		preload_icon_path(assets,
+			orange_menubar_context_menu_icon_name(kind, i),
+			seen, seen_count, seen_capacity);
+	}
+}
+
+void orange_menubar_warm_assets(struct orange_assets *assets) {
+	if (assets == NULL) {
+		return;
+	}
+
+	char surface_seen[96][ORANGE_ASSET_ICON_NAME_MAX];
+	char preload_seen[192][ORANGE_ASSET_ICON_NAME_MAX];
+	int surface_seen_count = 0;
+	int preload_seen_count = 0;
+
+	warm_icon_array(assets, menu_icon_names,
+		(int)(sizeof(menu_icon_names) / sizeof(menu_icon_names[0])),
+		surface_seen, &surface_seen_count,
+		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
+	warm_icon_array(assets, app_context_icon_names,
+		(int)(sizeof(app_context_icon_names) / sizeof(app_context_icon_names[0])),
+		surface_seen, &surface_seen_count,
+		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
+	warm_icon_array(assets, file_context_icon_names,
+		(int)(sizeof(file_context_icon_names) / sizeof(file_context_icon_names[0])),
+		surface_seen, &surface_seen_count,
+		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
+	warm_icon_array(assets, edit_context_icon_names,
+		(int)(sizeof(edit_context_icon_names) / sizeof(edit_context_icon_names[0])),
+		surface_seen, &surface_seen_count,
+		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
+	warm_icon_array(assets, desktop_context_icon_names,
+		(int)(sizeof(desktop_context_icon_names) / sizeof(desktop_context_icon_names[0])),
+		surface_seen, &surface_seen_count,
+		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
+	warm_icon_array(assets, dock_context_icon_names,
+		(int)(sizeof(dock_context_icon_names) / sizeof(dock_context_icon_names[0])),
+		surface_seen, &surface_seen_count,
+		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
+	warm_icon_array(assets, dock_separator_context_icon_names,
+		(int)(sizeof(dock_separator_context_icon_names) /
+			sizeof(dock_separator_context_icon_names[0])),
+		surface_seen, &surface_seen_count,
+		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
+
+	static const enum orange_context_menu_kind preload_kinds[] = {
+		ORANGE_CONTEXT_MENU_APP_VIEW,
+		ORANGE_CONTEXT_MENU_APP_GO,
+		ORANGE_CONTEXT_MENU_APP_WINDOW,
+		ORANGE_CONTEXT_MENU_APP_HISTORY,
+		ORANGE_CONTEXT_MENU_APP_BOOKMARKS,
+		ORANGE_CONTEXT_MENU_APP_TOOLS,
+		ORANGE_CONTEXT_MENU_APP_HELP,
+		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR,
+		ORANGE_CONTEXT_MENU_WIDGET,
+		ORANGE_CONTEXT_MENU_DESKTOP_ICON,
+		ORANGE_CONTEXT_MENU_DESKTOP_VOLUME,
+		ORANGE_CONTEXT_MENU_STATUS,
+		ORANGE_CONTEXT_MENU_STATUS_WIFI,
+		ORANGE_CONTEXT_MENU_STATUS_SOUND,
+		ORANGE_CONTEXT_MENU_STATUS_BATTERY,
+	};
+	for (int k = 0; k < (int)(sizeof(preload_kinds) /
+			sizeof(preload_kinds[0])); k++) {
+		preload_context_kind(assets, preload_kinds[k],
+			preload_seen, &preload_seen_count,
+			(int)(sizeof(preload_seen) / sizeof(preload_seen[0])));
+	}
+
+	static const char *const chrome_icons[] = {
+		"orange-menu",
+		"network-wireless",
+		"network-offline",
+		"audio-volume-high",
+		"audio-volume-muted",
+		"battery",
+		"battery-good",
+		"edit-find",
+		"control-center",
+		"preferences-system",
+	};
+	for (int i = 0; i < (int)(sizeof(chrome_icons) /
+			sizeof(chrome_icons[0])); i++) {
+		warm_icon_surface(assets, chrome_icons[i], surface_seen,
+			&surface_seen_count,
+			(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
+	}
 }
 
 	const char *orange_menubar_context_menu_label(
@@ -1041,6 +1202,13 @@ const char *orange_menubar_menu_label(int index) {
 				index < (int)(sizeof(dock_context_labels) /
 					sizeof(dock_context_labels[0]))) {
 			return dock_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_DOCK_SEPARATOR:
+		if (index >= 0 &&
+				index < (int)(sizeof(dock_separator_context_labels) /
+					sizeof(dock_separator_context_labels[0]))) {
+			return dock_separator_context_labels[index];
 		}
 		break;
 	case ORANGE_CONTEXT_MENU_WIDGET:
@@ -1190,6 +1358,13 @@ const char *orange_menubar_menu_label(int index) {
 				index < (int)(sizeof(dock_context_icon_names) /
 					sizeof(dock_context_icon_names[0]))) {
 			return dock_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_DOCK_SEPARATOR:
+		if (index >= 0 &&
+				index < (int)(sizeof(dock_separator_context_icon_names) /
+					sizeof(dock_separator_context_icon_names[0]))) {
+			return dock_separator_context_icon_names[index];
 		}
 		break;
 	case ORANGE_CONTEXT_MENU_WIDGET:

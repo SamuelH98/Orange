@@ -18,6 +18,7 @@ struct orange_named_icon {
 	char name[ORANGE_ASSET_ICON_NAME_MAX];
 	cairo_surface_t *surface[ORANGE_ASSET_ICON_VARIANTS];
 	bool resolved[ORANGE_ASSET_ICON_VARIANTS];
+	char *cached_path; /* strdup'd path of the resolved icon file */
 };
 
 struct orange_assets {
@@ -52,6 +53,9 @@ cairo_surface_t *orange_assets_wallpaper(
 cairo_surface_t *orange_assets_icon(
 	struct orange_assets *assets,
 	enum orange_asset_icon_variant variant,
+	const char *name);
+void orange_assets_preload_icon(
+	struct orange_assets *assets,
 	const char *name);
 
 #endif

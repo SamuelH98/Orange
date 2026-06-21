@@ -1,4 +1,5 @@
 #include "orange/assets.h"
+#include "orange/menubar.h"
 
 #include <assert.h>
 #include <cairo/cairo.h>
@@ -108,7 +109,9 @@ int main(void) {
 	mkdir_p("/tmp/orange-assets-test/data/icons/TestTheme/places/scalable");
 	mkdir_p("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps");
 	mkdir_p("/tmp/orange-assets-test/data/icons/hicolor/scalable/apps");
+	mkdir_p("/tmp/orange-assets-test/extra/icons/TestTheme/128x128/apps");
 	assert(setenv("XDG_DATA_HOME", "/tmp/orange-assets-test/data", 1) == 0);
+	assert(setenv("XDG_DATA_DIRS", "/tmp/orange-assets-test/extra", 1) == 0);
 	write_index("/tmp/orange-assets-test/data/icons/TestTheme/index.theme", NULL);
 	write_long_hicolor_index("/tmp/orange-assets-test/data/icons/hicolor/index.theme");
 	write_png("/tmp/orange-assets-test/data/icons/TestTheme/128x128/apps/test-app.png",
@@ -143,6 +146,8 @@ int main(void) {
 		0.7, 0.2, 0.9);
 	write_png("/tmp/orange-assets-test/data/icons/hicolor/scalable/apps/org.gnome.Maps.png",
 		0.1, 0.65, 0.3);
+	write_png("/tmp/orange-assets-test/extra/icons/TestTheme/128x128/apps/split-theme-app.png",
+		0.95, 0.55, 0.1);
 	write_png("/tmp/orange-assets-test/absolute-icon.png", 0.7, 0.1, 0.35);
 
 	struct orange_assets assets;
@@ -213,6 +218,11 @@ int main(void) {
 	assert(maps != NULL);
 	assert_pixel_rgb(maps, 26, 166, 77);
 
+	cairo_surface_t *split = orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "split-theme-app");
+	assert(split != NULL);
+	assert_pixel_rgb(split, 242, 140, 26);
+
 	cairo_surface_t *absolute = orange_assets_icon(&assets,
 		ORANGE_ASSET_ICON_LIGHT, "/tmp/orange-assets-test/absolute-icon.png");
 	assert(absolute != NULL);
@@ -222,6 +232,12 @@ int main(void) {
 		ORANGE_ASSET_ICON_LIGHT, "missing-app") == NULL);
 	assert(orange_assets_icon(&assets,
 		ORANGE_ASSET_ICON_LIGHT, "missing-app") == NULL);
+
+	int icon_count_before_warm = assets.icon_count;
+	orange_menubar_warm_assets(&assets);
+	assert(assets.icon_count >= icon_count_before_warm);
+	assert(orange_assets_icon(&assets,
+		ORANGE_ASSET_ICON_LIGHT, "orange-menu") == menu);
 
 	orange_assets_finish(&assets);
 	puts("asset tests passed");

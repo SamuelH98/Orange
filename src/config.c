@@ -226,6 +226,45 @@ static const char *scroll_bar_visibility_name(enum orange_scroll_bar_visibility 
 	}
 }
 
+static enum orange_dock_position parse_dock_position(const char *value) {
+	if (value != NULL && strcmp(value, "left") == 0) {
+		return ORANGE_DOCK_POSITION_LEFT;
+	}
+	if (value != NULL && strcmp(value, "right") == 0) {
+		return ORANGE_DOCK_POSITION_RIGHT;
+	}
+	return ORANGE_DOCK_POSITION_BOTTOM;
+}
+
+static const char *dock_position_name(enum orange_dock_position position) {
+	switch (position) {
+	case ORANGE_DOCK_POSITION_LEFT:
+		return "left";
+	case ORANGE_DOCK_POSITION_RIGHT:
+		return "right";
+	case ORANGE_DOCK_POSITION_BOTTOM:
+	default:
+		return "bottom";
+	}
+}
+
+static enum orange_minimize_effect parse_minimize_effect(const char *value) {
+	if (value != NULL && strcmp(value, "scale") == 0) {
+		return ORANGE_MINIMIZE_EFFECT_SCALE;
+	}
+	return ORANGE_MINIMIZE_EFFECT_GENIE;
+}
+
+static const char *minimize_effect_name(enum orange_minimize_effect effect) {
+	switch (effect) {
+	case ORANGE_MINIMIZE_EFFECT_SCALE:
+		return "scale";
+	case ORANGE_MINIMIZE_EFFECT_GENIE:
+	default:
+		return "genie";
+	}
+}
+
 static const char *widget_size_name(enum orange_widget_size size) {
 	switch (size) {
 	case ORANGE_WIDGET_SIZE_MEDIUM:
@@ -351,6 +390,10 @@ static void apply_pair(struct orange_config *config,
 	} else if (strcmp(key, "dock_magnification_scale") == 0) {
 		config->dock_magnification_scale =
 			clamp_double(strtod(value, NULL), 1.00, 2.20);
+	} else if (strcmp(key, "dock_position") == 0) {
+		config->dock_position = parse_dock_position(value);
+	} else if (strcmp(key, "minimize_effect") == 0) {
+		config->minimize_effect = parse_minimize_effect(value);
 	} else if (strcmp(key, "dock_show_indicators") == 0) {
 		config->dock_show_indicators = parse_bool(value);
 	} else if (strcmp(key, "dock_order") == 0) {
@@ -450,6 +493,8 @@ void orange_config_set_defaults(struct orange_config *config) {
 	config->dock_icon_scale = 1.0;
 	config->dock_magnification = true;
 	config->dock_magnification_scale = 1.28;
+	config->dock_position = ORANGE_DOCK_POSITION_BOTTOM;
+	config->minimize_effect = ORANGE_MINIMIZE_EFFECT_GENIE;
 	config->dock_show_indicators = true;
 	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
 		config->dock_order[i] = i;
@@ -578,6 +623,10 @@ bool orange_config_save(const struct orange_config *config, const char *path) {
 		config->dock_magnification ? "true" : "false");
 	fprintf(file, "dock_magnification_scale=%.2f\n",
 		config->dock_magnification_scale);
+	fprintf(file, "dock_position=%s\n",
+		dock_position_name(config->dock_position));
+	fprintf(file, "minimize_effect=%s\n",
+		minimize_effect_name(config->minimize_effect));
 	fprintf(file, "dock_show_indicators=%s\n",
 		config->dock_show_indicators ? "true" : "false");
 	fprintf(file, "dock_order=");

@@ -24,7 +24,8 @@ static void write_desktop_entry(
 		const char *path,
 		const char *name,
 		const char *icon,
-		const char *exec) {
+		const char *exec,
+		const char *categories) {
 	FILE *file = fopen(path, "w");
 	assert(file != NULL);
 	fprintf(file,
@@ -33,10 +34,12 @@ static void write_desktop_entry(
 		"Name=%s\n"
 		"Icon=%s\n"
 		"Exec=%s\n"
+		"Categories=%s\n"
 		"Terminal=false\n",
 		name,
 		icon,
-		exec);
+		exec,
+		categories);
 	fclose(file);
 }
 
@@ -71,9 +74,11 @@ int main(void) {
 	snprintf(alpha_path, sizeof(alpha_path), "%s/alpha.desktop", home_apps);
 	snprintf(beta_path, sizeof(beta_path), "%s/beta.desktop", data_apps);
 	write_desktop_entry(viewer_path, "Example Viewer", "org.example.Viewer",
-		"example-viewer --open %U --name %c %i");
-	write_desktop_entry(alpha_path, "Alpha", "folder", "alpha-app %f");
-	write_desktop_entry(beta_path, "Beta", "text-editor", "beta-app %u");
+		"example-viewer --open %U --name %c %i", "Graphics;Photography;");
+	write_desktop_entry(alpha_path, "Alpha", "folder", "alpha-app %f",
+		"Utility;");
+	write_desktop_entry(beta_path, "Beta", "text-editor", "beta-app %u",
+		"Office;Finance;");
 
 	struct orange_desktop_entry entry;
 	assert(orange_desktop_entry_load(viewer_path, &entry));
@@ -82,6 +87,7 @@ int main(void) {
 	assert(strcmp(entry.name, "Example Viewer") == 0);
 	assert(strcmp(entry.icon, "org.example.Viewer") == 0);
 	assert(strcmp(entry.exec, "example-viewer --open %U --name %c %i") == 0);
+	assert(strcmp(entry.categories, "Graphics;Photography;") == 0);
 	assert(orange_desktop_entry_id_matches(entry.id, "org.example.Viewer.desktop"));
 	assert(orange_desktop_entry_id_matches("firefox_firefox", "firefox.desktop"));
 	assert(orange_desktop_entry_id_matches("org.mozilla.firefox", "firefox.desktop"));

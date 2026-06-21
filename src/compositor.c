@@ -2,7 +2,9 @@
 #include "orange/compositor.h"
 #include "orange/config.h"
 #include "orange/desktop_entry.h"
+#include "orange/menubar.h"
 #include "orange/shell.h"
+#include "orange/util.h"
 
 #include <gio/gio.h>
 #include <assert.h>
@@ -52,6 +54,7 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 #define DESKTOP_ENTRY_RELOAD_TICKS 5
+#define VOLUME_RELOAD_TICKS 3
 
 enum orange_cursor_mode {
 	ORANGE_CURSOR_PASSTHROUGH,
@@ -69,12 +72,17 @@ struct orange_output {
 	struct wlr_scene_output *scene_output;
 	struct wlr_scene_buffer *shell_scene_buffer;
 	struct orange_buffer *shell_buffer;
+	struct wlr_scene_buffer *overlay_scene_buffer;
+	struct orange_buffer *overlay_buffer;
 	struct wl_listener frame;
 	struct wl_listener present;
 	struct wl_listener destroy;
 	int width;
 	int height;
 	bool shell_dirty;
+	bool overlay_dirty;
+	bool overlay_bounds_valid;
+	struct orange_rect overlay_bounds;
 	bool commit_pending;
 };
 
@@ -91,11 +99,13 @@ struct orange_view {
 	struct wl_listener request_resize;
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
+	struct wl_listener request_minimize;
 	int x;
 	int y;
 	int width;
 	int height;
 	bool mapped;
+	bool minimized;
 	bool maximized;
 	bool fullscreen;
 };
@@ -124,6 +134,7 @@ struct orange_server {
 	struct wlr_scene *scene;
 	struct wlr_scene_tree *shell_tree;
 	struct wlr_scene_tree *window_tree;
+	struct wlr_scene_tree *overlay_tree;
 	struct wlr_scene_output_layout *scene_layout;
 	struct wlr_output_layout *output_layout;
 
@@ -171,13 +182,30 @@ struct orange_server {
 	bool system_menu_open;
 	bool notification_center_open;
 	bool launcher_open;
+	enum orange_launcher_mode launcher_display_mode;
+	bool launcher_position_set;
+	int launcher_x;
+	int launcher_y;
 	char launcher_query[ORANGE_LAUNCHER_QUERY_MAX];
 	int launcher_hot_app;
 	int launcher_app_indices[ORANGE_LAUNCHER_APP_MAX];
 	int launcher_app_count;
 	int launcher_current_mode;
-	int launcher_scroll;
+	int launcher_scroll_row;
 	bool launcher_search_focus;
+	char launcher_filter_cache_key[256];
+	bool launcher_drag_active;
+	int launcher_drag_offset_x;
+	int launcher_drag_offset_y;
+	bool launcher_scroll_drag_active;
+	int launcher_scroll_drag_offset_y;
+	bool launcher_app_drag_active;
+	bool launcher_app_drag_moved;
+	int launcher_app_drag_flat_index;
+	int launcher_app_drag_entry_index;
+	int launcher_app_drag_start_x;
+	int launcher_app_drag_start_y;
+	int launcher_app_drag_insert_before;
 	char launcher_categories[ORANGE_LAUNCHER_CATEGORY_MAX][ORANGE_LAUNCHER_CATEGORY_NAME_MAX];
 	int launcher_category_count;
 	int launcher_category_active;
@@ -188,6 +216,7 @@ struct orange_server {
 	char app_menu_action_path[128];
 	int status_poll_ticks;
 	int desktop_entry_poll_ticks;
+	int volume_poll_ticks;
 	int hot_dock_index;
 	int last_dock_pointer_x;
 	int last_dock_pointer_y;
@@ -213,18 +242,25 @@ struct orange_server {
 	bool dock_drag_moved;
 	int dock_drag_index;
 	int dock_drag_start_x;
+	int dock_drag_start_y;
 	int dock_drag_insert_before;
+	bool dock_drag_remove;
 	bool once_committed;
 	uint32_t seat_caps;
 };
 
 static void server_mark_shell_dirty(struct orange_server *server);
+static void server_mark_overlay_dirty(struct orange_server *server);
 static void server_apply_cursor_config(struct orange_server *server);
 static void process_desktop_drag(struct orange_server *server);
 static void start_dock_drag(struct orange_server *server,
 	const struct orange_shell_layout *layout, int index);
 static void process_dock_drag(struct orange_server *server);
 static void finish_dock_drag(struct orange_server *server);
+static void process_launcher_drag(struct orange_server *server);
+static void process_launcher_scroll_drag(struct orange_server *server);
+static void process_launcher_app_drag(struct orange_server *server);
+static void finish_launcher_app_drag(struct orange_server *server);
 
 static const char *orange_settings_command =
 	"if [ -x build/orange-settings ]; then "
@@ -313,56 +349,81 @@ static void status_set_defaults(struct orange_status_state *status) {
 	status->battery_percent = -1;
 }
 
-static GVariant *dbus_get_property(
+/* g_bus_get_sync() returns a process-wide shared connection internally, but
+ * still pays a lookup/lock on every call. We additionally cache it here per
+ * bus type so callers (which may run several times per status poll) don't
+ * repeatedly hit that path, and so a failed lookup doesn't get retried until
+ * the next poll instead of every call within the same poll. */
+static GDBusConnection *dbus_cached_connection(GBusType bus_type) {
+	static GDBusConnection *system_conn = NULL;
+	static GDBusConnection *session_conn = NULL;
+	GDBusConnection **slot = bus_type == G_BUS_TYPE_SYSTEM ?
+		&system_conn : &session_conn;
+	if (*slot != NULL && g_dbus_connection_is_closed(*slot)) {
+		g_object_unref(*slot);
+		*slot = NULL;
+	}
+	if (*slot == NULL) {
+		GError *error = NULL;
+		*slot = g_bus_get_sync(bus_type, NULL, &error);
+		if (error != NULL) {
+			g_error_free(error);
+		}
+	}
+	return *slot;
+}
+
+/* Fetch every property on an interface in a single round trip instead of
+ * one "Get" call per property. Returns a floating-ref-free a{sv} GVariant
+ * (caller must g_variant_unref it), or NULL on failure. */
+static GVariant *dbus_get_all_properties(
 		GBusType bus_type,
 		const char *bus_name,
 		const char *object_path,
-		const char *interface,
-		const char *property) {
-	GError *error = NULL;
-	GDBusConnection *connection = g_bus_get_sync(bus_type, NULL, &error);
-	if (error != NULL) {
-		g_error_free(error);
-	}
+		const char *interface) {
+	GDBusConnection *connection = dbus_cached_connection(bus_type);
 	if (connection == NULL) {
 		return NULL;
 	}
+	GError *error = NULL;
 	GVariant *reply = g_dbus_connection_call_sync(
 		connection,
 		bus_name,
 		object_path,
 		"org.freedesktop.DBus.Properties",
-		"Get",
-		g_variant_new("(ss)", interface, property),
-		G_VARIANT_TYPE("(v)"),
+		"GetAll",
+		g_variant_new("(s)", interface),
+		G_VARIANT_TYPE("(a{sv})"),
 		G_DBUS_CALL_FLAGS_NO_AUTO_START,
 		80,
 		NULL,
 		&error);
-	g_object_unref(connection);
 	if (error != NULL) {
 		g_error_free(error);
 	}
 	if (reply == NULL) {
 		return NULL;
 	}
-	GVariant *value = NULL;
-	g_variant_get(reply, "(v)", &value);
+	GVariant *dict = NULL;
+	g_variant_get(reply, "(@a{sv})", &dict);
 	g_variant_unref(reply);
-	return value;
+	return dict;
 }
 
 static void update_network_status(struct orange_status_state *status) {
-	GVariant *connectivity = dbus_get_property(G_BUS_TYPE_SYSTEM,
+	GVariant *props = dbus_get_all_properties(G_BUS_TYPE_SYSTEM,
 		"org.freedesktop.NetworkManager",
 		"/org/freedesktop/NetworkManager",
-		"org.freedesktop.NetworkManager",
-		"Connectivity");
-	if (connectivity == NULL) {
+		"org.freedesktop.NetworkManager");
+	if (props == NULL) {
 		return;
 	}
-	uint32_t state = g_variant_get_uint32(connectivity);
-	g_variant_unref(connectivity);
+
+	uint32_t state = 0;
+	if (!g_variant_lookup(props, "Connectivity", "u", &state)) {
+		g_variant_unref(props);
+		return;
+	}
 
 	status->network_available = true;
 	status->network_connected = state == 4;
@@ -383,38 +444,34 @@ static void update_network_status(struct orange_status_state *status) {
 			"%s", "Wi-Fi Off");
 	}
 
-	GVariant *wireless = dbus_get_property(G_BUS_TYPE_SYSTEM,
-		"org.freedesktop.NetworkManager",
-		"/org/freedesktop/NetworkManager",
-		"org.freedesktop.NetworkManager",
-		"WirelessEnabled");
-	if (wireless != NULL) {
-		if (!g_variant_get_boolean(wireless)) {
-			status->network_connected = false;
-			snprintf(status->network_icon, sizeof(status->network_icon),
-				"%s", "network-offline");
-			snprintf(status->network_label, sizeof(status->network_label),
-				"%s", "Wi-Fi Disabled");
-		}
-		g_variant_unref(wireless);
+	gboolean wireless_enabled = TRUE;
+	if (g_variant_lookup(props, "WirelessEnabled", "b", &wireless_enabled) &&
+			!wireless_enabled) {
+		status->network_connected = false;
+		snprintf(status->network_icon, sizeof(status->network_icon),
+			"%s", "network-offline");
+		snprintf(status->network_label, sizeof(status->network_label),
+			"%s", "Wi-Fi Disabled");
 	}
+	g_variant_unref(props);
 }
 
 static void update_battery_status(struct orange_status_state *status) {
-	const char *path = "/org/freedesktop/UPower/devices/DisplayDevice";
-	GVariant *present = dbus_get_property(G_BUS_TYPE_SYSTEM,
-		"org.freedesktop.UPower", path,
-		"org.freedesktop.UPower.Device", "IsPresent");
-	if (present != NULL) {
-		status->battery_present = g_variant_get_boolean(present);
-		g_variant_unref(present);
+	GVariant *props = dbus_get_all_properties(G_BUS_TYPE_SYSTEM,
+		"org.freedesktop.UPower",
+		"/org/freedesktop/UPower/devices/DisplayDevice",
+		"org.freedesktop.UPower.Device");
+	if (props == NULL) {
+		return;
 	}
 
-	GVariant *percentage = dbus_get_property(G_BUS_TYPE_SYSTEM,
-		"org.freedesktop.UPower", path,
-		"org.freedesktop.UPower.Device", "Percentage");
-	if (percentage != NULL) {
-		double percent = g_variant_get_double(percentage);
+	gboolean present = FALSE;
+	if (g_variant_lookup(props, "IsPresent", "b", &present)) {
+		status->battery_present = present;
+	}
+
+	double percent = -1.0;
+	if (g_variant_lookup(props, "Percentage", "d", &percent)) {
 		if (percent < 0.0) {
 			percent = 0.0;
 		} else if (percent > 100.0) {
@@ -422,29 +479,20 @@ static void update_battery_status(struct orange_status_state *status) {
 		}
 		status->battery_percent = (int)lrint(percent);
 		status->battery_present = true;
-		g_variant_unref(percentage);
 	}
 
-	GVariant *state = dbus_get_property(G_BUS_TYPE_SYSTEM,
-		"org.freedesktop.UPower", path,
-		"org.freedesktop.UPower.Device", "State");
-	if (state != NULL) {
-		uint32_t battery_state = g_variant_get_uint32(state);
+	uint32_t battery_state = 0;
+	if (g_variant_lookup(props, "State", "u", &battery_state)) {
 		status->battery_charging = battery_state == 1 || battery_state == 4;
-		g_variant_unref(state);
 	}
 
-	GVariant *icon = dbus_get_property(G_BUS_TYPE_SYSTEM,
-		"org.freedesktop.UPower", path,
-		"org.freedesktop.UPower.Device", "IconName");
-	if (icon != NULL) {
-		const char *icon_name = g_variant_get_string(icon, NULL);
-		if (icon_name != NULL && icon_name[0] != '\0') {
-			snprintf(status->battery_icon, sizeof(status->battery_icon),
-				"%s", icon_name);
-		}
-		g_variant_unref(icon);
+	const char *icon_name = NULL;
+	if (g_variant_lookup(props, "IconName", "&s", &icon_name) &&
+			icon_name != NULL && icon_name[0] != '\0') {
+		snprintf(status->battery_icon, sizeof(status->battery_icon),
+			"%s", icon_name);
 	}
+	g_variant_unref(props);
 
 	if (status->battery_percent >= 0) {
 		snprintf(status->battery_label, sizeof(status->battery_label),
@@ -831,32 +879,110 @@ static void launch_app_picker(void) {
 	launch_command("wofi --show drun || rofi -show drun || true");
 }
 
+static const char *launcher_active_category_filter(
+		const struct orange_server *server) {
+	if (server == NULL ||
+			server->launcher_current_mode != ORANGE_LAUNCHER_MODE_APPS ||
+			server->launcher_category_active <= 0 ||
+			server->launcher_category_active >= server->launcher_category_count) {
+		return NULL;
+	}
+	const char *filter =
+		server->launcher_categories[server->launcher_category_active];
+	return filter[0] != '\0' ? filter : NULL;
+}
+
+/* Pre-resolve icon file paths for every desktop entry so the icon-theme
+ * directory scan is done once at startup instead of on every launcher open.
+ * We deliberately only cache the file path here — the actual surface is
+ * loaded lazily on first draw so that expensive SVG rendering doesn't block
+ * compositor startup. */
+static void server_preload_app_icons(struct orange_server *server) {
+	for (size_t i = 0; i < server->desktop_entry_count; i++) {
+		const char *name = server->desktop_entries[i].icon;
+		if (name[0] == '\0') {
+			name = "application-x-executable";
+		}
+		orange_assets_preload_icon(&server->assets, name);
+	}
+}
+
+static void launcher_preload_icons(struct orange_server *server) {
+	if (server->launcher_display_mode != ORANGE_LAUNCHER_DISPLAY_FULL ||
+			server->launcher_app_count <= 0) {
+		return;
+	}
+	bool dark = is_dark_config(&server->config);
+	int variant = dark ?
+		ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT;
+	int n = server->launcher_app_count;
+	if (n > ORANGE_LAUNCHER_APP_MAX) {
+		n = ORANGE_LAUNCHER_APP_MAX;
+	}
+	for (int i = 0; i < n; i++) {
+		const char *icon_name = orange_launcher_app_icon(
+			server->desktop_entries, (int)server->desktop_entry_count,
+			server->launcher_app_indices, server->launcher_app_count, i);
+		if (icon_name != NULL) {
+			orange_assets_icon(&server->assets, variant, icon_name);
+		}
+	}
+}
+
 static void launcher_refresh_filter(struct orange_server *server) {
-	server->launcher_app_count = orange_launcher_filter(
-		server->desktop_entries, (int)server->desktop_entry_count,
+	if (server->launcher_display_mode == ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY) {
+		server->launcher_app_count = 0;
+		server->launcher_hot_app = -1;
+		return;
+	}
+
+	char key[256];
+	snprintf(key, sizeof(key), "%s|%s|%zu",
 		server->launcher_query,
-		server->launcher_app_indices, ORANGE_LAUNCHER_APP_MAX);
+		launcher_active_category_filter(server) != NULL ?
+			launcher_active_category_filter(server) : "",
+		server->desktop_entry_count);
+	bool cache_hit = strcmp(server->launcher_filter_cache_key, key) == 0;
+	if (!cache_hit) {
+		snprintf(server->launcher_filter_cache_key,
+			sizeof(server->launcher_filter_cache_key), "%s", key);
+		server->launcher_app_count = orange_launcher_filter(
+			server->desktop_entries, (int)server->desktop_entry_count,
+			server->launcher_query,
+			launcher_active_category_filter(server),
+			server->launcher_app_indices, ORANGE_LAUNCHER_APP_MAX);
+	}
+
+	/* Always re-validate hot_app and keep icons preloaded, even on a
+	 * cache hit — these are cheap and other code paths (dock hover, key
+	 * navigation) can move hot_app independently of the filtered set. */
+	if (server->launcher_app_count <= 0) {
+		server->launcher_hot_app = -1;
+		return;
+	}
 	if (server->launcher_hot_app >= server->launcher_app_count) {
 		server->launcher_hot_app = server->launcher_app_count - 1;
 	}
 	if (server->launcher_hot_app < 0) {
 		server->launcher_hot_app = 0;
 	}
+	launcher_preload_icons(server);
 }
 
-static void launcher_open_overlay(struct orange_server *server, bool focus_search) {
+static void launcher_open_overlay(struct orange_server *server, bool focus_search,
+		enum orange_launcher_mode display_mode) {
 	server->launcher_open = true;
+	server->launcher_display_mode = display_mode;
 	server->launcher_query[0] = '\0';
 	server->launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
-	server->launcher_scroll = 0;
+	server->launcher_scroll_row = 0;
 	server->launcher_hot_app = -1;
 	server->launcher_search_focus = focus_search;
 	server->system_menu_open = false;
 	server->notification_center_open = false;
 	/* Default category tabs for Apps mode */
 	const char *cats[] = {
-		"Utilities", "Productivity & Finance", "Social",
-		"Entertainment", "Photo & Video", "Information",
+		"All", "Utilities", "Productivity", "Social", "Media", "Info",
 	};
 	int nc = (int)(sizeof(cats) / sizeof(cats[0]));
 	if (nc > ORANGE_LAUNCHER_CATEGORY_MAX) {
@@ -870,7 +996,7 @@ static void launcher_open_overlay(struct orange_server *server, bool focus_searc
 			"%s", cats[i]);
 	}
 	launcher_refresh_filter(server);
-	server_mark_shell_dirty(server);
+	server_mark_overlay_dirty(server);
 }
 
 static void launcher_close_overlay(struct orange_server *server) {
@@ -881,14 +1007,23 @@ static void launcher_close_overlay(struct orange_server *server) {
 	server->launcher_query[0] = '\0';
 	server->launcher_hot_app = -1;
 	server->launcher_search_focus = false;
-	server_mark_shell_dirty(server);
+	server->launcher_position_set = false;
+	server->launcher_drag_active = false;
+	server->launcher_scroll_drag_active = false;
+	server->launcher_app_drag_active = false;
+	server->launcher_app_drag_moved = false;
+	server->launcher_app_drag_flat_index = -1;
+	server->launcher_app_drag_entry_index = -1;
+	server->launcher_app_drag_insert_before = -1;
+	server_mark_overlay_dirty(server);
 }
 
-static void launcher_toggle_overlay(struct orange_server *server, bool focus_search) {
+static void launcher_toggle_overlay(struct orange_server *server, bool focus_search,
+		enum orange_launcher_mode display_mode) {
 	if (server->launcher_open) {
 		launcher_close_overlay(server);
 	} else {
-		launcher_open_overlay(server, focus_search);
+		launcher_open_overlay(server, focus_search, display_mode);
 	}
 }
 
@@ -1054,6 +1189,10 @@ static void server_reload_desktop_entries(struct orange_server *server) {
 	}
 	server->desktop_entry_count = orange_desktop_entry_load_all_xdg(
 		server->desktop_entries, 1024);
+	/* Entry contents (not just count) may have changed; force
+	 * launcher_refresh_filter to recompute next time it's called instead
+	 * of trusting the count-based cache key. */
+	server->launcher_filter_cache_key[0] = '\0';
 }
 
 static void launch_desktop_entry(
@@ -1076,6 +1215,14 @@ static void launch_desktop_entry(
 	}
 }
 
+static int dock_launcher_for_view(
+	struct orange_server *server,
+	struct orange_view *view);
+static void focus_view(struct orange_view *view, struct wlr_surface *surface);
+static bool focus_view_for_dock_launcher(
+	struct orange_server *server,
+	int launcher_idx);
+
 static void launch_dock_launcher(
 		struct orange_server *server,
 		int launcher_idx) {
@@ -1094,8 +1241,12 @@ static void launch_dock_launcher(
 				getenv("ORANGE_APP_PICKER")[0] != '\0') {
 			launch_app_picker();
 		} else {
-			launcher_open_overlay(server, false);
+			launcher_open_overlay(server, false,
+				ORANGE_LAUNCHER_DISPLAY_FULL);
 		}
+		return;
+	}
+	if (focus_view_for_dock_launcher(server, launcher_idx)) {
 		return;
 	}
 	if (orange_dock_builtin_command(app_id) != NULL) {
@@ -1214,6 +1365,25 @@ static int dock_launcher_for_view(struct orange_server *server, struct orange_vi
 			"org.gnome.Settings.desktop") != NULL ? 5 : -1;
 	}
 	return -1;
+}
+
+static bool focus_view_for_dock_launcher(
+		struct orange_server *server,
+		int launcher_idx) {
+	if (server == NULL || launcher_idx < 0) {
+		return false;
+	}
+	struct orange_view *view;
+	wl_list_for_each(view, &server->views, link) {
+		if (!view->mapped || view->minimized) {
+			continue;
+		}
+		if (dock_launcher_for_view(server, view) == launcher_idx) {
+			focus_view(view, view->xdg_surface->surface);
+			return true;
+		}
+	}
+	return false;
 }
 
 static void focus_view(struct orange_view *view, struct wlr_surface *surface);
@@ -1511,9 +1681,15 @@ static void compute_shell_layout_for_output(
 	if (server->launcher_open) {
 		launcher_refresh_filter(server);
 		bool searching = server->launcher_query[0] != '\0';
-		layout->launcher_scroll = server->launcher_scroll;
+		layout->launcher_position_set = server->launcher_position_set;
+		layout->launcher_x = server->launcher_x;
+		layout->launcher_y = server->launcher_y;
+		layout->launcher_scroll_row = server->launcher_scroll_row;
 		layout->launcher_current_mode = server->launcher_current_mode;
-		orange_shell_layout_set_launcher(layout, searching);
+		layout->launcher_category_count = server->launcher_category_count;
+		layout->launcher_category_active = server->launcher_category_active;
+		orange_shell_layout_set_launcher(layout, searching,
+			server->launcher_display_mode, server->launcher_app_count);
 	}
 }
 
@@ -1529,6 +1705,9 @@ static int dock_hover_index_for_pointer(
 
 	struct orange_rect first = layout->dock_items[0];
 	struct orange_rect last = layout->dock_items[layout->dock_item_count - 1];
+	bool vertical =
+		layout->dock_position == ORANGE_DOCK_POSITION_LEFT ||
+		layout->dock_position == ORANGE_DOCK_POSITION_RIGHT;
 	double max_scale = config->dock_magnification_scale;
 	if (max_scale < 1.0) {
 		max_scale = 1.0;
@@ -1536,10 +1715,18 @@ static int dock_hover_index_for_pointer(
 		max_scale = 2.20;
 	}
 	int icon = first.height;
-	int hover_top = first.y - (int)(icon * (max_scale - 1.0) + 0.5);
-	int hover_bottom = layout->dock.y + layout->dock.height;
-	int hover_left = first.x - icon / 2;
-	int hover_right = last.x + last.width + icon / 2;
+	int hover_top = vertical ?
+		first.y - icon / 2 :
+		first.y - (int)(icon * (max_scale - 1.0) + 0.5);
+	int hover_bottom = vertical ?
+		last.y + last.height + icon / 2 :
+		layout->dock.y + layout->dock.height;
+	int hover_left = vertical ?
+		layout->dock.x - icon / 3 :
+		first.x - icon / 2;
+	int hover_right = vertical ?
+		layout->dock.x + layout->dock.width + icon / 3 :
+		last.x + last.width + icon / 2;
 	if (x < hover_left || x > hover_right ||
 			y < hover_top || y > hover_bottom) {
 		return -1;
@@ -1548,8 +1735,11 @@ static int dock_hover_index_for_pointer(
 	int best = -1;
 	int best_distance = INT_MAX;
 	for (int i = 0; i < layout->dock_item_count; i++) {
-		int center = layout->dock_items[i].x + layout->dock_items[i].width / 2;
-		int distance = abs(x - center);
+		int center = vertical ?
+			layout->dock_items[i].y + layout->dock_items[i].height / 2 :
+			layout->dock_items[i].x + layout->dock_items[i].width / 2;
+		int pointer = vertical ? y : x;
+		int distance = abs(pointer - center);
 		if (distance < best_distance) {
 			best_distance = distance;
 			best = i;
@@ -1562,6 +1752,17 @@ static void server_mark_shell_dirty(struct orange_server *server) {
 	struct orange_output *output;
 	wl_list_for_each(output, &server->outputs, link) {
 		output->shell_dirty = true;
+		output->overlay_dirty = true;
+		if (!output->commit_pending && !output->wlr_output->frame_pending) {
+			wlr_output_schedule_frame(output->wlr_output);
+		}
+	}
+}
+
+static void server_mark_overlay_dirty(struct orange_server *server) {
+	struct orange_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		output->overlay_dirty = true;
 		if (!output->commit_pending && !output->wlr_output->frame_pending) {
 			wlr_output_schedule_frame(output->wlr_output);
 		}
@@ -1615,9 +1816,42 @@ static bool output_ensure_shell_buffer(struct orange_output *output) {
 			output->layout_output->y);
 	}
 
+	if (output->overlay_scene_buffer != NULL) {
+		wlr_scene_node_destroy(&output->overlay_scene_buffer->node);
+		output->overlay_scene_buffer = NULL;
+	}
+	if (output->overlay_buffer != NULL) {
+		wlr_buffer_drop(&output->overlay_buffer->base);
+		output->overlay_buffer = NULL;
+	}
+	output->overlay_buffer = orange_buffer_create(width, height);
+	if (output->overlay_buffer == NULL) {
+		wlr_log(WLR_ERROR, "failed to allocate overlay buffer");
+	} else {
+		output->overlay_scene_buffer = wlr_scene_buffer_create(
+			output->server->overlay_tree,
+			&output->overlay_buffer->base);
+		if (output->overlay_scene_buffer == NULL) {
+			wlr_log(WLR_ERROR, "failed to create overlay scene buffer");
+			wlr_buffer_drop(&output->overlay_buffer->base);
+			output->overlay_buffer = NULL;
+		} else {
+			output->overlay_scene_buffer->point_accepts_input = shell_buffer_accepts_input;
+			wlr_scene_buffer_set_dest_size(output->overlay_scene_buffer, width, height);
+			if (output->layout_output != NULL) {
+				wlr_scene_node_set_position(&output->overlay_scene_buffer->node,
+					output->layout_output->x,
+					output->layout_output->y);
+			}
+		}
+	}
+
 	output->width = width;
 	output->height = height;
 	output->shell_dirty = true;
+	output->overlay_dirty = true;
+	output->overlay_bounds_valid = false;
+	output->overlay_bounds = (struct orange_rect){0, 0, 0, 0};
 	return true;
 }
 
@@ -1642,14 +1876,24 @@ static void output_redraw_shell(struct orange_output *output) {
 		.hot_dock_index = output->server->hot_dock_index,
 		.dock_pointer_x = (int)cursor_x,
 		.dock_pointer_y = (int)cursor_y,
-		.dock_drag_index = output->server->dock_drag_active ?
+		.dock_drag_index = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
 			output->server->dock_drag_index : -1,
-		.dock_drag_insert_before = output->server->dock_drag_active ?
-			output->server->dock_drag_insert_before : -1,
-		.dock_drag_x = output->server->dock_drag_active ?
+		.dock_drag_insert_before = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
+			output->server->dock_drag_insert_before :
+			(output->server->launcher_app_drag_active &&
+				output->server->launcher_app_drag_moved ?
+				output->server->launcher_app_drag_insert_before : -1),
+		.dock_drag_x = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
 			(int)cursor_x : 0,
-		.dock_drag_y = output->server->dock_drag_active ?
+		.dock_drag_y = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
 			(int)cursor_y : 0,
+		.dock_drag_remove = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
+			output->server->dock_drag_remove : false,
 		.now = time(NULL),
 		.assets = &output->server->assets,
 		.config = &output->server->config,
@@ -1664,11 +1908,20 @@ static void output_redraw_shell(struct orange_output *output) {
 		.context_menu_cursor_x = output->server->context_menu_cursor_x,
 		.context_menu_cursor_y = output->server->context_menu_cursor_y,
 		.launcher_open = output->server->launcher_open,
+		.launcher_display_mode = output->server->launcher_display_mode,
+		.launcher_position_set = output->server->launcher_position_set,
+		.launcher_x = output->server->launcher_x,
+		.launcher_y = output->server->launcher_y,
 		.launcher_hot_app = output->server->launcher_hot_app,
 		.launcher_app_count = output->server->launcher_app_count,
-		.launcher_scroll = output->server->launcher_scroll,
+		.launcher_scroll = 0,
+		.launcher_scroll_row = output->server->launcher_scroll_row,
 		.launcher_current_mode = output->server->launcher_current_mode,
 		.launcher_search_focus = output->server->launcher_search_focus,
+		.launcher_app_drag_active = false,
+		.launcher_app_drag_x = 0,
+		.launcher_app_drag_y = 0,
+		.launcher_app_drag_entry_index = -1,
 		.launcher_category_count = output->server->launcher_category_count,
 		.launcher_category_active = output->server->launcher_category_active,
 	};
@@ -1682,11 +1935,16 @@ static void output_redraw_shell(struct orange_output *output) {
 	server_active_app_label(output->server,
 		state.active_app_label, sizeof(state.active_app_label));
 	state.app_menu = output->server->app_menu;
-	orange_shell_draw(output->shell_buffer->pixels,
+	const struct orange_shell_draw_options options = {
+		.draw_wallpaper = true,
+		.skip_transient_overlays = true,
+	};
+	orange_shell_draw_with_options(output->shell_buffer->pixels,
 		output->width,
 		output->height,
 		output->shell_buffer->stride,
-		&state);
+		&state,
+		&options);
 
 	pixman_region32_t damage;
 	pixman_region32_init_rect(&damage, 0, 0, output->width, output->height);
@@ -1697,12 +1955,248 @@ static void output_redraw_shell(struct orange_output *output) {
 	output->shell_dirty = false;
 }
 
+static void output_clear_overlay_buffer(struct orange_output *output) {
+	if (output == NULL || output->overlay_buffer == NULL ||
+			output->overlay_scene_buffer == NULL) {
+		return;
+	}
+	memset(output->overlay_buffer->pixels, 0,
+		(size_t)output->overlay_buffer->stride * (size_t)output->height);
+	pixman_region32_t damage;
+	pixman_region32_init_rect(&damage, 0, 0,
+		output->width, output->height);
+	wlr_scene_buffer_set_buffer_with_damage(
+		output->overlay_scene_buffer,
+		&output->overlay_buffer->base, &damage);
+	pixman_region32_fini(&damage);
+	output->overlay_bounds_valid = false;
+	output->overlay_bounds = (struct orange_rect){0, 0, 0, 0};
+}
+
+static bool output_rect_has_area(const struct orange_rect *rect) {
+	return rect != NULL && rect->width > 0 && rect->height > 0;
+}
+
+static struct orange_rect output_union_rect(struct orange_rect a,
+		struct orange_rect b) {
+	if (!output_rect_has_area(&a)) {
+		return b;
+	}
+	if (!output_rect_has_area(&b)) {
+		return a;
+	}
+	int x1 = a.x < b.x ? a.x : b.x;
+	int y1 = a.y < b.y ? a.y : b.y;
+	int x2 = a.x + a.width;
+	int y2 = a.y + a.height;
+	int bx2 = b.x + b.width;
+	int by2 = b.y + b.height;
+	if (bx2 > x2) {
+		x2 = bx2;
+	}
+	if (by2 > y2) {
+		y2 = by2;
+	}
+	return (struct orange_rect){x1, y1, x2 - x1, y2 - y1};
+}
+
+static void output_clear_overlay_region(struct orange_output *output,
+		const struct orange_rect *rect) {
+	if (output == NULL || output->overlay_buffer == NULL ||
+			!output_rect_has_area(rect)) {
+		return;
+	}
+	int x = rect->x;
+	int y = rect->y;
+	int w = rect->width;
+	int h = rect->height;
+	if (x < 0) {
+		w += x;
+		x = 0;
+	}
+	if (y < 0) {
+		h += y;
+		y = 0;
+	}
+	if (x + w > output->width) {
+		w = output->width - x;
+	}
+	if (y + h > output->height) {
+		h = output->height - y;
+	}
+	if (w <= 0 || h <= 0) {
+		return;
+	}
+	for (int row = y; row < y + h; row++) {
+		memset((unsigned char *)output->overlay_buffer->pixels +
+				(size_t)row * (size_t)output->overlay_buffer->stride +
+				(size_t)x * sizeof(uint32_t),
+			0, (size_t)w * sizeof(uint32_t));
+	}
+}
+
+static void output_set_overlay_damage(struct orange_output *output,
+		const struct orange_rect *rect) {
+	if (output == NULL || output->overlay_scene_buffer == NULL ||
+			!output_rect_has_area(rect)) {
+		return;
+	}
+	pixman_region32_t damage;
+	pixman_region32_init_rect(&damage,
+		rect->x, rect->y, rect->width, rect->height);
+	wlr_scene_buffer_set_buffer_with_damage(output->overlay_scene_buffer,
+		&output->overlay_buffer->base,
+		&damage);
+	pixman_region32_fini(&damage);
+}
+
+static void output_redraw_overlay(struct orange_output *output) {
+	if (!output_ensure_shell_buffer(output)) {
+		return;
+	}
+	if (output->overlay_buffer == NULL) {
+		return;
+	}
+	if (!output->overlay_dirty) {
+		return;
+	}
+
+	struct orange_server *server = output->server;
+	if (server->context_menu_kind == ORANGE_CONTEXT_MENU_NONE &&
+			!server->launcher_open &&
+			!server->system_menu_open &&
+			!server->notification_center_open &&
+			!server->dock_drag_active &&
+			!server->launcher_app_drag_active) {
+		if (output->overlay_bounds_valid) {
+			output_clear_overlay_region(output, &output->overlay_bounds);
+			output_set_overlay_damage(output, &output->overlay_bounds);
+			output->overlay_bounds_valid = false;
+			output->overlay_bounds = (struct orange_rect){0, 0, 0, 0};
+		}
+		output->overlay_dirty = false;
+		return;
+	}
+
+	double cursor_x = server->cursor->x;
+	double cursor_y = server->cursor->y;
+	wlr_output_layout_output_coords(output->server->output_layout,
+		output->wlr_output, &cursor_x, &cursor_y);
+
+	server_update_app_menu_model(output->server);
+	server_update_dock_open(output->server);
+	struct orange_shell_state state = {
+		.system_menu_open = output->server->system_menu_open,
+		.notification_center_open = output->server->notification_center_open,
+		.hot_dock_index = output->server->hot_dock_index,
+		.dock_pointer_x = (int)cursor_x,
+		.dock_pointer_y = (int)cursor_y,
+		.dock_drag_index = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
+			output->server->dock_drag_index : -1,
+		.dock_drag_insert_before = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
+			output->server->dock_drag_insert_before :
+			(output->server->launcher_app_drag_active &&
+				output->server->launcher_app_drag_moved ?
+				output->server->launcher_app_drag_insert_before : -1),
+		.dock_drag_x = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
+			(int)cursor_x : 0,
+		.dock_drag_y = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
+			(int)cursor_y : 0,
+		.dock_drag_remove = output->server->dock_drag_active &&
+			output->server->dock_drag_moved ?
+			output->server->dock_drag_remove : false,
+		.now = time(NULL),
+		.assets = &output->server->assets,
+		.config = &output->server->config,
+		.status = output->server->status,
+		.desktop_entries = output->server->desktop_entries,
+		.desktop_entry_count = (int)output->server->desktop_entry_count,
+		.volumes = output->server->volumes,
+		.volume_count = output->server->volume_count,
+		.desktop_volume_count = output->server->desktop_volume_count,
+		.context_menu_kind = output->server->context_menu_kind,
+		.context_menu_index = output->server->context_menu_index,
+		.context_menu_cursor_x = output->server->context_menu_cursor_x,
+		.context_menu_cursor_y = output->server->context_menu_cursor_y,
+		.launcher_open = output->server->launcher_open,
+		.launcher_display_mode = output->server->launcher_display_mode,
+		.launcher_position_set = output->server->launcher_position_set,
+		.launcher_x = output->server->launcher_x,
+		.launcher_y = output->server->launcher_y,
+		.launcher_hot_app = output->server->launcher_hot_app,
+		.launcher_app_count = output->server->launcher_app_count,
+		.launcher_scroll = 0,
+		.launcher_scroll_row = output->server->launcher_scroll_row,
+		.launcher_current_mode = output->server->launcher_current_mode,
+		.launcher_search_focus = output->server->launcher_search_focus,
+		.launcher_app_drag_active = output->server->launcher_app_drag_active &&
+			output->server->launcher_app_drag_moved,
+		.launcher_app_drag_x = output->server->launcher_app_drag_active ?
+			(int)cursor_x : 0,
+		.launcher_app_drag_y = output->server->launcher_app_drag_active ?
+			(int)cursor_y : 0,
+		.launcher_app_drag_entry_index =
+			output->server->launcher_app_drag_entry_index,
+		.launcher_category_count = output->server->launcher_category_count,
+		.launcher_category_active = output->server->launcher_category_active,
+	};
+	memcpy(state.dock_open, output->server->dock_open, sizeof(state.dock_open));
+	memcpy(state.launcher_query, output->server->launcher_query,
+		sizeof(state.launcher_query));
+	memcpy(state.launcher_app_indices, output->server->launcher_app_indices,
+		sizeof(state.launcher_app_indices));
+	memcpy(state.launcher_categories, output->server->launcher_categories,
+		sizeof(state.launcher_categories));
+	server_active_app_label(output->server,
+		state.active_app_label, sizeof(state.active_app_label));
+	state.app_menu = output->server->app_menu;
+
+	struct orange_rect current_bounds;
+	if (!orange_shell_overlay_bounds(output->width, output->height,
+			&state, &current_bounds)) {
+		if (output->overlay_bounds_valid) {
+			output_clear_overlay_region(output, &output->overlay_bounds);
+			output_set_overlay_damage(output, &output->overlay_bounds);
+			output->overlay_bounds_valid = false;
+			output->overlay_bounds = (struct orange_rect){0, 0, 0, 0};
+		}
+		output->overlay_dirty = false;
+		return;
+	}
+	struct orange_rect damage_bounds = current_bounds;
+	if (output->overlay_bounds_valid) {
+		damage_bounds = output_union_rect(damage_bounds,
+			output->overlay_bounds);
+	}
+	output_clear_overlay_region(output, &damage_bounds);
+	orange_shell_draw_overlay_with_backdrop(output->overlay_buffer->pixels,
+		output->width,
+		output->height,
+		output->overlay_buffer->stride,
+		output->shell_buffer->pixels,
+		output->shell_buffer->stride,
+		&state);
+
+	output_set_overlay_damage(output, &damage_bounds);
+	output->overlay_bounds = current_bounds;
+	output->overlay_bounds_valid = true;
+	output->overlay_dirty = false;
+}
+
 static void focus_view(struct orange_view *view, struct wlr_surface *surface) {
 	if (view == NULL || surface == NULL || !view->mapped) {
 		return;
 	}
 
 	struct orange_server *server = view->server;
+	if (view->minimized) {
+		view->minimized = false;
+		wlr_scene_node_set_enabled(&view->scene_tree->node, true);
+	}
 	if (server->focused_view != NULL && server->focused_view != view) {
 		wlr_xdg_toplevel_set_activated(
 			server->focused_view->xdg_surface->toplevel,
@@ -1756,11 +2250,65 @@ static struct wlr_surface *surface_at(
 	return surface;
 }
 
+static void constrain_view_position(
+		struct orange_server *server,
+		int *x, int *y, int width, int height) {
+	struct orange_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		double oxd = 0, oyd = 0;
+		wlr_output_layout_output_coords(server->output_layout,
+			output->wlr_output, &oxd, &oyd);
+		int ox = (int)oxd;
+		int oy = (int)oyd;
+		double s = output->wlr_output->scale;
+		int out_w = (int)(output->width / s);
+		int out_h = (int)(output->height / s);
+		if (*x + width > ox &&
+				*x < ox + out_w &&
+				*y + height > oy &&
+				*y < oy + out_h) {
+			struct orange_shell_layout layout;
+			compute_shell_layout_for_output(server, output, &layout);
+			struct orange_rect work =
+				orange_shell_layout_work_area(&layout);
+			int work_left = ox + (int)(work.x / s);
+			int work_top = oy + (int)(work.y / s);
+			int work_right = ox + (int)((work.x + work.width) / s);
+			int work_bottom = oy + (int)((work.y + work.height) / s);
+			if (work_right < work_left) {
+				work_right = work_left;
+			}
+			if (work_bottom < work_top) {
+				work_bottom = work_top;
+			}
+			if (height >= work_bottom - work_top) {
+				*y = work_top;
+			} else if (*y < work_top) {
+				*y = work_top;
+			} else if (*y + height > work_bottom) {
+				*y = work_bottom - height;
+			}
+			if (width >= work_right - work_left) {
+				*x = work_left;
+			} else if (*x < work_left) {
+				*x = work_left;
+			} else if (*x + width > work_right) {
+				*x = work_right - width;
+			}
+			return;
+		}
+	}
+}
+
 static void process_cursor_motion(struct orange_server *server, uint32_t time_msec) {
 	if (server->cursor_mode == ORANGE_CURSOR_MOVE && server->grabbed_view != NULL) {
 		struct orange_view *view = server->grabbed_view;
-		view->x = (int)(server->cursor->x - server->grab_cursor_x);
-		view->y = (int)(server->cursor->y - server->grab_cursor_y);
+		int x = (int)(server->cursor->x - server->grab_cursor_x);
+		int y = (int)(server->cursor->y - server->grab_cursor_y);
+		constrain_view_position(server, &x, &y,
+			view->width, view->height);
+		view->x = x;
+		view->y = y;
 		wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
 		return;
 	}
@@ -1795,12 +2343,29 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 			height = 120;
 		}
 
+		constrain_view_position(server, &x, &y, width, height);
+
 		view->x = x;
 		view->y = y;
 		view->width = width;
 		view->height = height;
 		wlr_scene_node_set_position(&view->scene_tree->node, x, y);
 		wlr_xdg_toplevel_set_size(view->xdg_surface->toplevel, width, height);
+		return;
+	}
+
+	if (server->launcher_drag_active) {
+		process_launcher_drag(server);
+		return;
+	}
+
+	if (server->launcher_scroll_drag_active) {
+		process_launcher_scroll_drag(server);
+		return;
+	}
+
+	if (server->launcher_app_drag_active) {
+		process_launcher_app_drag(server);
 		return;
 	}
 
@@ -1878,8 +2443,13 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 					&server->config, local_x, local_y);
 			}
 			if (new_hot >= 0 && new_hot < layout.dock_item_count) {
-				int item_w = layout.dock_items[new_hot].width;
-				dock_redraw_threshold = item_w / 4;
+				bool vertical =
+					layout.dock_position == ORANGE_DOCK_POSITION_LEFT ||
+					layout.dock_position == ORANGE_DOCK_POSITION_RIGHT;
+				int item_axis = vertical ?
+					layout.dock_items[new_hot].height :
+					layout.dock_items[new_hot].width;
+				dock_redraw_threshold = item_axis / 4;
 				if (dock_redraw_threshold < 12) {
 					dock_redraw_threshold = 12;
 				}
@@ -2019,6 +2589,22 @@ static void cycle_focus(struct orange_server *server) {
 	}
 }
 
+static struct orange_output *find_output_for_point(
+		struct orange_server *server, int x, int y) {
+	struct orange_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		double oxd = 0, oyd = 0;
+		wlr_output_layout_output_coords(server->output_layout,
+			output->wlr_output, &oxd, &oyd);
+		int ox = (int)oxd, oy = (int)oyd;
+		if (x >= ox && x < ox + output->width &&
+				y >= oy && y < oy + output->height) {
+			return output;
+		}
+	}
+	return NULL;
+}
+
 static void apply_maximize(struct orange_view *view, bool maximized) {
 	struct orange_server *server = view->server;
 	view->maximized = maximized;
@@ -2027,19 +2613,44 @@ static void apply_maximize(struct orange_view *view, bool maximized) {
 		return;
 	}
 
-	struct wlr_box box;
-	wlr_output_layout_get_box(server->output_layout, NULL, &box);
-	if (box.width <= 0 || box.height <= 0) {
+	struct orange_output *output = find_output_for_point(server,
+		view->x + view->width / 2, view->y + view->height / 2);
+	if (output == NULL) {
+		output = wl_container_of(server->outputs.next, output, link);
+	}
+	if (output == NULL) {
 		return;
 	}
-	view->x = box.x + 42;
-	view->y = box.y + 48;
-	view->width = box.width - 84;
-	view->height = box.height - 150;
+
+	double s = output->wlr_output->scale;
+	struct orange_shell_layout layout;
+	compute_shell_layout_for_output(server, output, &layout);
+
+	double oxd = 0, oyd = 0;
+	wlr_output_layout_output_coords(server->output_layout,
+		output->wlr_output, &oxd, &oyd);
+	int ox = (int)oxd, oy = (int)oyd;
+
+	struct orange_rect work = orange_shell_layout_work_area(&layout);
+	int work_x = (int)(work.x / s);
+	int work_y = (int)(work.y / s);
+	int work_w = (int)(work.width / s);
+	int work_h = (int)(work.height / s);
+
+	int margin = scaled_i(8, s);
+	view->x = ox + work_x + margin;
+	view->y = oy + work_y + margin;
+	view->width = work_w - margin * 2;
+	view->height = work_h - margin * 2;
+	if (view->width < 1) {
+		view->width = 1;
+	}
+	if (view->height < 1) {
+		view->height = 1;
+	}
 	wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
 	wlr_xdg_toplevel_set_size(view->xdg_surface->toplevel,
-		view->width,
-		view->height);
+		view->width, view->height);
 }
 
 static void apply_fullscreen(struct orange_view *view, bool fullscreen) {
@@ -2050,27 +2661,45 @@ static void apply_fullscreen(struct orange_view *view, bool fullscreen) {
 		return;
 	}
 
-	struct wlr_box box;
-	wlr_output_layout_get_box(server->output_layout, NULL, &box);
-	if (box.width <= 0 || box.height <= 0) {
+	struct orange_output *output = find_output_for_point(server,
+		view->x + view->width / 2, view->y + view->height / 2);
+	if (output == NULL) {
+		output = wl_container_of(server->outputs.next, output, link);
+	}
+	if (output == NULL) {
 		return;
 	}
-	view->x = box.x;
-	view->y = box.y;
-	view->width = box.width;
-	view->height = box.height;
+
+	double s = output->wlr_output->scale;
+	struct orange_shell_layout layout;
+	compute_shell_layout_for_output(server, output, &layout);
+
+	double oxd = 0, oyd = 0;
+	wlr_output_layout_output_coords(server->output_layout,
+		output->wlr_output, &oxd, &oyd);
+	int ox = (int)oxd, oy = (int)oyd;
+
+	struct orange_rect work = orange_shell_layout_work_area(&layout);
+
+	view->x = ox + (int)(work.x / s);
+	view->y = oy + (int)(work.y / s);
+	view->width = (int)(work.width / s);
+	view->height = (int)(work.height / s);
+	if (view->width < 1) {
+		view->width = 1;
+	}
+	if (view->height < 1) {
+		view->height = 1;
+	}
 	wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
 	wlr_xdg_toplevel_set_size(view->xdg_surface->toplevel,
-		view->width,
-		view->height);
+		view->width, view->height);
 }
 
 static void handle_shell_menu_action(struct orange_server *server, int index) {
 	switch (index) {
 	case 0:
-		if (!focus_view_for_app_id(server, ".About")) {
-			launch_command("GSK_RENDERER=cairo build/orange-about || true");
-		}
+		focus_view_for_app_id(server, ".About");
 		break;
 	case 1:
 		if (!focus_view_for_app_id(server, "orange-settings") &&
@@ -2103,7 +2732,7 @@ static void handle_shell_menu_action(struct orange_server *server, int index) {
 		break;
 	}
 	server->system_menu_open = false;
-	server_mark_shell_dirty(server);
+	server_mark_overlay_dirty(server);
 }
 
 static void clear_context_menu(struct orange_server *server) {
@@ -2140,21 +2769,55 @@ static void remove_widget(struct orange_server *server, int target) {
 	orange_config_save(&server->config, server->options->config_path);
 }
 
+static void cycle_dock_size(struct orange_server *server) {
+	if (server->config.dock_scale < 0.93) {
+		server->config.dock_scale = 1.00;
+	} else if (server->config.dock_scale < 1.09) {
+		server->config.dock_scale = 1.18;
+	} else {
+		server->config.dock_scale = 0.84;
+	}
+	orange_config_save(&server->config, server->options->config_path);
+}
+
+static void cycle_dock_position(struct orange_server *server) {
+	switch (server->config.dock_position) {
+	case ORANGE_DOCK_POSITION_BOTTOM:
+		server->config.dock_position = ORANGE_DOCK_POSITION_LEFT;
+		break;
+	case ORANGE_DOCK_POSITION_LEFT:
+		server->config.dock_position = ORANGE_DOCK_POSITION_RIGHT;
+		break;
+	case ORANGE_DOCK_POSITION_RIGHT:
+	default:
+		server->config.dock_position = ORANGE_DOCK_POSITION_BOTTOM;
+		break;
+	}
+	orange_config_save(&server->config, server->options->config_path);
+}
+
+static void cycle_minimize_effect(struct orange_server *server) {
+	server->config.minimize_effect =
+		server->config.minimize_effect == ORANGE_MINIMIZE_EFFECT_SCALE ?
+		ORANGE_MINIMIZE_EFFECT_GENIE : ORANGE_MINIMIZE_EFFECT_SCALE;
+	orange_config_save(&server->config, server->options->config_path);
+}
+
 static bool try_focused_app_dbus_action(
 		struct orange_server *server,
 		const char *action_name) {
 	if (server == NULL || action_name == NULL || action_name[0] == '\0') {
 		return false;
 	}
-	const char *app_id = focused_app_id(server);
-	if (app_id == NULL) {
-		return false;
-	}
 
-	char stripped_id[128];
-	strip_desktop_suffix(app_id, stripped_id, sizeof(stripped_id));
 	char active_label[ORANGE_APP_MENU_LABEL_MAX];
 	server_active_app_label(server, active_label, sizeof(active_label));
+
+	char stripped_id[128] = "";
+	const char *app_id = focused_app_id(server);
+	if (app_id != NULL) {
+		strip_desktop_suffix(app_id, stripped_id, sizeof(stripped_id));
+	}
 
 	GError *error = NULL;
 	GDBusConnection *connection = g_bus_get_sync(
@@ -2171,17 +2834,17 @@ static bool try_focused_app_dbus_action(
 	if (stripped_id[0] != '\0') {
 		candidates[count++] = stripped_id;
 	}
-	if (contains_case(app_id, "firefox") ||
+	if ((app_id != NULL && contains_case(app_id, "firefox")) ||
 			contains_case(active_label, "firefox")) {
 		candidates[count++] = "org.mozilla.firefox";
 	}
-	if (contains_case(app_id, "nautilus") ||
+	if ((app_id != NULL && contains_case(app_id, "nautilus")) ||
 			contains_case(active_label, "files")) {
 		candidates[count++] = "org.gnome.Nautilus";
 	}
-	if (contains_case(app_id, "code") ||
+	if ((app_id != NULL && contains_case(app_id, "code")) ||
 			contains_case(active_label, "code") ||
-			contains_case(app_id, "vscode") ||
+			(app_id != NULL && contains_case(app_id, "vscode")) ||
 			contains_case(active_label, "vscode")) {
 		candidates[count++] = "com.visualstudio.code";
 	}
@@ -2393,7 +3056,8 @@ static void handle_app_go_menu_action(
 		launch_command("xdg-open \"$HOME/Downloads\" || true");
 		break;
 	case 4:
-		launcher_open_overlay(server, true);
+		launcher_open_overlay(server, true,
+			ORANGE_LAUNCHER_DISPLAY_FULL);
 		break;
 	default:
 		break;
@@ -2503,8 +3167,40 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		switch (item_index) {
 		case 0:
 			if (!try_focused_app_dbus_action(server, "about") &&
-					!focus_view_for_app_id(server, ".About")) {
-				launch_command("GSK_RENDERER=cairo build/orange-about || true");
+					!try_focused_app_dbus_action(server, "help.about") &&
+					!try_focused_app_dbus_action(server, "show-about") &&
+					!try_focused_app_dbus_action(server, "help-about")) {
+				char active_label[ORANGE_APP_MENU_LABEL_MAX];
+				server_active_app_label(server, active_label,
+					sizeof(active_label));
+				char launch_cmd[512];
+				if (strcasestr(active_label, "files") != NULL ||
+						strcasestr(active_label, "nautilus") != NULL) {
+					snprintf(launch_cmd, sizeof(launch_cmd),
+						"dbus-send --session --dest=org.gnome.Nautilus "
+						"--type=method_call --print-reply "
+						"/org/gtk/Actions org.gtk.Actions.Activate "
+						"string:about array:string: 2>/dev/null || "
+						"dbus-send --session --dest=org.gnome.Nautilus "
+						"--type=method_call --print-reply "
+						"/org/gtk/actions org.gtk.Actions.Activate "
+						"string:about array:string: 2>/dev/null || true");
+				} else if (strcasestr(active_label, "firefox") != NULL) {
+					snprintf(launch_cmd, sizeof(launch_cmd),
+						"dbus-send --session --dest=org.mozilla.firefox "
+						"--type=method_call --print-reply "
+						"/org/gtk/Actions org.gtk.Actions.Activate "
+						"string:about array:string: 2>/dev/null || "
+						"dbus-send --session --dest=org.mozilla.firefox "
+						"--type=method_call --print-reply "
+						"/org/gtk/actions org.gtk.Actions.Activate "
+						"string:about array:string: 2>/dev/null || true");
+				} else {
+					launch_cmd[0] = '\0';
+				}
+				if (launch_cmd[0] != '\0') {
+					launch_command(launch_cmd);
+				}
 			}
 			break;
 		case 1:
@@ -2542,7 +3238,8 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		handle_app_tools_menu_action(server, item_index);
 	} else if (kind == ORANGE_CONTEXT_MENU_APP_HELP) {
 		if (item_index == 0) {
-			launcher_open_overlay(server, true);
+			launcher_open_overlay(server, true,
+				ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY);
 		} else if (item_index == 1) {
 			send_focused_shortcut(server, KEY_F1, false, false, false);
 		}
@@ -2554,6 +3251,36 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			break;
 		case 1:
 			launch_command("xdg-open \"$HOME\" || true");
+			break;
+		case 2:
+			if (orange_dock_config_remove_visible(&server->config, target)) {
+				orange_config_save(&server->config,
+					server->options->config_path);
+				server_mark_shell_dirty(server);
+			}
+			break;
+		case 4:
+			launch_command(orange_settings_command);
+			break;
+		default:
+			break;
+		}
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR) {
+		switch (item_index) {
+		case 0:
+			server->config.dock_magnification =
+				!server->config.dock_magnification;
+			orange_config_save(&server->config,
+				server->options->config_path);
+			break;
+		case 1:
+			cycle_dock_size(server);
+			break;
+		case 2:
+			cycle_dock_position(server);
+			break;
+		case 3:
+			cycle_minimize_effect(server);
 			break;
 		case 4:
 			launch_command(orange_settings_command);
@@ -2758,30 +3485,27 @@ static void process_desktop_drag(struct orange_server *server) {
 	}
 
 	struct orange_rect item = layout.desktop_items[index];
+	struct orange_rect work = orange_shell_layout_work_area(&layout);
 	int next_x = local_x - server->desktop_drag_offset_x;
 	int next_y = local_y - server->desktop_drag_offset_y;
-	if (next_x < 0) {
-		next_x = 0;
+	int min_x = work.x;
+	int min_y = work.y;
+	int max_x = work.x + work.width - item.width;
+	int max_y = work.y + work.height - item.height;
+	if (max_x < min_x) {
+		max_x = min_x;
 	}
-	if (next_y < layout.menu_bar.height) {
-		next_y = layout.menu_bar.height;
+	if (max_y < min_y) {
+		max_y = min_y;
 	}
-	if (next_x + item.width > output->width) {
-		next_x = output->width - item.width;
+	if (next_x < min_x) {
+		next_x = min_x;
 	}
-	int max_y = output->height - item.height;
-	if (layout.dock.width > 0 && layout.dock.y > layout.menu_bar.height) {
-		int dock_margin = layout.menu_bar.height / 6;
-		if (dock_margin < 6) {
-			dock_margin = 6;
-		}
-		int dock_max_y = layout.dock.y - dock_margin - item.height;
-		if (dock_max_y < max_y) {
-			max_y = dock_max_y;
-		}
+	if (next_x > max_x) {
+		next_x = max_x;
 	}
-	if (max_y < layout.menu_bar.height) {
-		max_y = layout.menu_bar.height;
+	if (next_y < min_y) {
+		next_y = min_y;
 	}
 	if (next_y > max_y) {
 		next_y = max_y;
@@ -2821,8 +3545,126 @@ static void start_dock_drag(struct orange_server *server,
 	server->dock_drag_moved = false;
 	server->dock_drag_index = index;
 	server->dock_drag_start_x = (int)server->cursor->x;
+	server->dock_drag_start_y = (int)server->cursor->y;
 	server->dock_drag_insert_before = -1;
+	server->dock_drag_remove = false;
 	(void)layout;
+}
+
+static int dock_visible_trash_index(
+		struct orange_server *server,
+		const struct orange_shell_layout *layout) {
+	if (server == NULL || layout == NULL) {
+		return -1;
+	}
+	for (int i = 0; i < layout->dock_item_count; i++) {
+		int launcher_idx = dock_launcher_for_visible_index(server, i);
+		if (launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
+				strcmp(server->config.dock_apps[launcher_idx], "__trash__") == 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static bool dock_visible_index_is_removable(
+		struct orange_server *server,
+		int visible_index) {
+	int launcher_idx = dock_launcher_for_visible_index(server, visible_index);
+	return launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
+		server->config.dock_apps[launcher_idx][0] != '\0' &&
+		!orange_dock_app_is_permanent(server->config.dock_apps[launcher_idx]);
+}
+
+static bool shell_layout_dock_is_vertical(
+		const struct orange_shell_layout *layout) {
+	return layout != NULL &&
+		(layout->dock_position == ORANGE_DOCK_POSITION_LEFT ||
+		 layout->dock_position == ORANGE_DOCK_POSITION_RIGHT);
+}
+
+static int dock_insert_position_for_point(
+		struct orange_server *server,
+		const struct orange_shell_layout *layout,
+		int local_x,
+		int local_y,
+		int dragged_visible_index) {
+	if (layout == NULL || layout->dock_item_count <= 0) {
+		return 0;
+	}
+	int count = layout->dock_item_count;
+	int trash = dock_visible_trash_index(server, layout);
+	int app_limit = trash >= 0 ? trash : count;
+	int insert = app_limit;
+	for (int i = 0; i < app_limit; i++) {
+		if (i == dragged_visible_index) {
+			continue;
+		}
+		struct orange_rect r = layout->dock_items[i];
+		int pointer_axis = shell_layout_dock_is_vertical(layout) ?
+			local_y : local_x;
+		int item_mid = shell_layout_dock_is_vertical(layout) ?
+			r.y + r.height / 2 : r.x + r.width / 2;
+		if (pointer_axis < item_mid) {
+			insert = i;
+			break;
+		}
+	}
+	if (dragged_visible_index >= 0 &&
+			dragged_visible_index < app_limit &&
+			insert > dragged_visible_index) {
+		insert--;
+	}
+	int remaining_limit = app_limit;
+	if (dragged_visible_index >= 0 &&
+			dragged_visible_index < app_limit) {
+		remaining_limit--;
+	}
+	if (insert < 0) {
+		insert = 0;
+	}
+	if (insert > remaining_limit) {
+		insert = remaining_limit;
+	}
+	return insert;
+}
+
+static bool dock_remove_zone_contains(
+		const struct orange_shell_layout *layout,
+		int dragged_visible_index,
+		int local_x,
+		int local_y) {
+	if (layout == NULL || dragged_visible_index < 0 ||
+			dragged_visible_index >= layout->dock_item_count) {
+		return false;
+	}
+	struct orange_rect item = layout->dock_items[dragged_visible_index];
+	int margin_y = item.height / 3;
+	int margin_x = item.width / 2;
+	return local_y < layout->dock.y - margin_y ||
+		local_y > layout->dock.y + layout->dock.height + margin_y ||
+		local_x < layout->dock.x - margin_x ||
+		local_x > layout->dock.x + layout->dock.width + margin_x;
+}
+
+static bool dock_drop_zone_contains(
+		const struct orange_shell_layout *layout,
+		int local_x,
+		int local_y) {
+	if (layout == NULL || layout->dock_item_count <= 0 ||
+			layout->dock.width <= 0 || layout->dock.height <= 0) {
+		return false;
+	}
+	struct orange_rect first = layout->dock_items[0];
+	int pad_x = shell_layout_dock_is_vertical(layout) ?
+		first.width / 3 : first.width / 2;
+	int pad_top = first.height / 2;
+	int pad_bottom = shell_layout_dock_is_vertical(layout) ?
+		first.height / 2 : first.height / 3;
+	return local_x >= layout->dock.x - pad_x &&
+		local_x <= layout->dock.x + layout->dock.width + pad_x &&
+		local_y >= layout->dock.y - pad_top &&
+		local_y <= layout->dock.y + layout->dock.height + pad_bottom;
 }
 
 static void process_dock_drag(struct orange_server *server) {
@@ -2831,7 +3673,9 @@ static void process_dock_drag(struct orange_server *server) {
 	}
 
 	int dx = (int)server->cursor->x - server->dock_drag_start_x;
-	if (abs(dx) > 4) {
+	int dy = (int)server->cursor->y - server->dock_drag_start_y;
+	bool was_moved = server->dock_drag_moved;
+	if (abs(dx) > 3 || abs(dy) > 3) {
 		server->dock_drag_moved = true;
 	}
 	if (!server->dock_drag_moved) {
@@ -2848,27 +3692,20 @@ static void process_dock_drag(struct orange_server *server) {
 	struct orange_shell_layout layout;
 	compute_shell_layout_for_output(server, output, &layout);
 	int dragged = server->dock_drag_index;
-	int insert = layout.dock_item_count;
-	for (int i = 0; i < layout.dock_item_count; i++) {
-		if (i == dragged) {
-			continue;
-		}
-		struct orange_rect r = layout.dock_items[i];
-		if (local_x < r.x + r.width / 2) {
-			insert = i;
-			break;
-		}
-	}
-	if (insert > dragged && insert < layout.dock_item_count) {
-		insert--;
-	}
-	if (insert >= layout.dock_item_count) {
-		insert = layout.dock_item_count - 1;
-	}
-	if (insert != server->dock_drag_insert_before) {
-		server->dock_drag_insert_before = insert;
+	bool remove = dock_visible_index_is_removable(server, dragged) &&
+		dock_remove_zone_contains(&layout, dragged, local_x, local_y);
+	int insert = remove ? -1 :
+		dock_insert_position_for_point(server, &layout, local_x, local_y,
+			dragged);
+	bool shell_changed = !was_moved ||
+		remove != server->dock_drag_remove ||
+		insert != server->dock_drag_insert_before;
+	server->dock_drag_remove = remove;
+	server->dock_drag_insert_before = insert;
+	if (shell_changed) {
 		server_mark_shell_dirty(server);
 	}
+	server_mark_overlay_dirty(server);
 }
 
 static void finish_dock_drag(struct orange_server *server) {
@@ -2878,41 +3715,286 @@ static void finish_dock_drag(struct orange_server *server) {
 	int index = server->dock_drag_index;
 	bool moved = server->dock_drag_moved;
 	int insert = server->dock_drag_insert_before;
+	bool remove = server->dock_drag_remove;
 	server->dock_drag_active = false;
 	server->dock_drag_moved = false;
 	server->dock_drag_index = -1;
 	server->dock_drag_insert_before = -1;
+	server->dock_drag_remove = false;
+	server_mark_overlay_dirty(server);
+	if (moved) {
+		server_mark_shell_dirty(server);
+	}
 
 	int dock_count = orange_dock_count(&server->config);
-	if (moved && index >= 0 && index < dock_count &&
-			insert >= 0 && insert < dock_count) {
-		int order[ORANGE_DOCK_MAX];
-		for (int i = 0; i < dock_count; i++) {
-			order[i] = dock_launcher_for_visible_index(server, i);
-			if (order[i] < 0) {
-				order[i] = i;
-			}
-		}
-		int launcher = order[index];
-		if (insert > index) {
-			for (int i = index; i < insert; i++) {
-				order[i] = order[i + 1];
-			}
-			order[insert] = launcher;
-		} else if (insert < index) {
-			for (int i = index; i > insert; i--) {
-				order[i] = order[i - 1];
-			}
-			order[insert] = launcher;
-		}
-		for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
-			server->config.dock_order[i] = i < dock_count ? order[i] : i;
-		}
+	if (moved && remove && index >= 0 && index < dock_count &&
+			orange_dock_config_remove_visible(&server->config, index)) {
+		orange_config_save(&server->config, server->options->config_path);
+		server_mark_shell_dirty(server);
+	} else if (moved && index >= 0 && index < dock_count &&
+			insert >= 0 &&
+			orange_dock_config_reorder_visible(&server->config, index, insert)) {
 		orange_config_save(&server->config, server->options->config_path);
 		server_mark_shell_dirty(server);
 	} else if (!moved && index >= 0 && index < dock_count) {
 		int launcher_idx = dock_launcher_for_visible_index(server, index);
 		launch_dock_launcher(server, launcher_idx);
+		server_mark_shell_dirty(server);
+	}
+}
+
+static void clamp_launcher_position(
+		const struct orange_shell_layout *layout,
+		int *x,
+		int *y) {
+	if (layout == NULL || x == NULL || y == NULL) {
+		return;
+	}
+	int margin = 16;
+	int max_x = layout->width - margin - layout->launcher_search_field.width;
+	int max_y = layout->height - margin - layout->launcher_search_field.height;
+	int min_y = layout->menu_bar.height + margin;
+	if (max_x < margin) {
+		max_x = margin;
+	}
+	if (max_y < min_y) {
+		max_y = min_y;
+	}
+	if (*x < margin) {
+		*x = margin;
+	}
+	if (*x > max_x) {
+		*x = max_x;
+	}
+	if (*y < min_y) {
+		*y = min_y;
+	}
+	if (*y > max_y) {
+		*y = max_y;
+	}
+}
+
+static void start_launcher_drag(
+		struct orange_server *server,
+		const struct orange_shell_layout *layout,
+		int local_x,
+		int local_y) {
+	if (server == NULL || layout == NULL ||
+			layout->launcher_search_field.width <= 0 ||
+			layout->launcher_search_field.height <= 0) {
+		return;
+	}
+	server->launcher_drag_active = true;
+	server->launcher_drag_offset_x = local_x - layout->launcher_search_field.x;
+	server->launcher_drag_offset_y = local_y - layout->launcher_search_field.y;
+	server->launcher_position_set = true;
+	server->launcher_x = layout->launcher_search_field.x;
+	server->launcher_y = layout->launcher_search_field.y;
+}
+
+static void process_launcher_drag(struct orange_server *server) {
+	if (server == NULL || !server->launcher_drag_active) {
+		return;
+	}
+	int local_x = 0;
+	int local_y = 0;
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+	if (output == NULL) {
+		return;
+	}
+	struct orange_shell_layout layout;
+	compute_shell_layout_for_output(server, output, &layout);
+	int next_x = local_x - server->launcher_drag_offset_x;
+	int next_y = local_y - server->launcher_drag_offset_y;
+	clamp_launcher_position(&layout, &next_x, &next_y);
+	if (!server->launcher_position_set ||
+			next_x != server->launcher_x ||
+			next_y != server->launcher_y) {
+		server->launcher_position_set = true;
+		server->launcher_x = next_x;
+		server->launcher_y = next_y;
+		server_mark_overlay_dirty(server);
+	}
+}
+
+static int launcher_scroll_row_for_thumb_y(
+		const struct orange_shell_layout *layout,
+		int thumb_y) {
+	if (layout == NULL || layout->launcher_max_scroll <= 0 ||
+			layout->launcher_scroll_track.height <= 0 ||
+			layout->launcher_scroll_thumb.height <= 0) {
+		return 0;
+	}
+	int travel = layout->launcher_scroll_track.height -
+		layout->launcher_scroll_thumb.height;
+	if (travel <= 0) {
+		return 0;
+	}
+	int offset = thumb_y - layout->launcher_scroll_track.y;
+	if (offset < 0) {
+		offset = 0;
+	}
+	if (offset > travel) {
+		offset = travel;
+	}
+	int row = (int)lrint((double)offset *
+		(double)layout->launcher_max_scroll / (double)travel);
+	if (row < 0) {
+		row = 0;
+	}
+	if (row > layout->launcher_max_scroll) {
+		row = layout->launcher_max_scroll;
+	}
+	return row;
+}
+
+static void set_launcher_scroll_row(
+		struct orange_server *server,
+		const struct orange_shell_layout *layout,
+		int row) {
+	if (server == NULL || layout == NULL) {
+		return;
+	}
+	if (row < 0) {
+		row = 0;
+	}
+	if (row > layout->launcher_max_scroll) {
+		row = layout->launcher_max_scroll;
+	}
+	if (row != server->launcher_scroll_row) {
+		server->launcher_scroll_row = row;
+		server->launcher_hot_app = -1;
+		server_mark_overlay_dirty(server);
+	}
+}
+
+static void start_launcher_scroll_drag(
+		struct orange_server *server,
+		const struct orange_shell_layout *layout,
+		int local_y) {
+	if (server == NULL || layout == NULL ||
+			layout->launcher_max_scroll <= 0 ||
+			layout->launcher_scroll_track.width <= 0 ||
+			layout->launcher_scroll_thumb.height <= 0) {
+		return;
+	}
+	int offset_y = local_y - layout->launcher_scroll_thumb.y;
+	if (offset_y < 0 || offset_y > layout->launcher_scroll_thumb.height) {
+		offset_y = layout->launcher_scroll_thumb.height / 2;
+		int row = launcher_scroll_row_for_thumb_y(layout, local_y - offset_y);
+		set_launcher_scroll_row(server, layout, row);
+	}
+	server->launcher_scroll_drag_active = true;
+	server->launcher_scroll_drag_offset_y = offset_y;
+}
+
+static void process_launcher_scroll_drag(struct orange_server *server) {
+	if (server == NULL || !server->launcher_scroll_drag_active) {
+		return;
+	}
+	int local_x = 0;
+	int local_y = 0;
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+	if (output == NULL) {
+		return;
+	}
+	struct orange_shell_layout layout;
+	compute_shell_layout_for_output(server, output, &layout);
+	int thumb_y = local_y - server->launcher_scroll_drag_offset_y;
+	int row = launcher_scroll_row_for_thumb_y(&layout, thumb_y);
+	set_launcher_scroll_row(server, &layout, row);
+}
+
+static void start_launcher_app_drag(
+		struct orange_server *server,
+		int flat_index) {
+	if (server == NULL || flat_index < 0 ||
+			flat_index >= server->launcher_app_count) {
+		return;
+	}
+	int entry_index = server->launcher_app_indices[flat_index];
+	if (entry_index < 0 || entry_index >= (int)server->desktop_entry_count) {
+		return;
+	}
+	server->launcher_app_drag_active = true;
+	server->launcher_app_drag_moved = false;
+	server->launcher_app_drag_flat_index = flat_index;
+	server->launcher_app_drag_entry_index = entry_index;
+	server->launcher_app_drag_start_x = (int)server->cursor->x;
+	server->launcher_app_drag_start_y = (int)server->cursor->y;
+	server->launcher_app_drag_insert_before = -1;
+	server->launcher_search_focus = false;
+}
+
+static void process_launcher_app_drag(struct orange_server *server) {
+	if (server == NULL || !server->launcher_app_drag_active) {
+		return;
+	}
+	int dx = (int)server->cursor->x - server->launcher_app_drag_start_x;
+	int dy = (int)server->cursor->y - server->launcher_app_drag_start_y;
+	if (abs(dx) > 3 || abs(dy) > 3) {
+		server->launcher_app_drag_moved = true;
+	}
+	if (!server->launcher_app_drag_moved) {
+		return;
+	}
+
+	int local_x = 0;
+	int local_y = 0;
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+	int insert = -1;
+	if (output != NULL &&
+			server->launcher_app_drag_entry_index >= 0 &&
+			server->launcher_app_drag_entry_index < (int)server->desktop_entry_count) {
+		struct orange_shell_layout layout;
+		compute_shell_layout_for_output(server, output, &layout);
+		const char *app_id =
+			server->desktop_entries[server->launcher_app_drag_entry_index].id;
+		if (!orange_dock_config_contains_app(&server->config, app_id) &&
+				dock_drop_zone_contains(&layout, local_x, local_y)) {
+			insert = dock_insert_position_for_point(server, &layout,
+				local_x, local_y, -1);
+		}
+	}
+	bool shell_changed =
+		insert != server->launcher_app_drag_insert_before;
+	server->launcher_app_drag_insert_before = insert;
+	if (shell_changed) {
+		server_mark_shell_dirty(server);
+	}
+	server_mark_overlay_dirty(server);
+}
+
+static void finish_launcher_app_drag(struct orange_server *server) {
+	if (server == NULL || !server->launcher_app_drag_active) {
+		return;
+	}
+	bool moved = server->launcher_app_drag_moved;
+	int flat_index = server->launcher_app_drag_flat_index;
+	int entry_index = server->launcher_app_drag_entry_index;
+	int insert = server->launcher_app_drag_insert_before;
+	server->launcher_app_drag_active = false;
+	server->launcher_app_drag_moved = false;
+	server->launcher_app_drag_flat_index = -1;
+	server->launcher_app_drag_entry_index = -1;
+	server->launcher_app_drag_insert_before = -1;
+	server_mark_overlay_dirty(server);
+	if (moved && insert >= 0) {
+		server_mark_shell_dirty(server);
+	}
+
+	if (!moved) {
+		launcher_launch_index(server, flat_index);
+		return;
+	}
+	if (entry_index < 0 || entry_index >= (int)server->desktop_entry_count ||
+			insert < 0) {
+		return;
+	}
+	const char *app_id = server->desktop_entries[entry_index].id;
+	if (orange_dock_config_insert_app(&server->config, app_id, insert)) {
+		orange_config_save(&server->config, server->options->config_path);
+		launcher_close_overlay(server);
 		server_mark_shell_dirty(server);
 	}
 }
@@ -3006,7 +4088,7 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		server->notification_center_open = false;
 		clear_context_menu(server);
 		server->system_menu_open = !server->system_menu_open;
-		server_mark_shell_dirty(server);
+		server_mark_overlay_dirty(server);
 		break;
 	case ORANGE_HIT_SYSTEM_MENU_ITEM:
 		server->notification_center_open = false;
@@ -3021,7 +4103,7 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		} else {
 			open_app_menu(server, hit.index, local_x, local_y);
 		}
-		server_mark_shell_dirty(server);
+		server_mark_overlay_dirty(server);
 		break;
 	case ORANGE_HIT_STATUS_ITEM:
 		clear_context_menu(server);
@@ -3048,7 +4130,8 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 					hit.index, local_x, local_y);
 				break;
 			case ORANGE_STATUS_ITEM_SEARCH:
-				launcher_open_overlay(server, true);
+				launcher_open_overlay(server, true,
+					ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY);
 				break;
 			case ORANGE_STATUS_ITEM_CONTROL_CENTER:
 				open_status_menu(server,
@@ -3059,35 +4142,40 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 				break;
 			}
 		}
-		server_mark_shell_dirty(server);
+		server_mark_overlay_dirty(server);
 		break;
 	case ORANGE_HIT_STATUS_AREA:
-		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_NOTIFICATION_CENTER:
 		clear_context_menu(server);
 		server->system_menu_open = false;
-		server_mark_shell_dirty(server);
+		server_mark_overlay_dirty(server);
 		break;
 	case ORANGE_HIT_NOTIFICATION_CENTER_EDIT:
 		clear_context_menu(server);
 		server->system_menu_open = false;
 		server->notification_center_open = false;
 		launch_command(orange_settings_command);
-		server_mark_shell_dirty(server);
+		server_mark_overlay_dirty(server);
 		break;
 	case ORANGE_HIT_DOCK_ITEM:
 		server->notification_center_open = false;
 		clear_context_menu(server);
 		server->system_menu_open = false;
 		start_dock_drag(server, &layout, hit.index);
-		server_mark_shell_dirty(server);
+		server_mark_overlay_dirty(server);
+		break;
+	case ORANGE_HIT_DOCK_SEPARATOR:
+		server->notification_center_open = false;
+		clear_context_menu(server);
+		server->system_menu_open = false;
+		server_mark_overlay_dirty(server);
 		break;
 	case ORANGE_HIT_WIDGET:
 		server->notification_center_open = false;
 		clear_context_menu(server);
 		server->system_menu_open = false;
-		server_mark_shell_dirty(server);
+		server_mark_overlay_dirty(server);
 		break;
 	case ORANGE_HIT_DESKTOP_ITEM:
 		server->notification_center_open = false;
@@ -3097,30 +4185,45 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		server_mark_shell_dirty(server);
 		break;
 	case ORANGE_HIT_LAUNCHER_SEARCH:
-		/* Clicking the search field just keeps focus there; the modal overlay
-		 * stays open. */
 		server->launcher_search_focus = true;
-		server_mark_shell_dirty(server);
+		start_launcher_drag(server, &layout, local_x, local_y);
+		server_mark_overlay_dirty(server);
 		break;
 	case ORANGE_HIT_LAUNCHER_MODE:
 		if (hit.index >= 0 && hit.index < ORANGE_LAUNCHER_MODE_COUNT) {
+			if (server->launcher_display_mode ==
+					ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY) {
+				if (hit.index != ORANGE_LAUNCHER_MODE_APPS) {
+					server_mark_overlay_dirty(server);
+					break;
+				}
+				server->launcher_display_mode = ORANGE_LAUNCHER_DISPLAY_FULL;
+				server->launcher_position_set = true;
+				server->launcher_x = layout.launcher_search_field.x;
+				server->launcher_y = layout.launcher_search_field.y;
+			}
 			server->launcher_current_mode = hit.index;
-			server->launcher_scroll = 0;
+			server->launcher_scroll_row = 0;
 			server->launcher_hot_app = -1;
 			server->launcher_search_focus = false;
-			server_mark_shell_dirty(server);
+			launcher_refresh_filter(server);
+			server_mark_overlay_dirty(server);
 		}
 		break;
 	case ORANGE_HIT_LAUNCHER_CATEGORY:
 		if (hit.index >= 0 && hit.index < server->launcher_category_count) {
 			server->launcher_category_active = hit.index;
-			server->launcher_scroll = 0;
+			server->launcher_scroll_row = 0;
 			server->launcher_hot_app = -1;
-			server_mark_shell_dirty(server);
+			server_mark_overlay_dirty(server);
 		}
 		break;
+	case ORANGE_HIT_LAUNCHER_SCROLLBAR:
+		start_launcher_scroll_drag(server, &layout, local_y);
+		server_mark_overlay_dirty(server);
+		break;
 	case ORANGE_HIT_LAUNCHER_APP:
-		launcher_launch_index(server, hit.index);
+		start_launcher_app_drag(server, hit.index);
 		break;
 	case ORANGE_HIT_LAUNCHER_BACKGROUND:
 		/* Clicking the dimmed backdrop closes the overlay, like macOS. */
@@ -3131,12 +4234,11 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		clear_context_menu(server);
 		if (server->notification_center_open) {
 			server->notification_center_open = false;
-			server_mark_shell_dirty(server);
 		}
 		if (server->system_menu_open) {
 			server->system_menu_open = false;
-			server_mark_shell_dirty(server);
 		}
+		server_mark_overlay_dirty(server);
 		break;
 	}
 }
@@ -3165,7 +4267,10 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 	}
 	server->context_menu_cursor_x = local_x;
 	server->context_menu_cursor_y = local_y;
-	if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
+	if (hit.kind == ORANGE_HIT_DOCK_SEPARATOR) {
+		server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK_SEPARATOR;
+		server->context_menu_index = -1;
+	} else if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK;
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_STATUS_ITEM) {
@@ -3183,7 +4288,8 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 				hit.index, local_x, local_y);
 			break;
 		case ORANGE_STATUS_ITEM_SEARCH:
-			launcher_open_overlay(server, true);
+			launcher_open_overlay(server, true,
+				ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY);
 			server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 			server->context_menu_index = -1;
 			break;
@@ -3217,7 +4323,7 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 		server->context_menu_index = -1;
 	}
-	server_mark_shell_dirty(server);
+	server_mark_overlay_dirty(server);
 }
 
 static void handle_cursor_motion(struct wl_listener *listener, void *data) {
@@ -3238,6 +4344,13 @@ static void handle_cursor_motion_absolute(struct wl_listener *listener, void *da
 		event->x,
 		event->y);
 	process_cursor_motion(server, event->time_msec);
+}
+
+static void clear_overlay_buffers(struct orange_server *server) {
+	struct orange_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		output_clear_overlay_buffer(output);
+	}
 }
 
 static void handle_cursor_button(struct wl_listener *listener, void *data) {
@@ -3262,6 +4375,63 @@ static void handle_cursor_button(struct wl_listener *listener, void *data) {
 			server->desktop_drag_active) {
 		finish_desktop_drag(server);
 		return;
+	}
+	if (event->state == WLR_BUTTON_RELEASED &&
+			event->button == BTN_LEFT &&
+			server->launcher_app_drag_active) {
+		finish_launcher_app_drag(server);
+		return;
+	}
+	if (event->state == WLR_BUTTON_RELEASED &&
+			event->button == BTN_LEFT &&
+			server->launcher_drag_active) {
+		server->launcher_drag_active = false;
+		return;
+	}
+	if (event->state == WLR_BUTTON_RELEASED &&
+			event->button == BTN_LEFT &&
+			server->launcher_scroll_drag_active) {
+		server->launcher_scroll_drag_active = false;
+		return;
+	}
+
+	if (event->state == WLR_BUTTON_PRESSED && event->button == BTN_LEFT) {
+		bool overlay_active = server->context_menu_kind != ORANGE_CONTEXT_MENU_NONE ||
+			server->launcher_open || server->system_menu_open ||
+			server->notification_center_open;
+		if (overlay_active) {
+			int local_x = 0, local_y = 0;
+			struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+			if (output != NULL) {
+				struct orange_shell_layout layout;
+				compute_shell_layout_for_output(server, output, &layout);
+				struct orange_shell_hit hit = orange_shell_hit_test(&layout, local_x, local_y);
+				switch (hit.kind) {
+				case ORANGE_HIT_CONTEXT_MENU_ITEM:
+				case ORANGE_HIT_SYSTEM_MENU_ITEM:
+				case ORANGE_HIT_LAUNCHER_SEARCH:
+				case ORANGE_HIT_LAUNCHER_MODE:
+				case ORANGE_HIT_LAUNCHER_APP:
+				case ORANGE_HIT_LAUNCHER_CATEGORY:
+				case ORANGE_HIT_LAUNCHER_SCROLLBAR:
+				case ORANGE_HIT_LAUNCHER_BACKGROUND:
+				case ORANGE_HIT_NOTIFICATION_CENTER:
+				case ORANGE_HIT_NOTIFICATION_CENTER_EDIT:
+					handle_shell_click(server, (int)server->cursor->x, (int)server->cursor->y);
+					return;
+				default:
+					clear_context_menu(server);
+					server->system_menu_open = false;
+					server->notification_center_open = false;
+					if (server->launcher_open) {
+						launcher_close_overlay(server);
+					}
+					clear_overlay_buffers(server);
+					server_mark_overlay_dirty(server);
+					break;
+				}
+			}
+		}
 	}
 
 	double sx = 0.0;
@@ -3306,6 +4476,31 @@ static void handle_cursor_axis(struct wl_listener *listener, void *data) {
 	struct orange_server *server =
 		wl_container_of(listener, server, cursor_axis);
 	struct wlr_pointer_axis_event *event = data;
+	if (server->launcher_open &&
+			event->orientation == WLR_AXIS_ORIENTATION_VERTICAL) {
+		int local_x = 0;
+		int local_y = 0;
+		struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+		if (output != NULL) {
+			struct orange_shell_layout layout;
+			compute_shell_layout_for_output(server, output, &layout);
+			if (event->delta_discrete == 0 && event->delta == 0.0) {
+				return;
+			}
+			int step = event->delta_discrete != 0 ?
+				(event->delta_discrete > 0 ? 1 : -1) :
+				(event->delta > 0.0 ? 1 : -1);
+			int next = server->launcher_scroll_row + step;
+			if (next < 0) {
+				next = 0;
+			}
+			if (next > layout.launcher_max_scroll) {
+				next = layout.launcher_max_scroll;
+			}
+			set_launcher_scroll_row(server, &layout, next);
+		}
+		return;
+	}
 	wlr_seat_pointer_notify_axis(server->seat,
 		event->time_msec,
 		event->orientation,
@@ -3330,7 +4525,8 @@ static bool handle_keybinding(
 		launch_terminal();
 		return true;
 	case XKB_KEY_space:
-		launcher_toggle_overlay(server, true);
+		launcher_toggle_overlay(server, true,
+			ORANGE_LAUNCHER_DISPLAY_FULL);
 		return true;
 	case XKB_KEY_q:
 	case XKB_KEY_Q:
@@ -3360,12 +4556,12 @@ static bool handle_keybinding(
 		}
 		if (server->system_menu_open) {
 			server->system_menu_open = false;
-			server_mark_shell_dirty(server);
+			server_mark_overlay_dirty(server);
 			return true;
 		}
 		if (server->notification_center_open) {
 			server->notification_center_open = false;
-			server_mark_shell_dirty(server);
+			server_mark_overlay_dirty(server);
 			return true;
 		}
 		return false;
@@ -3426,7 +4622,7 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 					server->launcher_query[qlen - 1] = '\0';
 					server->launcher_hot_app = -1;
 					launcher_refresh_filter(server);
-					server_mark_shell_dirty(server);
+					server_mark_overlay_dirty(server);
 				}
 				consumed = true;
 				break;
@@ -3435,10 +4631,23 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 			if (logo && sym >= XKB_KEY_1 && sym <= XKB_KEY_4) {
 				int new_mode = sym - XKB_KEY_1;
 				if (new_mode >= 0 && new_mode < ORANGE_LAUNCHER_MODE_COUNT) {
+					if (server->launcher_display_mode ==
+							ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY &&
+							new_mode != ORANGE_LAUNCHER_MODE_APPS) {
+						consumed = true;
+						mode_switch = true;
+						break;
+					}
+					if (server->launcher_display_mode ==
+							ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY) {
+						server->launcher_display_mode =
+							ORANGE_LAUNCHER_DISPLAY_FULL;
+					}
 					server->launcher_current_mode = new_mode;
-					server->launcher_scroll = 0;
+					server->launcher_scroll_row = 0;
 					server->launcher_hot_app = -1;
-					server_mark_shell_dirty(server);
+					launcher_refresh_filter(server);
+					server_mark_overlay_dirty(server);
 				}
 				consumed = true;
 				mode_switch = true;
@@ -3447,7 +4656,7 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 			if (sym == XKB_KEY_Left && !logo) {
 				if (server->launcher_hot_app > 0) {
 					server->launcher_hot_app--;
-					server_mark_shell_dirty(server);
+					server_mark_overlay_dirty(server);
 				}
 				consumed = true;
 				break;
@@ -3456,30 +4665,54 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 				if (server->launcher_hot_app + 1 <
 						server->launcher_app_count) {
 					server->launcher_hot_app++;
-					server_mark_shell_dirty(server);
+					server_mark_overlay_dirty(server);
 				}
 				consumed = true;
 				break;
 			}
 			if (sym == XKB_KEY_Up && !logo) {
-				if (server->launcher_hot_app - ORANGE_LAUNCHER_COLS >= 0) {
+				if (server->launcher_hot_app < 0 && server->launcher_app_count > 0) {
+					server->launcher_hot_app = 0;
+				} else if (server->launcher_hot_app >= ORANGE_LAUNCHER_COLS) {
 					server->launcher_hot_app -= ORANGE_LAUNCHER_COLS;
-					server_mark_shell_dirty(server);
-				} else if (server->launcher_scroll > 0) {
-					server->launcher_scroll -= 20;
-					server_mark_shell_dirty(server);
+					int hot_row = server->launcher_hot_app / ORANGE_LAUNCHER_COLS;
+					if (hot_row < server->launcher_scroll_row) {
+						server->launcher_scroll_row = hot_row;
+					}
+					server_mark_overlay_dirty(server);
+				} else if (server->launcher_scroll_row > 0) {
+					server->launcher_scroll_row--;
+					int offset = server->launcher_hot_app >= 0 ?
+						server->launcher_hot_app % ORANGE_LAUNCHER_COLS : 0;
+					server->launcher_hot_app = server->launcher_scroll_row *
+						ORANGE_LAUNCHER_COLS + offset;
+					server_mark_overlay_dirty(server);
 				}
 				consumed = true;
 				break;
 			}
 			if (sym == XKB_KEY_Down && !logo) {
-				if (server->launcher_hot_app + ORANGE_LAUNCHER_COLS <
+				if (server->launcher_hot_app < 0 && server->launcher_app_count > 0) {
+					server->launcher_hot_app = 0;
+				} else if (server->launcher_hot_app + ORANGE_LAUNCHER_COLS <
 						server->launcher_app_count) {
 					server->launcher_hot_app += ORANGE_LAUNCHER_COLS;
-					server_mark_shell_dirty(server);
+					int hot_row = server->launcher_hot_app / ORANGE_LAUNCHER_COLS;
+					int last_visible_row = server->launcher_scroll_row +
+						ORANGE_LAUNCHER_ROWS - 1;
+					if (hot_row > last_visible_row) {
+						server->launcher_scroll_row++;
+					}
+					server_mark_overlay_dirty(server);
 				} else if (server->launcher_hot_app >= 0) {
-					server->launcher_scroll += 20;
-					server_mark_shell_dirty(server);
+					int max_row = (server->launcher_app_count +
+						ORANGE_LAUNCHER_COLS - 1) / ORANGE_LAUNCHER_COLS - 1;
+					int last_visible_row = server->launcher_scroll_row +
+						ORANGE_LAUNCHER_ROWS - 1;
+					if (last_visible_row < max_row) {
+						server->launcher_scroll_row++;
+					}
+					server_mark_overlay_dirty(server);
 				}
 				consumed = true;
 				break;
@@ -3513,7 +4746,7 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 						memcpy(server->launcher_query + qlen, buf, n + 1);
 						server->launcher_hot_app = -1;
 						launcher_refresh_filter(server);
-						server_mark_shell_dirty(server);
+						server_mark_overlay_dirty(server);
 					}
 				}
 				consumed = true;
@@ -3640,6 +4873,27 @@ static void handle_request_set_primary_selection(
 	wlr_seat_set_primary_selection(server->seat, event->source, event->serial);
 }
 
+static void set_view_minimized(struct orange_view *view, bool minimized) {
+	if (view == NULL || !view->mapped) {
+		return;
+	}
+	view->minimized = minimized;
+	wlr_scene_node_set_enabled(&view->scene_tree->node, !minimized);
+	if (minimized) {
+		wlr_xdg_toplevel_set_activated(view->xdg_surface->toplevel, false);
+		if (view->server->focused_view == view) {
+			view->server->focused_view = NULL;
+			wlr_seat_keyboard_notify_clear_focus(view->server->seat);
+		}
+		if (view->server->grabbed_view == view) {
+			view->server->cursor_mode = ORANGE_CURSOR_PASSTHROUGH;
+			view->server->grabbed_view = NULL;
+		}
+	}
+	wlr_xdg_surface_schedule_configure(view->xdg_surface);
+	server_mark_shell_dirty(view->server);
+}
+
 static void handle_view_commit(struct wl_listener *listener, void *data) {
 	struct orange_view *view = wl_container_of(listener, view, commit);
 	(void)data;
@@ -3664,23 +4918,54 @@ static void handle_view_map(struct wl_listener *listener, void *data) {
 	view->width = geom.width > 0 ? geom.width : 900;
 	view->height = geom.height > 0 ? geom.height : 620;
 
-	struct wlr_box layout_box;
-	wlr_output_layout_get_box(view->server->output_layout, NULL, &layout_box);
-	if (layout_box.width <= 0 || layout_box.height <= 0) {
-		layout_box = (struct wlr_box){0, 0,
-			view->server->options->width,
-			view->server->options->height};
+	int local_x = 0;
+	int local_y = 0;
+	struct orange_output *output = output_at_cursor(
+		view->server, &local_x, &local_y);
+	(void)local_x;
+	(void)local_y;
+	if (output == NULL && !wl_list_empty(&view->server->outputs)) {
+		output = wl_container_of(view->server->outputs.next, output, link);
 	}
-
-	view->x = layout_box.x + (layout_box.width - view->width) / 2;
-	view->y = layout_box.y + 78;
-	if (view->x < layout_box.x + 24) {
-		view->x = layout_box.x + 24;
+	if (output != NULL) {
+		struct orange_shell_layout layout;
+		compute_shell_layout_for_output(view->server, output, &layout);
+		struct orange_rect work = orange_shell_layout_work_area(&layout);
+		double s = output->wlr_output->scale;
+		double oxd = 0, oyd = 0;
+		wlr_output_layout_output_coords(view->server->output_layout,
+			output->wlr_output, &oxd, &oyd);
+		int work_left = (int)oxd + (int)(work.x / s);
+		int work_top = (int)oyd + (int)(work.y / s);
+		int work_right = (int)oxd + (int)((work.x + work.width) / s);
+		int work_bottom = (int)oyd + (int)((work.y + work.height) / s);
+		view->x = work_left + (work_right - work_left - view->width) / 2;
+		view->y = work_top + 30;
+		constrain_view_position(view->server, &view->x, &view->y,
+			view->width, view->height);
+		if (view->y + view->height > work_bottom) {
+			view->y = work_top;
+		}
+	} else {
+		struct wlr_box layout_box;
+		wlr_output_layout_get_box(view->server->output_layout, NULL,
+			&layout_box);
+		if (layout_box.width <= 0 || layout_box.height <= 0) {
+			layout_box = (struct wlr_box){0, 0,
+				view->server->options->width,
+				view->server->options->height};
+		}
+		view->x = layout_box.x + (layout_box.width - view->width) / 2;
+		view->y = layout_box.y + 78;
+		if (view->x < layout_box.x + 24) {
+			view->x = layout_box.x + 24;
+		}
 	}
 
 	wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
 	wlr_scene_node_set_enabled(&view->scene_tree->node, true);
 	view->mapped = true;
+	view->minimized = false;
 	/* A newly mapped app dismisses the launcher overlay: the launch action is
 	 * complete, so the grid/Spotlight view should give way to the app. */
 	if (view->server->launcher_open) {
@@ -3694,6 +4979,7 @@ static void handle_view_unmap(struct wl_listener *listener, void *data) {
 	struct orange_view *view = wl_container_of(listener, view, unmap);
 	(void)data;
 	view->mapped = false;
+	view->minimized = false;
 	wlr_scene_node_set_enabled(&view->scene_tree->node, false);
 	if (view->server->focused_view == view) {
 		view->server->focused_view = NULL;
@@ -3721,6 +5007,7 @@ static void handle_view_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&view->request_resize.link);
 	wl_list_remove(&view->request_maximize.link);
 	wl_list_remove(&view->request_fullscreen.link);
+	wl_list_remove(&view->request_minimize.link);
 	free(view);
 }
 
@@ -3746,6 +5033,12 @@ static void handle_view_request_fullscreen(struct wl_listener *listener, void *d
 	struct orange_view *view = wl_container_of(listener, view, request_fullscreen);
 	(void)data;
 	apply_fullscreen(view, view->xdg_surface->toplevel->requested.fullscreen);
+}
+
+static void handle_view_request_minimize(struct wl_listener *listener, void *data) {
+	struct orange_view *view = wl_container_of(listener, view, request_minimize);
+	(void)data;
+	set_view_minimized(view, view->xdg_surface->toplevel->requested.minimized);
 }
 
 static void handle_new_xdg_surface(struct wl_listener *listener, void *data) {
@@ -3817,6 +5110,9 @@ static void handle_new_xdg_surface(struct wl_listener *listener, void *data) {
 	view->request_fullscreen.notify = handle_view_request_fullscreen;
 	wl_signal_add(&xdg_surface->toplevel->events.request_fullscreen,
 		&view->request_fullscreen);
+	view->request_minimize.notify = handle_view_request_minimize;
+	wl_signal_add(&xdg_surface->toplevel->events.request_minimize,
+		&view->request_minimize);
 
 	if (wl_resource_get_version(xdg_surface->toplevel->resource) >=
 			XDG_TOPLEVEL_WM_CAPABILITIES_SINCE_VERSION) {
@@ -3877,6 +5173,7 @@ static void handle_output_frame(struct wl_listener *listener, void *data) {
 		return;
 	}
 	output_redraw_shell(output);
+	output_redraw_overlay(output);
 	if (!output->wlr_output->needs_frame && !output->server->options->once) {
 		return;
 	}
@@ -4065,15 +5362,21 @@ static int handle_clock_timer(void *data) {
 		} else {
 			server->desktop_entry_poll_ticks--;
 		}
-		int prev_vc = server->volume_count;
-		int prev_dc = server->desktop_volume_count;
-		struct orange_volume_info prev[ORANGE_DESKTOP_VOLUME_MAX];
-		if (prev_vc > 0) {
-			memcpy(prev, server->volumes, sizeof(prev[0]) * prev_vc);
+		bool need_redraw = false;
+		if (server->volume_poll_ticks <= 0) {
+			int prev_vc = server->volume_count;
+			int prev_dc = server->desktop_volume_count;
+			struct orange_volume_info prev[ORANGE_DESKTOP_VOLUME_MAX];
+			if (prev_vc > 0) {
+				memcpy(prev, server->volumes, sizeof(prev[0]) * prev_vc);
+			}
+			update_volumes(server);
+			need_redraw = volumes_changed_since(
+				server, prev_vc, prev_dc, prev);
+			server->volume_poll_ticks = VOLUME_RELOAD_TICKS;
+		} else {
+			server->volume_poll_ticks--;
 		}
-		update_volumes(server);
-		bool need_redraw = volumes_changed_since(
-			server, prev_vc, prev_dc, prev);
 		bool status_changed = false;
 		if (server->status_poll_ticks <= 0) {
 			status_changed = server_update_status(server);
@@ -4136,6 +5439,7 @@ static bool server_init(struct orange_server *server,
 	server->last_dock_pointer_y = INT_MIN;
 	server->status_poll_ticks = 0;
 	server->desktop_entry_poll_ticks = 0;
+	server->volume_poll_ticks = 0;
 	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 	server->context_menu_index = -1;
 	server->desktop_drag_index = -1;
@@ -4155,6 +5459,8 @@ static bool server_init(struct orange_server *server,
 	orange_assets_init(&server->assets);
 	orange_assets_load(&server->assets, options->asset_root,
 		server->config.icon_theme);
+	orange_menubar_warm_assets(&server->assets);
+	server_preload_app_icons(server);
 
 	server->display = wl_display_create();
 	if (server->display == NULL) {
@@ -4232,6 +5538,7 @@ static bool server_init(struct orange_server *server,
 	server->scene = wlr_scene_create();
 	server->shell_tree = wlr_scene_tree_create(&server->scene->tree);
 	server->window_tree = wlr_scene_tree_create(&server->scene->tree);
+	server->overlay_tree = wlr_scene_tree_create(&server->scene->tree);
 	server->output_layout = wlr_output_layout_create();
 	server->scene_layout = wlr_scene_attach_output_layout(server->scene,
 		server->output_layout);

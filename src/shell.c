@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "orange/glass.h"
 #include "orange/util.h"
 #define ORANGE_SETTINGS_COMMAND "if [ -x build/orange-settings ]; then GSK_RENDERER=cairo build/orange-settings orange.conf; elif command -v systemsettings >/dev/null 2>&1; then systemsettings; elif command -v xfce4-settings-manager >/dev/null 2>&1; then xfce4-settings-manager; fi; true"
 
@@ -200,6 +201,16 @@ static const char *dock_context_labels[] = {
 
 static const int dock_context_separator_before[] = {2, 4, -1};
 
+static const char *dock_separator_context_labels[] = {
+	"Turn Magnification On/Off",
+	"Adjust Dock Size...",
+	"Position on Screen",
+	"Minimize Using",
+	"Dock Settings...",
+};
+
+static const int dock_separator_context_separator_before[] = {1, 4, -1};
+
 static const char *widget_context_labels[] = {
 	"Edit Widget",
 	"Small",
@@ -344,8 +355,22 @@ static int app_menu_tab_text_width(
 		const char *label,
 		bool bold,
 		double s) {
-	int len = label != NULL ? (int)strlen(label) : 0;
-	int width = scaled_i((bold ? 13 : 11) * len + (bold ? 30 : 26), s);
+	if (label == NULL || label[0] == '\0') {
+		return 0;
+	}
+	cairo_surface_t *tmp = cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, 1, 1);
+	cairo_t *cr = cairo_create(tmp);
+	cairo_select_font_face(cr, "Sans",
+		CAIRO_FONT_SLANT_NORMAL,
+		bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
+	cairo_set_font_size(cr, 28.0 * s);
+	cairo_text_extents_t extents;
+	cairo_text_extents(cr, label, &extents);
+	cairo_destroy(cr);
+	cairo_surface_destroy(tmp);
+	int width = (int)ceil(extents.x_advance) +
+		scaled_i(32, s);
 	int min_w = scaled_i(bold ? 60 : 42, s);
 	if (width < min_w) {
 		width = min_w;
@@ -492,6 +517,8 @@ static void draw_image_fit(cairo_t *cr, cairo_surface_t *surface,
 
 static void draw_liquid_panel(cairo_t *cr, const struct orange_rect *rect,
 		double radius, double alpha, bool dark) {
+	orange_glass_draw(cr, rect, radius, dark);
+
 	cairo_save(cr);
 	rounded_rect(cr, rect->x, rect->y, rect->width, rect->height, radius);
 	if (dark) {
@@ -1356,7 +1383,16 @@ static void clamp_desktop_items_to_visible_area(
 	int min_x = margin;
 	int min_y = layout->menu_bar.height + margin;
 	int max_y_bottom = layout->height - margin;
-	if (layout->dock.width > 0 && layout->dock.y > min_y) {
+	if (layout->dock.width > 0 &&
+			layout->dock_position == ORANGE_DOCK_POSITION_LEFT) {
+		int dock_right = layout->dock.x + layout->dock.width + margin;
+		if (dock_right > min_x) {
+			min_x = dock_right;
+		}
+	}
+	if (layout->dock.width > 0 &&
+			layout->dock_position == ORANGE_DOCK_POSITION_BOTTOM &&
+			layout->dock.y > min_y) {
 		max_y_bottom = layout->dock.y - margin;
 	}
 
@@ -1364,6 +1400,13 @@ static void clamp_desktop_items_to_visible_area(
 		struct orange_rect *item = &layout->desktop_items[i];
 		int max_x = layout->width - margin - item->width;
 		int max_y = max_y_bottom - item->height;
+		if (layout->dock.width > 0 &&
+				layout->dock_position == ORANGE_DOCK_POSITION_RIGHT) {
+			int dock_left = layout->dock.x - margin - item->width;
+			if (dock_left < max_x) {
+				max_x = dock_left;
+			}
+		}
 		if (max_x < min_x) {
 			max_x = min_x;
 		}
@@ -1549,10 +1592,27 @@ void orange_shell_layout_compute(
 			dock_sep_count++;
 		}
 	}
-	int dock_width = dock_count * dock_icon +
+	bool dock_vertical =
+		config->dock_position == ORANGE_DOCK_POSITION_LEFT ||
+		config->dock_position == ORANGE_DOCK_POSITION_RIGHT;
+	layout->dock_position = config->dock_position;
+	int dock_length = dock_count * dock_icon +
 		(dock_count > 1 ? (dock_count - 1) * dock_gap : 0) +
-		dock_sep_count * dock_sep_extra + dock_left_pad + dock_right_pad;
-	while (dock_width > width - scaled_i(80, s) && dock_icon > scaled_i(40, s)) {
+		dock_sep_count * dock_sep_extra;
+	int dock_width = dock_vertical ?
+		dock_icon + dock_left_pad + dock_right_pad :
+		dock_length + dock_left_pad + dock_right_pad;
+	int dock_height = dock_vertical ?
+		dock_length + dock_top_pad + dock_bottom_pad :
+		dock_icon + dock_top_pad + dock_bottom_pad;
+	int max_dock_length = dock_vertical ?
+		height - layout->menu_bar.height - scaled_i(48, s) :
+		width - scaled_i(80, s);
+	if (max_dock_length < scaled_i(160, s)) {
+		max_dock_length = scaled_i(160, s);
+	}
+	while ((dock_vertical ? dock_height : dock_width) > max_dock_length &&
+			dock_icon > scaled_i(40, s)) {
 		dock_icon -= 2;
 		dock_gap = dock_gap > 6 ? dock_gap - 1 : dock_gap;
 		dock_sep_extra = dock_sep_extra > scaled_i(18, s) ?
@@ -1561,28 +1621,96 @@ void orange_shell_layout_compute(
 			dock_left_pad - 1 : dock_left_pad;
 		dock_right_pad = dock_right_pad > scaled_i(4, s) ?
 			dock_right_pad - 1 : dock_right_pad;
-		dock_width = dock_count * dock_icon +
+		dock_length = dock_count * dock_icon +
 			(dock_count > 1 ? (dock_count - 1) * dock_gap : 0) +
-			dock_sep_count * dock_sep_extra + dock_left_pad + dock_right_pad;
+			dock_sep_count * dock_sep_extra;
+		dock_width = dock_vertical ?
+			dock_icon + dock_left_pad + dock_right_pad :
+			dock_length + dock_left_pad + dock_right_pad;
+		dock_height = dock_vertical ?
+			dock_length + dock_top_pad + dock_bottom_pad :
+			dock_icon + dock_top_pad + dock_bottom_pad;
 	}
-	int dock_height = dock_icon + dock_top_pad + dock_bottom_pad;
 	layout->dock_item_count = dock_count;
-	layout->dock = (struct orange_rect){
-		(width - dock_width) / 2,
-		height - dock_height - dock_bottom_margin,
-		dock_width,
-		dock_height,
-	};
-	int dx = layout->dock.x + dock_left_pad;
-	int dy = layout->dock.y + dock_top_pad - scaled_i(2, dock_s);
+	if (config->dock_position == ORANGE_DOCK_POSITION_LEFT) {
+		int dock_y_min = layout->menu_bar.height + scaled_i(12, s);
+		int dock_y_space = height - dock_y_min - scaled_i(12, s);
+		int dock_y = dock_y_min + (dock_y_space - dock_height) / 2;
+		if (dock_y < dock_y_min) {
+			dock_y = dock_y_min;
+		}
+		layout->dock = (struct orange_rect){
+			dock_bottom_margin,
+			dock_y,
+			dock_width,
+			dock_height,
+		};
+	} else if (config->dock_position == ORANGE_DOCK_POSITION_RIGHT) {
+		int dock_y_min = layout->menu_bar.height + scaled_i(12, s);
+		int dock_y_space = height - dock_y_min - scaled_i(12, s);
+		int dock_y = dock_y_min + (dock_y_space - dock_height) / 2;
+		if (dock_y < dock_y_min) {
+			dock_y = dock_y_min;
+		}
+		layout->dock = (struct orange_rect){
+			width - dock_width - dock_bottom_margin,
+			dock_y,
+			dock_width,
+			dock_height,
+		};
+	} else {
+		layout->dock = (struct orange_rect){
+			(width - dock_width) / 2,
+			height - dock_height - dock_bottom_margin,
+			dock_width,
+			dock_height,
+		};
+	}
+	layout->dock_separator = (struct orange_rect){0};
+	int dx = dock_vertical ?
+		layout->dock.x + (layout->dock.width - dock_icon) / 2 :
+		layout->dock.x + dock_left_pad;
+	int dy = dock_vertical ?
+		layout->dock.y + dock_top_pad :
+		layout->dock.y + dock_top_pad - scaled_i(2, dock_s);
 	for (int i = 0; i < dock_count; i++) {
 		int launcher_idx = visible_launchers[i];
 		layout->dock_launcher_indices[i] = launcher_idx;
 		if (i > 0 && dock_launcher_is_trash(config, launcher_idx)) {
-			dx += dock_sep_extra;
+			if (dock_vertical) {
+				int sep_w = layout->dock.width - scaled_i(16, dock_s);
+				int sep_h = scaled_i(16, dock_s);
+				if (sep_w < scaled_i(28, dock_s)) {
+					sep_w = scaled_i(28, dock_s);
+				}
+				layout->dock_separator = (struct orange_rect){
+					layout->dock.x + (layout->dock.width - sep_w) / 2,
+					dy + dock_sep_extra / 2 - sep_h / 2,
+					sep_w,
+					sep_h,
+				};
+				dy += dock_sep_extra;
+			} else {
+				int sep_w = scaled_i(16, dock_s);
+				int sep_h = layout->dock.height - scaled_i(16, dock_s);
+				if (sep_h < scaled_i(28, dock_s)) {
+					sep_h = scaled_i(28, dock_s);
+				}
+				layout->dock_separator = (struct orange_rect){
+					dx + dock_sep_extra / 2 - sep_w / 2,
+					layout->dock.y + (layout->dock.height - sep_h) / 2,
+					sep_w,
+					sep_h,
+				};
+				dx += dock_sep_extra;
+			}
 		}
 		layout->dock_items[i] = (struct orange_rect){dx, dy, dock_icon, dock_icon};
-		dx += dock_icon + dock_gap;
+		if (dock_vertical) {
+			dy += dock_icon + dock_gap;
+		} else {
+			dx += dock_icon + dock_gap;
+		}
 	}
 	clamp_desktop_items_to_visible_area(layout, s);
 
@@ -1720,6 +1848,17 @@ void orange_shell_layout_set_app_menu_tabs(
 		};
 		x += width;
 	}
+	for (int i = ORANGE_APP_MENU_TAB_COUNT - 1; i >= 0; i--) {
+		if (layout->app_menu_items[i].width > 0) {
+			int right = layout->app_menu_items[i].x +
+				layout->app_menu_items[i].width;
+			if (right < max_right) {
+				layout->app_menu_items[i].width = max_right -
+					layout->app_menu_items[i].x;
+			}
+			break;
+		}
+	}
 	layout->app_menu_button = layout->app_menu_items[ORANGE_APP_MENU_TAB_APP];
 }
 
@@ -1748,6 +1887,12 @@ void orange_shell_layout_set_context_menu(
 		item_count = (int)(sizeof(dock_context_labels) /
 			sizeof(dock_context_labels[0]));
 		separator_before = dock_context_separator_before;
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR &&
+			layout->dock_separator.width > 0) {
+		anchor = layout->dock_separator;
+		item_count = (int)(sizeof(dock_separator_context_labels) /
+			sizeof(dock_separator_context_labels[0]));
+		separator_before = dock_separator_context_separator_before;
 	} else if (app_menu_tab_for_context_kind(kind) >= 0) {
 		int tab = app_menu_tab_for_context_kind(kind);
 		if (tab >= layout->app_menu_item_count) {
@@ -1874,6 +2019,8 @@ void orange_shell_layout_set_context_menu(
 		panel_width_base = 280;
 	} else if (kind == ORANGE_CONTEXT_MENU_DOCK) {
 		panel_width_base = 234;
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR) {
+		panel_width_base = 340;
 	} else if (kind == ORANGE_CONTEXT_MENU_WIDGET) {
 		panel_width_base = 256;
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP) {
@@ -1895,9 +2042,18 @@ void orange_shell_layout_set_context_menu(
 	} else if (app_menu_tab_for_context_kind(kind) >= 0) {
 		x = anchor.x;
 		y = layout->menu_bar.height + scaled_i(6, s);
-	} else if (kind == ORANGE_CONTEXT_MENU_DOCK) {
-		x = anchor.x + anchor.width / 2 - panel_w / 2;
-		y = layout->dock.y - panel_h - scaled_i(10, s);
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK ||
+			kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR) {
+		if (layout->dock_position == ORANGE_DOCK_POSITION_LEFT) {
+			x = layout->dock.x + layout->dock.width + scaled_i(10, s);
+			y = anchor.y + anchor.height / 2 - panel_h / 2;
+		} else if (layout->dock_position == ORANGE_DOCK_POSITION_RIGHT) {
+			x = layout->dock.x - panel_w - scaled_i(10, s);
+			y = anchor.y + anchor.height / 2 - panel_h / 2;
+		} else {
+			x = anchor.x + anchor.width / 2 - panel_w / 2;
+			y = layout->dock.y - panel_h - scaled_i(10, s);
+		}
 	} else if (kind == ORANGE_CONTEXT_MENU_WIDGET) {
 		x = cursor_x - panel_w / 2;
 		y = cursor_y - scaled_i(8, s);
@@ -2029,113 +2185,376 @@ void orange_shell_layout_set_notification_center(
 	};
 }
 
+struct orange_rect orange_shell_layout_work_area(
+		const struct orange_shell_layout *layout) {
+	if (layout == NULL || layout->width <= 0 || layout->height <= 0) {
+		return (struct orange_rect){0, 0, 0, 0};
+	}
+
+	int x = 0;
+	int y = layout->menu_bar.y + layout->menu_bar.height;
+	int right = layout->width;
+	int bottom = layout->height;
+
+	if (layout->dock.width > 0 && layout->dock.height > 0) {
+		switch (layout->dock_position) {
+		case ORANGE_DOCK_POSITION_LEFT:
+			if (layout->dock.x + layout->dock.width > x) {
+				x = layout->dock.x + layout->dock.width;
+			}
+			break;
+		case ORANGE_DOCK_POSITION_RIGHT:
+			if (layout->dock.x < right) {
+				right = layout->dock.x;
+			}
+			break;
+		case ORANGE_DOCK_POSITION_BOTTOM:
+		default:
+			if (layout->dock.y > y && layout->dock.y < bottom) {
+				bottom = layout->dock.y;
+			}
+			break;
+		}
+	}
+
+	if (right < x) {
+		right = x;
+	}
+	if (bottom < y) {
+		bottom = y;
+	}
+	return (struct orange_rect){x, y, right - x, bottom - y};
+}
+
+static int launcher_filter_tab_width(int index, double scale) {
+	static const int widths[] = {42, 74, 104, 64, 60, 50};
+	int count = (int)(sizeof(widths) / sizeof(widths[0]));
+	int base = index >= 0 && index < count ? widths[index] : 72;
+	return (int)fmax((double)base, (double)base * 2.0 * scale);
+}
+
 void orange_shell_layout_set_launcher(
 		struct orange_shell_layout *layout,
-		bool searching) {
+		bool searching,
+		enum orange_launcher_mode display_mode,
+		int app_count) {
 	if (layout == NULL) {
 		return;
 	}
 	layout->launcher_visible = true;
 	layout->launcher_searching = searching;
+	layout->launcher_display_mode = display_mode;
+	int requested_category_count = layout->launcher_category_count;
+	int requested_category_active = layout->launcher_category_active;
+	layout->launcher_panel = (struct orange_rect){0, 0, 0, 0};
+	layout->launcher_viewport = (struct orange_rect){0, 0, 0, 0};
+	layout->launcher_scroll_track = (struct orange_rect){0, 0, 0, 0};
+	layout->launcher_scroll_thumb = (struct orange_rect){0, 0, 0, 0};
+	layout->launcher_grid_cell_count = 0;
+	for (int i = 0; i < ORANGE_LAUNCHER_CELL_MAX; i++) {
+		layout->launcher_grid_indices[i] = -1;
+	}
+	layout->launcher_grid_cols = 0;
+	layout->launcher_grid_cell_w = 0;
+	layout->launcher_grid_cell_h = 0;
+	layout->launcher_grid_icon_size = 0;
+	layout->launcher_scroll = 0;
+	layout->launcher_max_scroll = 0;
+	layout->launcher_section_count = 0;
+	for (int i = 0; i < ORANGE_LAUNCHER_SECTION_MAX; i++) {
+		layout->launcher_section_headers[i] = (struct orange_rect){0, 0, 0, 0};
+		layout->launcher_section_starts[i] = 0;
+		layout->launcher_section_lengths[i] = 0;
+	}
 
 	double s = layout_scale(layout);
 	int w = layout->width;
 	int h = layout->height;
-
-	/* Search bar + mode buttons row (top-centered, no large panel) */
-	int search_h = scaled_i(44, s);
-	int mode_btn_size = scaled_i(36, s);
-	int mode_btn_gap = scaled_i(10, s);
-	int mode_row_w = ORANGE_LAUNCHER_MODE_COUNT * mode_btn_size +
-		(ORANGE_LAUNCHER_MODE_COUNT - 1) * mode_btn_gap;
-	int search_w = scaled_i(480, s);
-	int total_row_w = search_w + scaled_i(16, s) + mode_row_w;
-	int row_x = (w - total_row_w) / 2;
-	int search_y = (int)(h * 0.38) - search_h / 2;
-	layout->launcher_search_field = (struct orange_rect){
-		row_x, search_y, search_w, search_h};
-
-	/* Mode buttons to the right of the search field */
-	int btn_start_x = row_x + search_w + scaled_i(16, s);
 	for (int i = 0; i < ORANGE_LAUNCHER_MODE_COUNT; i++) {
-		int bx = btn_start_x + i * (mode_btn_size + mode_btn_gap);
-		layout->launcher_mode_buttons[i] = (struct orange_rect){
-			bx, search_y + (search_h - mode_btn_size) / 2,
-			mode_btn_size, mode_btn_size};
+		layout->launcher_mode_buttons[i] = (struct orange_rect){0, 0, 0, 0};
+	}
+	for (int i = 0; i < ORANGE_LAUNCHER_CATEGORY_MAX; i++) {
+		layout->launcher_category_tabs[i] = (struct orange_rect){0, 0, 0, 0};
 	}
 
-	/* Category tabs below the search row */
-	int tab_y = search_y + search_h + scaled_i(14, s);
-	int tab_h = scaled_i(28, s);
-	int tab_x = row_x;
-	int tab_gap = scaled_i(6, s);
-	layout->launcher_category_count = 0;
-	layout->launcher_category_active = 0;
-	for (int i = 0; i < layout->launcher_category_count &&
-			i < ORANGE_LAUNCHER_CATEGORY_MAX; i++) {
-		/* Pre-set will be done by the caller; compute approximate widths */
-		int tab_w = scaled_i(80, s);
-		layout->launcher_category_tabs[i] = (struct orange_rect){
-			tab_x, tab_y, tab_w, tab_h};
-		tab_x += tab_w + tab_gap;
+	int search_h = (int)clamp((double)h * 0.048, 38.0, 48.0);
+	int option_size = search_h;
+	int option_gap = scaled_i(8, s);
+	int pill_w = (int)clamp((double)w * 0.30, 320.0, 460.0);
+	if (pill_w > w - scaled_i(80, s)) {
+		pill_w = w - scaled_i(80, s);
+	}
+	int compact_button_count = ORANGE_LAUNCHER_MODE_COUNT;
+	int compact_row_w = pill_w + option_gap +
+		compact_button_count * option_size +
+		(compact_button_count - 1) * option_gap;
+	int field_x = (w - compact_row_w) / 2;
+	int field_y = (int)((double)h * 0.38) - search_h / 2;
+	if (layout->launcher_position_set) {
+		field_x = layout->launcher_x;
+		field_y = layout->launcher_y;
+	}
+	int margin = scaled_i(24, s);
+	int field_max_x = display_mode == ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY ?
+		w - margin - compact_row_w : w - margin - pill_w;
+	if (field_max_x < margin) {
+		field_max_x = margin;
+	}
+	if (field_x < margin) {
+		field_x = margin;
+	}
+	if (field_x > field_max_x) {
+		field_x = field_max_x;
+	}
+	if (field_y < layout->menu_bar.height + margin) {
+		field_y = layout->menu_bar.height + margin;
+	}
+	if (field_y + search_h > h - margin) {
+		field_y = h - margin - search_h;
 	}
 
-	/* Viewport for scrollable content below category tabs */
-	int viewport_y = tab_y + tab_h + scaled_i(12, s);
-	int viewport_h = (int)(h * 0.92) - viewport_y;
-	if (viewport_h < scaled_i(200, s)) {
-		viewport_h = scaled_i(200, s);
-	}
-	layout->launcher_viewport = (struct orange_rect){
-		row_x, viewport_y,
-		total_row_w, viewport_h};
-
-	/* Compute grid cells within the viewport */
-	int cols = searching ? 1 : ORANGE_LAUNCHER_COLS;
-	int rows = ORANGE_LAUNCHER_ROWS;
-
-	int icon_size = scaled_i(88, s);
-	int label_h = scaled_i(36, s);
-	int cell_w = icon_size + scaled_i(20, s);
-	int cell_h = icon_size + label_h + scaled_i(10, s);
-
-	int avail_w = layout->launcher_viewport.width;
-	if (cell_w * cols > avail_w && cols > 1) {
-		cell_w = avail_w / cols;
-		if (cell_w < scaled_i(80, s)) {
-			cols = fmax(1, avail_w / scaled_i(100, s));
-			cell_w = avail_w / cols;
+	if (display_mode == ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY) {
+		layout->launcher_panel = (struct orange_rect){
+			field_x, field_y, pill_w, search_h};
+		layout->launcher_search_field = layout->launcher_panel;
+		int button_x = field_x + pill_w + option_gap;
+		for (int i = 0; i < compact_button_count; i++) {
+			layout->launcher_mode_buttons[i] = (struct orange_rect){
+				button_x + i * (option_size + option_gap),
+				field_y,
+				option_size,
+				option_size,
+			};
 		}
-		icon_size = cell_w - scaled_i(20, s);
+		return;
 	}
 
-	int grid_x = layout->launcher_viewport.x;
-	int grid_y = layout->launcher_viewport.y;
-	int total_rows = ((layout->launcher_grid_cell_count + cols - 1) / cols);
-	int max_scroll = total_rows * cell_h - layout->launcher_viewport.height;
-	if (max_scroll < 0) {
-		max_scroll = 0;
+	if (requested_category_count < 0) {
+		requested_category_count = 0;
 	}
-	layout->launcher_max_scroll = max_scroll;
+	if (requested_category_count > ORANGE_LAUNCHER_CATEGORY_MAX) {
+		requested_category_count = ORANGE_LAUNCHER_CATEGORY_MAX;
+	}
+	bool query_results = searching;
+	bool show_filters =
+		!query_results &&
+		layout->launcher_current_mode == ORANGE_LAUNCHER_MODE_APPS &&
+		requested_category_count > 0;
+	if (!show_filters) {
+		requested_category_count = 0;
+		requested_category_active = 0;
+	}
+	if (requested_category_active < 0 ||
+			requested_category_active >= requested_category_count) {
+		requested_category_active = 0;
+	}
+	layout->launcher_category_count = requested_category_count;
+	layout->launcher_category_active = requested_category_active;
 
-	layout->launcher_grid_cell_count = 0;
-	for (int r = 0; r < rows; r++) {
-		for (int c = 0; c < cols; c++) {
-			if (layout->launcher_grid_cell_count >= ORANGE_LAUNCHER_CELL_MAX) {
+	int panel_w = query_results ?
+		(int)clamp((double)w * 0.44, 500.0, 680.0) :
+		(int)clamp((double)w * 0.48, 560.0, 760.0);
+	if (panel_w > w - margin * 2) {
+		panel_w = w - margin * 2;
+	}
+	int pad_x = (int)clamp((double)panel_w * 0.026, 12.0, 20.0);
+	int header_h = (int)clamp((double)h * 0.082, 62.0, 82.0);
+	int panel_x = (w - panel_w) / 2;
+	int panel_h = query_results ?
+		(int)clamp((double)h * 0.42, 300.0, 390.0) :
+		(int)clamp((double)h * 0.50, 360.0, 480.0);
+	int panel_y;
+	if (query_results) {
+		panel_y = field_y - (header_h - search_h) / 2;
+	} else {
+		panel_y = (h - panel_h) / 2 - scaled_i(32, s);
+	}
+	if (layout->launcher_position_set) {
+		panel_x = field_x - pad_x;
+		panel_y = field_y - (header_h - search_h) / 2;
+	}
+	if (panel_x < margin) {
+		panel_x = margin;
+	}
+	if (panel_x + panel_w > w - margin) {
+		panel_x = w - margin - panel_w;
+	}
+	if (panel_y < layout->menu_bar.height + margin) {
+		panel_y = layout->menu_bar.height + margin;
+	}
+	if (panel_y + panel_h > h - margin) {
+		panel_y = h - margin - panel_h;
+	}
+	int search_y = panel_y + (header_h - search_h) / 2;
+	int option_x = panel_x + panel_w - pad_x - option_size;
+	layout->launcher_search_field = (struct orange_rect){
+		panel_x + pad_x,
+		search_y,
+		option_x - (panel_x + pad_x) - option_gap,
+		search_h};
+	layout->launcher_mode_buttons[0] = (struct orange_rect){
+		option_x,
+		search_y + (search_h - option_size) / 2,
+		option_size,
+		option_size};
+
+	int content_x = panel_x + pad_x;
+	int content_w = panel_w - pad_x * 2;
+	int section_top = panel_y + header_h;
+	int filter_h = (int)clamp((double)h * 0.033, 26.0, 34.0);
+	int filter_gap = (int)fmax(5.0, 8.0 * s);
+	int filters_visible = 0;
+	int filter_y = section_top;
+	if (show_filters) {
+		int tab_x = content_x;
+		int max_x = content_x + content_w;
+		for (int i = 0; i < requested_category_count; i++) {
+			int tab_w = launcher_filter_tab_width(i, s);
+			if (i > 0 && tab_x + tab_w > max_x) {
 				break;
 			}
-			layout->launcher_grid_cells[layout->launcher_grid_cell_count++] =
-				(struct orange_rect){
-					grid_x + c * cell_w,
-					grid_y + r * cell_h - layout->launcher_scroll,
-					cell_w,
-					cell_h,
-				};
+			layout->launcher_category_tabs[i] = (struct orange_rect){
+				tab_x, filter_y, tab_w, filter_h};
+			tab_x += tab_w + filter_gap;
+			filters_visible++;
+		}
+		layout->launcher_category_count = filters_visible;
+		if (layout->launcher_category_active >= filters_visible) {
+			layout->launcher_category_active = 0;
 		}
 	}
+	int content_y = filters_visible > 0 ?
+		filter_y + filter_h + (int)fmax(10.0, 18.0 * s) :
+		section_top + (int)fmax(8.0, 14.0 * s);
+	int content_bottom = panel_y + panel_h - (int)fmax(2.0, 6.0 * s);
+	if (content_bottom < content_y) {
+		content_bottom = content_y;
+	}
+
+	int cols = ORANGE_LAUNCHER_COLS;
+	int cell_w = content_w / cols;
+	if (cell_w < 1) {
+		cell_w = 1;
+	}
+	int icon_size = query_results ?
+		(int)clamp(content_w * 0.105,
+			fmax(42.0, 80.0 * s),
+			fmax(56.0, 108.0 * s)) :
+		(int)clamp(content_w * 0.120,
+			fmax(50.0, 92.0 * s),
+			fmax(70.0, 118.0 * s));
+	if (icon_size > cell_w - scaled_i(14, s)) {
+		icon_size = cell_w - scaled_i(14, s);
+	}
+	if (icon_size < 42) {
+		icon_size = 42;
+	}
+	int icon_top_pad = (int)fmax(4.0, 8.0 * s);
+	int icon_label_gap = (int)fmax(8.0, 14.0 * s);
+	int label_h = (int)fmax(24.0, 32.0 * s);
+	int cell_h = icon_top_pad + icon_size + icon_label_gap + label_h;
+	int viewport_h = content_bottom - content_y;
+	int visible_rows = viewport_h / cell_h;
+	if (visible_rows < 1) {
+		visible_rows = 1;
+	}
+	int max_visible_rows = query_results ? 3 : 4;
+	if (visible_rows > max_visible_rows) {
+		visible_rows = max_visible_rows;
+	}
+	int total_rows = app_count > 0 ? (app_count + cols - 1) / cols : 0;
+	if (query_results) {
+		int rows_needed = total_rows > 0 ? total_rows : 1;
+		if (visible_rows > rows_needed) {
+			visible_rows = rows_needed;
+		}
+	}
+	int used_viewport_h = visible_rows * cell_h;
+	int bottom_pad = (int)fmax(2.0, 6.0 * s);
+	panel_h = content_y - panel_y + used_viewport_h + bottom_pad;
+	layout->launcher_panel = (struct orange_rect){
+		panel_x, panel_y, panel_w, panel_h};
+	content_bottom = panel_y + panel_h - bottom_pad;
+	layout->launcher_viewport = (struct orange_rect){
+		content_x, content_y, content_w, content_bottom - content_y};
+	int max_scroll_row = total_rows - visible_rows;
+	if (max_scroll_row < 0) {
+		max_scroll_row = 0;
+	}
+	int scroll_row = layout->launcher_scroll_row;
+	if (scroll_row < 0) {
+		scroll_row = 0;
+	}
+	if (scroll_row > max_scroll_row) {
+		scroll_row = max_scroll_row;
+	}
+	layout->launcher_scroll_row = scroll_row;
+	if (max_scroll_row > 0 && cell_h > 0) {
+		int track_w = (int)fmax(10.0, 16.0 * s);
+		int track_x = panel_x + panel_w - track_w - (int)fmax(4.0, 8.0 * s);
+		int track_y = content_y + scaled_i(2, s);
+		int track_h = content_bottom - content_y - scaled_i(4, s);
+		if (track_h > track_w * 2) {
+			int thumb_h = (int)((double)track_h * (double)visible_rows /
+				(double)(visible_rows + max_scroll_row));
+			int min_thumb_h = (int)fmax(28.0, 44.0 * s);
+			if (thumb_h < min_thumb_h) {
+				thumb_h = min_thumb_h;
+			}
+			if (thumb_h > track_h) {
+				thumb_h = track_h;
+			}
+			int thumb_y = track_y;
+			if (track_h > thumb_h) {
+				thumb_y += (int)lrint((double)(track_h - thumb_h) *
+					(double)scroll_row / (double)max_scroll_row);
+			}
+			layout->launcher_scroll_track =
+				(struct orange_rect){track_x, track_y, track_w, track_h};
+			layout->launcher_scroll_thumb =
+				(struct orange_rect){track_x, thumb_y, track_w, thumb_h};
+		}
+	}
+	layout->launcher_section_count = 1;
+	layout->launcher_section_headers[0] = (struct orange_rect){
+		content_x,
+		section_top,
+		content_w,
+		0};
+	layout->launcher_section_starts[0] = scroll_row * cols;
+	layout->launcher_section_lengths[0] = app_count;
+
+	int start = scroll_row * cols;
+	int max_visible = visible_rows * cols;
+	int visible = app_count - start;
+	if (visible < 0) {
+		visible = 0;
+	}
+	if (visible > max_visible) {
+		visible = max_visible;
+	}
+	if (visible > ORANGE_LAUNCHER_CELL_MAX) {
+		visible = ORANGE_LAUNCHER_CELL_MAX;
+	}
+	int grid_x = content_x;
+	for (int i = 0; i < visible; i++) {
+		int row = i / cols;
+		int col = i % cols;
+		layout->launcher_grid_cells[i] = (struct orange_rect){
+			grid_x + col * cell_w,
+			content_y + row * cell_h,
+			cell_w,
+			cell_h,
+		};
+		layout->launcher_grid_indices[i] = start + i;
+	}
+	layout->launcher_grid_cell_count = visible;
 	layout->launcher_grid_cols = cols;
 	layout->launcher_grid_cell_w = cell_w;
 	layout->launcher_grid_cell_h = cell_h;
+	layout->launcher_grid_icon_size = icon_size;
+	layout->launcher_scroll = scroll_row * cell_h;
+	layout->launcher_max_scroll = max_scroll_row;
 }
 
 struct orange_shell_hit orange_shell_hit_test(
@@ -2147,7 +2566,8 @@ struct orange_shell_hit orange_shell_hit_test(
 			return (struct orange_shell_hit){ORANGE_HIT_LAUNCHER_SEARCH, -1};
 		}
 		for (int i = 0; i < ORANGE_LAUNCHER_MODE_COUNT; i++) {
-			if (rect_contains(&layout->launcher_mode_buttons[i], x, y)) {
+			if (layout->launcher_mode_buttons[i].width > 0 &&
+					rect_contains(&layout->launcher_mode_buttons[i], x, y)) {
 				return (struct orange_shell_hit){ORANGE_HIT_LAUNCHER_MODE, i};
 			}
 		}
@@ -2156,9 +2576,15 @@ struct orange_shell_hit orange_shell_hit_test(
 				return (struct orange_shell_hit){ORANGE_HIT_LAUNCHER_CATEGORY, i};
 			}
 		}
+		if (layout->launcher_scroll_track.width > 0 &&
+				rect_contains(&layout->launcher_scroll_track, x, y)) {
+			return (struct orange_shell_hit){ORANGE_HIT_LAUNCHER_SCROLLBAR, -1};
+		}
 		for (int i = 0; i < layout->launcher_grid_cell_count; i++) {
 			if (rect_contains(&layout->launcher_grid_cells[i], x, y)) {
-				return (struct orange_shell_hit){ORANGE_HIT_LAUNCHER_APP, i};
+				return (struct orange_shell_hit){
+					ORANGE_HIT_LAUNCHER_APP,
+					layout->launcher_grid_indices[i]};
 			}
 		}
 		return (struct orange_shell_hit){ORANGE_HIT_LAUNCHER_BACKGROUND, -1};
@@ -2204,6 +2630,10 @@ struct orange_shell_hit orange_shell_hit_test(
 	}
 	if (rect_contains(&layout->status_area, x, y)) {
 		return (struct orange_shell_hit){ORANGE_HIT_STATUS_AREA, -1};
+	}
+	if (layout->dock_separator.width > 0 &&
+			rect_contains(&layout->dock_separator, x, y)) {
+		return (struct orange_shell_hit){ORANGE_HIT_DOCK_SEPARATOR, -1};
 	}
 	for (int i = 0; i < layout->dock_item_count; i++) {
 		if (rect_contains(&layout->dock_items[i], x, y)) {
@@ -2254,6 +2684,7 @@ void orange_shell_draw(
 		const struct orange_shell_state *state) {
 	const struct orange_shell_draw_options options = {
 		.draw_wallpaper = true,
+		.skip_transient_overlays = false,
 	};
 	orange_shell_draw_with_options(pixels, width, height, stride, state, &options);
 }
@@ -2291,7 +2722,15 @@ void orange_shell_draw_with_options(
 	}
 	if (state->launcher_open) {
 		bool searching = state->launcher_query[0] != '\0';
-		orange_shell_layout_set_launcher(&layout, searching);
+		layout.launcher_position_set = state->launcher_position_set;
+		layout.launcher_x = state->launcher_x;
+		layout.launcher_y = state->launcher_y;
+		layout.launcher_scroll_row = state->launcher_scroll_row;
+		layout.launcher_current_mode = state->launcher_current_mode;
+		layout.launcher_category_count = state->launcher_category_count;
+		layout.launcher_category_active = state->launcher_category_active;
+		orange_shell_layout_set_launcher(&layout, searching,
+			state->launcher_display_mode, state->launcher_app_count);
 	}
 
 	if (options == NULL || options->draw_wallpaper) {
@@ -2301,6 +2740,242 @@ void orange_shell_draw_with_options(
 	draw_widget_layer(cr, &layout, state, config);
 	draw_desktop_items(cr, &layout, state, config);
 	orange_dock_draw(cr, &layout, state, config);
+	bool draw_transient_overlays =
+		options == NULL || !options->skip_transient_overlays;
+	if (draw_transient_overlays) {
+		if (state->notification_center_open) {
+			draw_notification_center(cr, &layout, state, config);
+		}
+		if (state->system_menu_open) {
+			orange_menubar_draw_system_menu(cr, &layout, state, config);
+		}
+		orange_menubar_draw_context_menu(cr, &layout, state, config);
+		if (state->launcher_open) {
+			orange_launcher_draw(cr, &layout, state, config);
+		}
+		if (state->launcher_app_drag_active) {
+			orange_launcher_draw_app_drag_overlay(cr, &layout, state, config);
+		}
+	}
+
+	cairo_destroy(cr);
+	cairo_surface_flush(surface);
+	cairo_surface_destroy(surface);
+}
+
+static void draw_overlay_contents(cairo_t *cr,
+	int width,
+	int height,
+	const struct orange_shell_state *state);
+static const struct orange_config *compute_overlay_layout(
+	struct orange_shell_layout *layout,
+	int width,
+	int height,
+	const struct orange_shell_state *state,
+	struct orange_config *fallback_config);
+
+void orange_shell_draw_overlay(
+		uint32_t *pixels,
+		int width,
+		int height,
+		int stride,
+		const struct orange_shell_state *state) {
+	cairo_surface_t *surface = cairo_image_surface_create_for_data(
+		(unsigned char *)pixels,
+		CAIRO_FORMAT_ARGB32,
+		width,
+		height,
+		stride);
+	cairo_t *cr = cairo_create(surface);
+	cairo_set_source_rgba(cr, 0, 0, 0, 0);
+	cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+	cairo_paint(cr);
+	cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+
+	draw_overlay_contents(cr, width, height, state);
+
+	cairo_destroy(cr);
+	cairo_surface_flush(surface);
+	cairo_surface_destroy(surface);
+}
+
+static bool rect_has_area(const struct orange_rect *rect) {
+	return rect != NULL && rect->width > 0 && rect->height > 0;
+}
+
+static void include_overlay_rect(struct orange_rect *bounds,
+		bool *has_bounds,
+		const struct orange_rect *rect) {
+	if (!rect_has_area(rect)) {
+		return;
+	}
+	if (!*has_bounds) {
+		*bounds = *rect;
+		*has_bounds = true;
+		return;
+	}
+	int x1 = bounds->x < rect->x ? bounds->x : rect->x;
+	int y1 = bounds->y < rect->y ? bounds->y : rect->y;
+	int x2 = bounds->x + bounds->width;
+	int y2 = bounds->y + bounds->height;
+	int rx2 = rect->x + rect->width;
+	int ry2 = rect->y + rect->height;
+	if (rx2 > x2) {
+		x2 = rx2;
+	}
+	if (ry2 > y2) {
+		y2 = ry2;
+	}
+	*bounds = (struct orange_rect){x1, y1, x2 - x1, y2 - y1};
+}
+
+static struct orange_rect pad_overlay_bounds(struct orange_rect rect,
+		int width,
+		int height) {
+	const int pad = 64;
+	int x1 = rect.x - pad;
+	int y1 = rect.y - pad;
+	int x2 = rect.x + rect.width + pad;
+	int y2 = rect.y + rect.height + pad;
+	if (x1 < 0) {
+		x1 = 0;
+	}
+	if (y1 < 0) {
+		y1 = 0;
+	}
+	if (x2 > width) {
+		x2 = width;
+	}
+	if (y2 > height) {
+		y2 = height;
+	}
+	return (struct orange_rect){x1, y1, x2 - x1, y2 - y1};
+}
+
+static const struct orange_config *compute_overlay_layout(
+		struct orange_shell_layout *layout,
+		int width,
+		int height,
+		const struct orange_shell_state *state,
+		struct orange_config *fallback_config) {
+	const struct orange_config *config = state_config(state, fallback_config);
+	orange_shell_layout_compute(width, height, state->system_menu_open, config,
+		state->desktop_entry_count, state->desktop_volume_count, layout);
+	orange_shell_layout_set_app_menu_tabs(layout,
+		orange_menubar_active_app_label(state), &state->app_menu);
+	orange_shell_layout_set_context_menu(layout,
+		state->context_menu_kind,
+		state->context_menu_index,
+		state->context_menu_cursor_x,
+		state->context_menu_cursor_y,
+		&state->app_menu);
+	if (state->notification_center_open) {
+		orange_shell_layout_set_notification_center(layout);
+	}
+	if (state->launcher_open) {
+		bool searching = state->launcher_query[0] != '\0';
+		layout->launcher_position_set = state->launcher_position_set;
+		layout->launcher_x = state->launcher_x;
+		layout->launcher_y = state->launcher_y;
+		layout->launcher_scroll_row = state->launcher_scroll_row;
+		layout->launcher_current_mode = state->launcher_current_mode;
+		layout->launcher_category_count = state->launcher_category_count;
+		layout->launcher_category_active = state->launcher_category_active;
+		orange_shell_layout_set_launcher(layout, searching,
+			state->launcher_display_mode, state->launcher_app_count);
+	}
+	return config;
+}
+
+bool orange_shell_overlay_bounds(
+		int width,
+		int height,
+		const struct orange_shell_state *state,
+		struct orange_rect *out_bounds) {
+	if (out_bounds == NULL) {
+		return false;
+	}
+	*out_bounds = (struct orange_rect){0, 0, 0, 0};
+	if (state == NULL || width <= 0 || height <= 0) {
+		return false;
+	}
+
+	struct orange_config fallback_config;
+	struct orange_shell_layout layout;
+	compute_overlay_layout(&layout, width, height, state, &fallback_config);
+
+	struct orange_rect bounds = {0, 0, 0, 0};
+	bool has_bounds = false;
+	if (state->notification_center_open) {
+		include_overlay_rect(&bounds, &has_bounds,
+			&layout.notification_center_panel);
+	}
+	if (state->system_menu_open) {
+		include_overlay_rect(&bounds, &has_bounds,
+			&layout.system_menu_panel);
+	}
+	if (layout.context_menu_kind != ORANGE_CONTEXT_MENU_NONE) {
+		include_overlay_rect(&bounds, &has_bounds,
+			&layout.context_menu_panel);
+	}
+	if (state->launcher_open) {
+		if (layout.launcher_display_mode == ORANGE_LAUNCHER_DISPLAY_FULL) {
+			include_overlay_rect(&bounds, &has_bounds,
+				&layout.launcher_panel);
+		} else {
+			include_overlay_rect(&bounds, &has_bounds,
+				&layout.launcher_search_field);
+			for (int i = 0; i < ORANGE_LAUNCHER_MODE_COUNT; i++) {
+				include_overlay_rect(&bounds, &has_bounds,
+					&layout.launcher_mode_buttons[i]);
+			}
+		}
+	}
+	if (state->dock_drag_insert_before >= 0) {
+		include_overlay_rect(&bounds, &has_bounds, &layout.dock);
+	}
+	if (state->dock_drag_index >= 0 &&
+			state->dock_drag_index < layout.dock_item_count) {
+		struct orange_rect item = layout.dock_items[state->dock_drag_index];
+		struct orange_rect ghost = {
+			state->dock_drag_x - item.width / 2,
+			state->dock_drag_y - item.height / 2 - item.height / 2,
+			item.width,
+			item.height * 2,
+		};
+		include_overlay_rect(&bounds, &has_bounds, &ghost);
+	}
+	if (state->launcher_app_drag_active) {
+		double s = layout_scale(&layout);
+		int icon_size = layout.launcher_grid_icon_size > 0 ?
+			layout.launcher_grid_icon_size : scaled_i(92, s);
+		if (icon_size < 42) {
+			icon_size = 42;
+		}
+		struct orange_rect ghost = {
+			state->launcher_app_drag_x - icon_size / 2,
+			state->launcher_app_drag_y - icon_size / 2,
+			icon_size,
+			icon_size,
+		};
+		include_overlay_rect(&bounds, &has_bounds, &ghost);
+	}
+	if (!has_bounds) {
+		return false;
+	}
+	*out_bounds = pad_overlay_bounds(bounds, width, height);
+	return rect_has_area(out_bounds);
+}
+
+static void draw_overlay_contents(cairo_t *cr,
+		int width,
+		int height,
+		const struct orange_shell_state *state) {
+	struct orange_config fallback_config;
+	struct orange_shell_layout layout;
+	const struct orange_config *config = compute_overlay_layout(&layout,
+		width, height, state, &fallback_config);
+
 	if (state->notification_center_open) {
 		draw_notification_center(cr, &layout, state, config);
 	}
@@ -2311,10 +2986,160 @@ void orange_shell_draw_with_options(
 	if (state->launcher_open) {
 		orange_launcher_draw(cr, &layout, state, config);
 	}
+	if (state->dock_drag_index >= 0 ||
+			state->dock_drag_insert_before >= 0) {
+		orange_dock_draw_drag_overlay(cr, &layout, state, config);
+	}
+	if (state->launcher_app_drag_active) {
+		orange_launcher_draw_app_drag_overlay(cr, &layout, state, config);
+	}
+}
 
+static int div_ceil_int(int numerator, int denominator) {
+	if (numerator <= 0 || denominator <= 0) {
+		return 0;
+	}
+	return (numerator + denominator - 1) / denominator;
+}
+
+static int channel_unblend_alpha(int composed, int backdrop) {
+	if (composed < backdrop) {
+		return backdrop > 0 ?
+			div_ceil_int(255 * (backdrop - composed), backdrop) : 0;
+	}
+	if (composed > backdrop) {
+		return backdrop < 255 ?
+			div_ceil_int(255 * (composed - backdrop), 255 - backdrop) : 255;
+	}
+	return 0;
+}
+
+static int unblend_channel(int composed, int backdrop, int alpha) {
+	int retained = (backdrop * (255 - alpha) + 127) / 255;
+	int channel = composed - retained;
+	if (channel < 0) {
+		return 0;
+	}
+	if (channel > alpha) {
+		return alpha;
+	}
+	return channel;
+}
+
+static uint32_t overlay_source_from_composed(uint32_t composed,
+		uint32_t backdrop) {
+	if (composed == backdrop) {
+		return 0;
+	}
+
+	int composed_a = (int)((composed >> 24) & 0xff);
+	int backdrop_a = (int)((backdrop >> 24) & 0xff);
+	if (composed_a != 255 || backdrop_a != 255) {
+		return composed;
+	}
+
+	int cr = (int)((composed >> 16) & 0xff);
+	int cg = (int)((composed >> 8) & 0xff);
+	int cb = (int)(composed & 0xff);
+	int br = (int)((backdrop >> 16) & 0xff);
+	int bg = (int)((backdrop >> 8) & 0xff);
+	int bb = (int)(backdrop & 0xff);
+
+	int alpha = channel_unblend_alpha(cr, br);
+	int ga = channel_unblend_alpha(cg, bg);
+	int ba = channel_unblend_alpha(cb, bb);
+	if (ga > alpha) {
+		alpha = ga;
+	}
+	if (ba > alpha) {
+		alpha = ba;
+	}
+	if (alpha <= 0) {
+		return 0;
+	}
+	if (alpha > 255) {
+		alpha = 255;
+	}
+
+	int sr = unblend_channel(cr, br, alpha);
+	int sg = unblend_channel(cg, bg, alpha);
+	int sb = unblend_channel(cb, bb, alpha);
+	return ((uint32_t)alpha << 24) |
+		((uint32_t)sr << 16) |
+		((uint32_t)sg << 8) |
+		(uint32_t)sb;
+}
+
+static void unblend_overlay_from_backdrop(uint32_t *pixels,
+		int stride,
+		const uint32_t *backdrop_pixels,
+		int backdrop_stride,
+		const struct orange_rect *bounds) {
+	if (!rect_has_area(bounds)) {
+		return;
+	}
+	int x_start = bounds->x;
+	int x_end = bounds->x + bounds->width;
+	int y_end = bounds->y + bounds->height;
+	for (int y = bounds->y; y < y_end; y++) {
+		uint32_t *row = (uint32_t *)((unsigned char *)pixels +
+			(size_t)y * (size_t)stride);
+		const uint32_t *backdrop = (const uint32_t *)((const unsigned char *)backdrop_pixels +
+			(size_t)y * (size_t)backdrop_stride);
+		for (int x = x_start; x < x_end; x++) {
+			row[x] = overlay_source_from_composed(row[x], backdrop[x]);
+		}
+	}
+}
+
+void orange_shell_draw_overlay_with_backdrop(
+		uint32_t *pixels,
+		int width,
+		int height,
+		int stride,
+		const uint32_t *backdrop_pixels,
+		int backdrop_stride,
+		const struct orange_shell_state *state) {
+	if (pixels == NULL || backdrop_pixels == NULL || width <= 0 ||
+			height <= 0 || stride < width * 4 ||
+			backdrop_stride < width * 4) {
+		orange_shell_draw_overlay(pixels, width, height, stride, state);
+		return;
+	}
+
+	struct orange_rect bounds;
+	if (!orange_shell_overlay_bounds(width, height, state, &bounds)) {
+		orange_shell_draw_overlay(pixels, width, height, stride, state);
+		return;
+	}
+
+	size_t row_bytes = (size_t)bounds.width * sizeof(uint32_t);
+	for (int y = bounds.y; y < bounds.y + bounds.height; y++) {
+		memcpy((unsigned char *)pixels + (size_t)y * (size_t)stride +
+				(size_t)bounds.x * sizeof(uint32_t),
+			(const unsigned char *)backdrop_pixels +
+				(size_t)y * (size_t)backdrop_stride +
+				(size_t)bounds.x * sizeof(uint32_t),
+			row_bytes);
+	}
+
+	cairo_surface_t *surface = cairo_image_surface_create_for_data(
+		(unsigned char *)pixels,
+		CAIRO_FORMAT_ARGB32,
+		width,
+		height,
+		stride);
+	cairo_t *cr = cairo_create(surface);
+	cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+	cairo_rectangle(cr, bounds.x, bounds.y, bounds.width, bounds.height);
+	cairo_clip(cr);
+	draw_overlay_contents(cr, width, height, state);
 	cairo_destroy(cr);
 	cairo_surface_flush(surface);
 	cairo_surface_destroy(surface);
+
+	unblend_overlay_from_backdrop(pixels, stride,
+		backdrop_pixels, backdrop_stride, &bounds);
 }
 
 const char *orange_shell_volume_label(const struct orange_volume_info *volumes,
@@ -2332,5 +3157,3 @@ const char *orange_shell_volume_icon_name(const struct orange_volume_info *volum
 	}
 	return volumes[index].icon_name;
 }
-
-
