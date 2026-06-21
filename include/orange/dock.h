@@ -1,7 +1,20 @@
 #ifndef ORANGE_DOCK_H
 #define ORANGE_DOCK_H
 
+#include <stdint.h>
+
 #include "orange/shell.h"
+
+#define ORANGE_DOCK_BOUNCE_DURATION_MS 800
+
+struct orange_dock_bounce {
+	bool active;
+	int launcher_idx;
+	uint32_t start_time;
+};
+
+double orange_dock_bounce_offset(const struct orange_dock_bounce *bounce,
+	uint32_t now_ms, double scale);
 
 void orange_dock_draw(
 	cairo_t *cr,

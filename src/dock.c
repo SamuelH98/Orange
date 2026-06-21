@@ -971,6 +971,28 @@ static void draw_dock_drag_ghost(cairo_t *cr,
 	draw_dock_remove_bubble(cr, layout, state, ghost_item);
 }
 
+double orange_dock_bounce_offset(const struct orange_dock_bounce *bounce,
+		uint32_t now_ms, double scale) {
+	if (bounce == NULL || !bounce->active) {
+		return 0.0;
+	}
+	uint32_t elapsed = now_ms - bounce->start_time;
+	if (elapsed >= ORANGE_DOCK_BOUNCE_DURATION_MS) {
+		return 0.0;
+	}
+	double t = (double)elapsed / (double)ORANGE_DOCK_BOUNCE_DURATION_MS;
+	double bt = t * 3.0;
+	int bounce_idx = (int)bt;
+	double bt_f = bt - (double)bounce_idx;
+	if (bounce_idx > 2) {
+		return 0.0;
+	}
+	static const double amplitudes[] = {1.0, 0.50, 0.18};
+	double amp = amplitudes[bounce_idx];
+	double result = amp * sin(bt_f * M_PI);
+	return -result * 22.0 * scale;
+}
+
 static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 		const struct orange_shell_state *state,
 		const struct orange_config *config) {
@@ -1009,6 +1031,19 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 		}
 
 		struct orange_rect item = visual[i].rect;
+		if (state != NULL && state->dock_bounce_active &&
+				state->dock_bounce_launcher_idx == launcher_idx &&
+				config != NULL && config->animate_opening_applications) {
+			struct orange_dock_bounce tmp = {
+				.active = true,
+				.launcher_idx = state->dock_bounce_launcher_idx,
+				.start_time = state->dock_bounce_start_time,
+			};
+			struct timespec ts;
+			clock_gettime(CLOCK_MONOTONIC, &ts);
+			uint32_t now_ms = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+			item.y += (int)orange_dock_bounce_offset(&tmp, now_ms, s);
+		}
 		int variant = dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT;
 		bool grid_icon = dock_launcher_is_grid(config, launcher_idx);
 		if (state->assets != NULL && launcher_idx >= 0) {

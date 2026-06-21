@@ -1,7 +1,9 @@
+#include "orange/dock.h"
 #include "orange/launcher.h"
 #include "orange/shell.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1024,6 +1026,34 @@ static void test_widget_layer_exists(void) {
 	assert(layout.widgets[1].visible);
 }
 
+static void test_dock_bounce_offset(void) {
+	struct orange_dock_bounce bounce = {
+		.active = true,
+		.launcher_idx = 3,
+		.start_time = 1000000,
+	};
+	double scale = 1.0;
+
+	double t0 = orange_dock_bounce_offset(&bounce, 1000000, scale);
+	assert(t0 == 0.0);
+
+	double t_mid = orange_dock_bounce_offset(&bounce,
+		1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS / 6, scale);
+	assert(t_mid < 0.0);
+
+	double t_end = orange_dock_bounce_offset(&bounce,
+		1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS, scale);
+	assert(t_end == 0.0);
+
+	double t_past = orange_dock_bounce_offset(&bounce,
+		1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS + 100, scale);
+	assert(t_past == 0.0);
+
+	bounce.active = false;
+	double t_inactive = orange_dock_bounce_offset(&bounce, 1000000, scale);
+	assert(t_inactive == 0.0);
+}
+
 int main(void) {
 	test_dock_hit();
 	test_reordered_dock_hit_resolves_launcher();
@@ -1056,6 +1086,7 @@ int main(void) {
 	test_render_smoke();
 	test_dark_render_smoke();
 	test_widget_layer_exists();
+	test_dock_bounce_offset();
 	puts("shell layout tests passed");
 	return 0;
 }

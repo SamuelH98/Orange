@@ -125,6 +125,7 @@ struct orange_config {
 	enum orange_dock_position dock_position;
 	enum orange_minimize_effect minimize_effect;
 	bool dock_show_indicators;
+	bool animate_opening_applications;
 	int dock_order[ORANGE_DOCK_MAX];
 
 	bool calendar_widget_visible;

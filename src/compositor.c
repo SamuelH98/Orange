@@ -247,6 +247,9 @@ struct orange_server {
 	bool dock_drag_remove;
 	bool once_committed;
 	uint32_t seat_caps;
+	bool dock_bounce_active;
+	uint32_t dock_bounce_start;
+	int dock_bounce_launcher_idx;
 };
 
 static void server_mark_shell_dirty(struct orange_server *server);
@@ -1924,6 +1927,9 @@ static void output_redraw_shell(struct orange_output *output) {
 		.launcher_app_drag_entry_index = -1,
 		.launcher_category_count = output->server->launcher_category_count,
 		.launcher_category_active = output->server->launcher_category_active,
+		.dock_bounce_active = output->server->dock_bounce_active,
+		.dock_bounce_launcher_idx = output->server->dock_bounce_launcher_idx,
+		.dock_bounce_start_time = output->server->dock_bounce_start,
 	};
 	memcpy(state.dock_open, output->server->dock_open, sizeof(state.dock_open));
 	memcpy(state.launcher_query, output->server->launcher_query,
@@ -3738,6 +3744,15 @@ static void finish_dock_drag(struct orange_server *server) {
 		server_mark_shell_dirty(server);
 	} else if (!moved && index >= 0 && index < dock_count) {
 		int launcher_idx = dock_launcher_for_visible_index(server, index);
+		if (launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
+				server->config.dock_apps[launcher_idx][0] != '\0' &&
+				!orange_dock_app_is_permanent(
+					server->config.dock_apps[launcher_idx]) &&
+				server->config.animate_opening_applications) {
+			server->dock_bounce_active = true;
+			server->dock_bounce_start = monotonic_time_msec();
+			server->dock_bounce_launcher_idx = launcher_idx;
+		}
 		launch_dock_launcher(server, launcher_idx);
 		server_mark_shell_dirty(server);
 	}
@@ -5196,6 +5211,16 @@ static void handle_output_present(struct wl_listener *listener, void *data) {
 	struct orange_output *output = wl_container_of(listener, output, present);
 	(void)data;
 	output->commit_pending = false;
+	struct orange_server *server = output->server;
+	if (server->dock_bounce_active) {
+		uint32_t now = monotonic_time_msec();
+		uint32_t elapsed = now - server->dock_bounce_start;
+		if (elapsed >= ORANGE_DOCK_BOUNCE_DURATION_MS) {
+			server->dock_bounce_active = false;
+		} else {
+			output->shell_dirty = true;
+		}
+	}
 	if (output->shell_dirty || output->wlr_output->needs_frame) {
 		wlr_output_schedule_frame(output->wlr_output);
 	}

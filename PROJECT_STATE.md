@@ -317,17 +317,46 @@ Meson startup smoke test for custom headless compositor arguments.
 - Desktop entry parser test covers `Categories=` field.
 - `test_launcher_category_filter` covers category-based filtering.
 
+### Dock Bounce Animation
+
+#### Implemented
+
+- Per-app icon bounce animation when a Dock item is clicked to launch, matching
+  the macOS behavior. The icon performs three diminishing hops (upward Y offset
+  with decaying amplitude) over 800ms.
+- Bounce uses a decaying sine wave per hop: amplitudes 1.0, 0.50, 0.18 for the
+  three bounces, 22px initial amplitude at 1x layout scale, scaled by layout
+  scale factor.
+- The bounce is driven through the present handler: each output present event
+  checks if the bounce is still active and re-arms a shell redraw if so, so
+  the animation runs at the display's native refresh rate without a separate
+  animation timer.
+- Config key `animate_opening_applications=true|false` (default true) controls
+  the feature, matching the macOS "Animate opening applications" setting.
+- Built-in permanent Dock items (launcher, Trash) never bounce.
+
+#### Tests Added
+
+- `test_dock_bounce_offset` in `test_shell_layout` verifies bounce starts at 0,
+  goes negative (upward) mid-animation, returns to 0 after duration, stays 0
+  for inactive bounces.
+- Config round-trip test for `animate_opening_applications`.
+
+### Validation
+
+- `ninja -C build` and `meson test -C build --print-errorlogs` (6/6) all pass.
+- Bounce offset math verified by unit test.
+
 ## Current Work
 
-None. All recent feature and bug-fix work has been merged.
+- Wire up individual status-icon features (Wi-Fi, Sound, Battery, Spotlight,
+  Control Center) for interactive status menus.
 
 ---
 
 ## Next Actions
 
-1. Wire up individual status-icon features (Wi-Fi, Sound, Battery, Spotlight,
-   Control Center).
-2. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/orange`.
+1. Run on WSLg with `WLR_BACKENDS=wayland WLR_RENDERER=pixman build/orange`.
 3. Test Dock and desktop interactively under WSLg/nested Wayland.
 4. Keep Orange GTK/icon theme assets in a separate project and install them
    into normal user/system GTK and icon theme directories for testing.

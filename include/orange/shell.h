@@ -300,6 +300,10 @@ struct orange_shell_state {
 	char launcher_categories[ORANGE_LAUNCHER_CATEGORY_MAX][ORANGE_LAUNCHER_CATEGORY_NAME_MAX];
 	int launcher_category_count;
 	int launcher_category_active;
+
+	bool dock_bounce_active;
+	int dock_bounce_launcher_idx;
+	uint32_t dock_bounce_start_time;
 };
 
 struct orange_shell_draw_options {

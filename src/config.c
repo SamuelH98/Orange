@@ -396,6 +396,8 @@ static void apply_pair(struct orange_config *config,
 		config->minimize_effect = parse_minimize_effect(value);
 	} else if (strcmp(key, "dock_show_indicators") == 0) {
 		config->dock_show_indicators = parse_bool(value);
+	} else if (strcmp(key, "animate_opening_applications") == 0) {
+		config->animate_opening_applications = parse_bool(value);
 	} else if (strcmp(key, "dock_order") == 0) {
 		const char *p = value;
 		int idx = 0;
@@ -496,6 +498,7 @@ void orange_config_set_defaults(struct orange_config *config) {
 	config->dock_position = ORANGE_DOCK_POSITION_BOTTOM;
 	config->minimize_effect = ORANGE_MINIMIZE_EFFECT_GENIE;
 	config->dock_show_indicators = true;
+	config->animate_opening_applications = true;
 	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
 		config->dock_order[i] = i;
 	}
@@ -629,6 +632,8 @@ bool orange_config_save(const struct orange_config *config, const char *path) {
 		minimize_effect_name(config->minimize_effect));
 	fprintf(file, "dock_show_indicators=%s\n",
 		config->dock_show_indicators ? "true" : "false");
+	fprintf(file, "animate_opening_applications=%s\n",
+		config->animate_opening_applications ? "true" : "false");
 	fprintf(file, "dock_order=");
 	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
 		if (i > 0) {
