@@ -250,6 +250,9 @@ struct orange_server {
 	bool dock_bounce_active;
 	uint32_t dock_bounce_start;
 	int dock_bounce_launcher_idx;
+	bool cursor_loading_active;
+	int cursor_loading_launcher_idx;
+	uint32_t cursor_loading_start_ms;
 };
 
 static void server_mark_shell_dirty(struct orange_server *server);
@@ -2429,6 +2432,10 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 		wlr_seat_pointer_notify_clear_focus(server->seat);
 	}
 
+	if (server->cursor_loading_active && server->xcursor_manager != NULL) {
+		wlr_cursor_set_xcursor(server->cursor, server->xcursor_manager, "progress");
+	}
+
 	/* Skip dock-hover layout computation when the cursor is over a client
 	 * surface — the dock is behind the window and magnification is invisible. */
 	if (surface == NULL) {
@@ -3753,6 +3760,18 @@ static void finish_dock_drag(struct orange_server *server) {
 			server->dock_bounce_start = monotonic_time_msec();
 			server->dock_bounce_launcher_idx = launcher_idx;
 		}
+		if (launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
+				server->config.dock_apps[launcher_idx][0] != '\0' &&
+				!orange_dock_app_is_permanent(
+					server->config.dock_apps[launcher_idx])) {
+			server->cursor_loading_active = true;
+			server->cursor_loading_launcher_idx = launcher_idx;
+			server->cursor_loading_start_ms = monotonic_time_msec();
+			if (server->xcursor_manager != NULL) {
+				wlr_cursor_set_xcursor(server->cursor,
+					server->xcursor_manager, "progress");
+			}
+		}
 		launch_dock_launcher(server, launcher_idx);
 		server_mark_shell_dirty(server);
 	}
@@ -4987,6 +5006,18 @@ static void handle_view_map(struct wl_listener *listener, void *data) {
 		launcher_close_overlay(view->server);
 	}
 	focus_view(view, view->xdg_surface->surface);
+	if (view->server->cursor_loading_active &&
+			dock_launcher_for_view(view->server, view) ==
+				view->server->cursor_loading_launcher_idx) {
+		view->server->cursor_loading_active = false;
+		view->server->cursor_loading_launcher_idx = -1;
+		view->server->cursor_loading_start_ms = 0;
+		if (view->server->xcursor_manager != NULL &&
+				view->server->seat->pointer_state.focused_surface == NULL) {
+			wlr_cursor_set_xcursor(view->server->cursor,
+				view->server->xcursor_manager, "default");
+		}
+	}
 	server_mark_shell_dirty(view->server);
 }
 
@@ -5219,6 +5250,20 @@ static void handle_output_present(struct wl_listener *listener, void *data) {
 			server->dock_bounce_active = false;
 		} else {
 			output->shell_dirty = true;
+		}
+	}
+	if (server->cursor_loading_active) {
+		uint32_t now = monotonic_time_msec();
+		uint32_t elapsed = now - server->cursor_loading_start_ms;
+		if (elapsed >= 15000) {
+			server->cursor_loading_active = false;
+			server->cursor_loading_launcher_idx = -1;
+			server->cursor_loading_start_ms = 0;
+			if (server->xcursor_manager != NULL &&
+					server->seat->pointer_state.focused_surface == NULL) {
+				wlr_cursor_set_xcursor(server->cursor,
+					server->xcursor_manager, "default");
+			}
 		}
 	}
 	if (output->shell_dirty || output->wlr_output->needs_frame) {
