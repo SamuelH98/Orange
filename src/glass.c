@@ -276,13 +276,13 @@ void orange_glass_draw(cairo_t *cr,
 	cairo_pattern_t *shade = cairo_pattern_create_linear(
 		rect->x, rect->y, rect->x, rect->y + rect->height);
 	if (dark) {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.12, 0.14, 0.18, 0.35);
-		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.10, 0.12, 0.15, 0.30);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.04, 0.05, 0.07, 0.25);
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.12, 0.14, 0.18, 0.28);
+		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.10, 0.12, 0.15, 0.24);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.04, 0.05, 0.07, 0.20);
 	} else {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.50, 0.50, 0.50, 0.22);
-		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.45, 0.45, 0.45, 0.18);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.40, 0.40, 0.40, 0.14);
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.50, 0.50, 0.50, 0.18);
+		cairo_pattern_add_color_stop_rgba(shade, 0.50, 0.45, 0.45, 0.45, 0.14);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.40, 0.40, 0.40, 0.10);
 	}
 	cairo_rectangle(cr, rect->x, rect->y, rect->width, rect->height);
 	cairo_set_source(cr, shade);
@@ -318,13 +318,13 @@ void orange_glass_draw_panel(cairo_t *cr,
 	cairo_pattern_t *shade = cairo_pattern_create_linear(
 		rect->x, rect->y, rect->x, rect->y + rect->height);
 	if (dark) {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.17, 0.18, 0.20, 0.65);
-		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.12, 0.13, 0.15, 0.62);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.07, 0.08, 0.10, 0.58);
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 0.17, 0.18, 0.20, 0.50);
+		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.12, 0.13, 0.15, 0.48);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.07, 0.08, 0.10, 0.44);
 	} else {
-		cairo_pattern_add_color_stop_rgba(shade, 0.0, 1.0, 1.0, 1.0, 0.70);
-		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.96, 0.97, 0.98, 0.66);
-		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.80, 0.84, 0.88, 0.60);
+		cairo_pattern_add_color_stop_rgba(shade, 0.0, 1.0, 1.0, 1.0, 0.55);
+		cairo_pattern_add_color_stop_rgba(shade, 0.55, 0.96, 0.97, 0.98, 0.52);
+		cairo_pattern_add_color_stop_rgba(shade, 1.0, 0.80, 0.84, 0.88, 0.48);
 	}
 	cairo_rectangle(cr, rect->x, rect->y, rect->width, rect->height);
 	cairo_set_source(cr, shade);
