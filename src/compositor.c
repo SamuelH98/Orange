@@ -3879,6 +3879,30 @@ static void handle_app_tools_menu_action(
 	}
 }
 
+static void show_dock_app_in_files(struct orange_server *server, int launcher_idx) {
+	if (server == NULL || launcher_idx < 0 || launcher_idx >= ORANGE_DOCK_MAX ||
+			server->config.dock_apps[launcher_idx][0] == '\0') {
+		return;
+	}
+	const char *app_id = server->config.dock_apps[launcher_idx];
+	const char *home = getenv("HOME");
+	if (home == NULL) {
+		home = "";
+	}
+	char cmd[2048];
+	snprintf(cmd, sizeof(cmd),
+		"d=\"%s/.local/share/applications\"; "
+		"f=\"$d/%s.desktop\"; "
+		"if [ -f \"$f\" ]; then xdg-open \"$d\"; "
+		"elif [ -f \"/usr/share/applications/%s.desktop\" ]; then "
+		"xdg-open \"/usr/share/applications\"; "
+		"elif [ -f \"/usr/local/share/applications/%s.desktop\" ]; then "
+		"xdg-open \"/usr/local/share/applications\"; "
+		"else xdg-open \"$HOME\"; fi || true",
+		home, app_id, app_id, app_id);
+	launch_command(cmd);
+}
+
 static void toggle_open_at_login(struct orange_server *server, int launcher_idx) {
 	if (server == NULL || launcher_idx < 0 || launcher_idx >= ORANGE_DOCK_MAX ||
 			server->config.dock_apps[launcher_idx][0] == '\0') {
@@ -4030,7 +4054,7 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			launch_dock_launcher(server, launcher_idx);
 			break;
 		case 2:
-			launch_command("xdg-open \"$HOME\" || true");
+			show_dock_app_in_files(server, launcher_idx);
 			break;
 		case 3:
 			toggle_open_at_login(server, launcher_idx);
@@ -4062,7 +4086,7 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			}
 			break;
 		case 3:
-			launch_command("xdg-open \"$HOME\" || true");
+			show_dock_app_in_files(server, launcher_idx);
 			break;
 		case 4:
 			toggle_open_at_login(server, launcher_idx);
