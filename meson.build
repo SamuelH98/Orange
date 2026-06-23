@@ -21,12 +21,17 @@ inc = include_directories('include')
 
 cairo_dep = dependency('cairo')
 librsvg_dep = dependency('librsvg-2.0')
+gdk_pixbuf_dep = dependency('gdk-pixbuf-2.0')
 gio_dep = dependency('gio-2.0')
 drm_dep = dependency('libdrm')
 pixman_dep = dependency('pixman-1')
 wayland_server_dep = dependency('wayland-server')
 wlroots_dep = dependency('wlroots')
 xkbcommon_dep = dependency('xkbcommon')
+systemd_dep = dependency('libsystemd', required: false)
+if systemd_dep.found()
+  add_project_arguments('-DORANGE_HAVE_SYSTEMD=1', language: 'c')
+endif
 vulkan_dep = dependency('vulkan', required: false)
 if vulkan_dep.found()
   add_project_arguments('-DORANGE_HAVE_VULKAN=1', language: 'c')
@@ -53,20 +58,23 @@ orange_core_sources = files(
   'src/glass.c',
   'src/launcher.c',
   'src/menubar.c',
+  'src/notifications.c',
   'src/shell.c',
+  'src/widget_data.c',
+  'src/widgets.c',
 )
 
 orange_core = static_library(
   'orange-core',
   orange_core_sources,
   include_directories: inc,
-  dependencies: [cairo_dep, drm_dep, math_dep, librsvg_dep],
+  dependencies: [cairo_dep, drm_dep, math_dep, librsvg_dep, gdk_pixbuf_dep, gio_dep, systemd_dep],
 )
 
 orange_core_dep = declare_dependency(
   include_directories: inc,
   link_with: orange_core,
-  dependencies: [cairo_dep, drm_dep, math_dep, librsvg_dep],
+  dependencies: [cairo_dep, drm_dep, math_dep, librsvg_dep, gdk_pixbuf_dep, gio_dep, systemd_dep],
 )
 
 orange_exe = executable(
@@ -163,6 +171,22 @@ test_desktop_entry = executable(
   dependencies: [orange_core_dep],
 )
 
+test_notifications = executable(
+  'test-notifications',
+  files('tests/test_notifications.c'),
+  include_directories: inc,
+  dependencies: [orange_core_dep],
+)
+
+test_widget_data = executable(
+  'test-widget-data',
+  files('tests/test_widget_data.c'),
+  include_directories: inc,
+  dependencies: [orange_core_dep],
+)
+
 test('config', test_config)
 test('assets', test_assets)
 test('desktop-entry', test_desktop_entry)
+test('notifications', test_notifications)
+test('widget-data', test_widget_data)
