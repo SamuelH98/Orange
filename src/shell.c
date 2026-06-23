@@ -84,15 +84,15 @@ static const char *fallback_icon(const char *app_id) {
 
 static const char *menu_labels[] = {
 	"About Orange",
-	"System Settings...",
-	"App Store...",
+	"System Settings",
+	"App Store",
 	"Recent Items",
-	"Force Quit...",
+	"Force Quit",
 	"Sleep",
-	"Restart...",
-	"Shut Down...",
+	"Restart",
+	"Shut Down",
 	"Lock Screen",
-	"Log Out...",
+	"Log Out",
 };
 
 static const int menu_separator_before[] = {3, 4, 5, 8, -1};
@@ -195,24 +195,19 @@ static const char *dock_context_labels[] = {
 	"Open",
 	"Show in Files",
 	"Remove from Dock",
-	"Open at Login",
-	"Dock Settings",
 };
 
-static const int dock_context_separator_before[] = {2, 4, -1};
+static const int dock_context_separator_before[] = {1, 2, -1};
 
 static const char *dock_running_context_labels[] = {
-	"Open",
 	"Show All Windows",
 	"Hide",
 	"Show in Files",
 	"Remove from Dock",
-	"Open at Login",
-	"Dock Settings",
 	"Quit",
 };
 
-static const int dock_running_context_separator_before[] = {3, 6, 7, -1};
+static const int dock_running_context_separator_before[] = {2, 4, -1};
 
 static const char *dock_separator_context_labels[] = {
 	"Turn Magnification On/Off",
@@ -245,7 +240,7 @@ static const char *desktop_context_labels[] = {
 	"Edit Widgets",
 };
 
-static const int desktop_context_separator_before[] = {2, 5, -1};
+static const int desktop_context_separator_before[] = {1, 2, 6, 7, -1};
 
 static const char *desktop_icon_context_labels[] = {
 	"Open",

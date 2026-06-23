@@ -936,7 +936,7 @@ static void test_context_menu_hit(void) {
 	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_DOCK, 0, 0, 0, NULL);
-	assert(layout.context_menu_item_count == 5);
+	assert(layout.context_menu_item_count == 3);
 	assert(layout.context_menu_panel.y + layout.context_menu_panel.height <=
 		layout.dock.y);
 	/* index 1 is "Show in Files" (first non-separator item after index 0) */
@@ -951,17 +951,16 @@ static void test_context_menu_hit(void) {
 
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 0, 0, 0, NULL);
-	assert(layout.context_menu_item_count == 8);
-	assert(layout.context_menu_separator[3]);
-	assert(layout.context_menu_separator[6]);
-	assert(layout.context_menu_separator[7]);
+	assert(layout.context_menu_item_count == 5);
+	assert(layout.context_menu_separator[2]);
+	assert(layout.context_menu_separator[4]);
 	assert(strcmp(orange_menubar_context_menu_label(
-		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 1),
+		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 0),
 		"Show All Windows") == 0);
 	assert(strcmp(orange_menubar_context_menu_label(
-		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 7), "Quit") == 0);
+		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 4), "Quit") == 0);
 	assert(strcmp(orange_menubar_context_menu_icon_name(
-		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 7),
+		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 4),
 		"application-exit") == 0);
 
 	orange_shell_layout_set_context_menu(&layout, ORANGE_CONTEXT_MENU_DOCK,

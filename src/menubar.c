@@ -14,15 +14,15 @@
 
 static const char *menu_labels[] = {
 	"About Orange",
-	"System Settings...",
-	"App Store...",
+	"System Settings",
+	"App Store",
 	"Recent Items",
-	"Force Quit...",
+	"Force Quit",
 	"Sleep",
-	"Restart...",
-	"Shut Down...",
+	"Restart",
+	"Shut Down",
 	"Lock Screen",
-	"Log Out...",
+	"Log Out",
 };
 
 /* Index of first separator after each group; -1 marks end.
@@ -212,37 +212,27 @@ static const char *dock_context_labels[] = {
 	"Open",
 	"Show in Files",
 	"Remove from Dock",
-	"Open at Login",
-	"Dock Settings",
 };
 
 static const char *dock_context_icon_names[] = {
 	"document-open",
 	"system-file-manager",
 	"list-remove",
-	"system-run",
-	"preferences-system",
 };
 
 static const char *dock_running_context_labels[] = {
-	"Open",
 	"Show All Windows",
 	"Hide",
 	"Show in Files",
 	"Remove from Dock",
-	"Open at Login",
-	"Dock Settings",
 	"Quit",
 };
 
 static const char *dock_running_context_icon_names[] = {
-	"document-open",
 	"view-restore",
 	"view-hidden",
 	"system-file-manager",
 	"list-remove",
-	"system-run",
-	"preferences-system",
 	"application-exit",
 };
 
