@@ -167,9 +167,17 @@ Apple's Notification Centre guide says the surface opens from the menu-bar
 date/time area, closes when the user clicks the desktop or the date/time area
 again, and combines missed notifications with widgets. It also describes
 grouped notification stacks, notification actions, clear actions, and app
-notification settings. For Orange's current shell, the implemented core is a
-right-edge overlay opened from the date/time/status area, closed from outside
-clicks or Escape, with notification-style cards above widgets.
+notification settings. Orange's shell keeps the same right-edge overlay model
+and now sources missed notification cards from the freedesktop desktop
+notifications protocol instead of local placeholder text.
+
+The freedesktop Desktop Notifications Specification defines
+`org.freedesktop.Notifications` on the session bus with `GetCapabilities`,
+`Notify`, `CloseNotification`, and `GetServerInformation` methods plus
+`NotificationClosed`, `ActionInvoked`, and `ActivationToken` signals. Orange
+implements the persistent, body, and static-icon subset required for real app
+notifications and keeps unsupported notification actions as ignored client
+input rather than presenting fake actions.
 
 Apple's widget guide says Notification Centre widgets are added from the Edit
 Widgets button at the bottom of Notification Centre, can be rearranged within
@@ -177,13 +185,52 @@ Notification Centre, and can be resized or removed from widget shortcut menus.
 Orange already has desktop widget shortcut menus for resize/remove and maps
 Edit Widgets to the local Settings app until a dedicated widget gallery exists.
 
-`gnome-control-center` is not a general freedesktop settings launcher: when run
-outside GNOME or Unity it exits with "Running gnome-control-center is only
-supported under GNOME and Unity". Orange therefore should not use it as a
-fallback inside its own compositor session. Fallback actions should launch
-Orange's own GTK settings app first, then standalone tools (`pavucontrol`,
-`nm-connection-editor`, `blueman-manager`, `wdisplays`, etc.) or desktop-neutral
-settings shells that tolerate non-GNOME sessions.
+Local Linux widget data findings:
+
+- GNOME Calendar is backed by Evolution Data Server on this test system, with
+  a local iCalendar file at
+  `$XDG_DATA_HOME/evolution/calendar/system/calendar.ics`. The Orange widget
+  data provider scans Evolution calendar `.ics` files directly so calendar
+  widgets can show real local events without requiring EDS development headers.
+- `pkg-config` exposes `gio-2.0`, `geoclue-2.0`, `json-c`, and `libsystemd`,
+  but not Evolution Data Server, libical, libgweather, libsoup, or libcurl.
+  The implementation therefore avoids compile-time GNOME calendar/weather
+  dependencies and keeps parsing small and local.
+- `org.gnome.GWeather4` settings are installed and expose a
+  `default-location` key. That provides a real GNOME Weather location, but not
+  a stable public current-conditions API in this environment. Orange reads a
+  local weather file when present and otherwise renders the configured
+  location with an unavailable current-weather state instead of fake weather.
+- systemd-logind exposes session start time through `libsystemd`, so Screen
+  Time can display the real login-session duration when available and fall
+  back to Orange's compositor start time elsewhere.
+
+`gnome-control-center` is guarded by desktop identity: on this system
+`XDG_CURRENT_DESKTOP=Orange gnome-control-center --list` exits with "Running
+gnome-control-center is only supported under GNOME and Unity", while
+`XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu` lists panels including
+`applications`, `background`, `bluetooth`, `display`, `keyboard`, `network`,
+`wifi`, `notifications`, `power`, `privacy`, `sound`, `system`, `ubuntu`,
+`universal-access`, and more. Orange therefore launches GNOME Control Center
+through a wrapper that advertises a GNOME/Unity-compatible desktop identity and
+unsets forced GTK theme variables so GNOME Settings follows the system
+appearance keys.
+
+The installed GNOME Background schema is `org.gnome.desktop.background`.
+`gsettings describe` reports `picture-uri` and `picture-uri-dark` as local
+`file://` URI settings. It also exposes `picture-options` values `none`,
+`wallpaper`, `centered`, `scaled`, `stretched`, `zoom`, and `spanned`,
+`picture-opacity`, `primary-color`, `secondary-color`, and
+`color-shading-type` values `solid`, `vertical`, and `horizontal`. Orange maps
+these keys into the wallpaper asset cache so the GNOME Background panel changes
+the compositor wallpaper.
+
+The xdg-desktop-portal Settings documentation standardizes
+`org.freedesktop.appearance color-scheme` as an unsigned integer with values
+0 for no preference, 1 for prefer dark, and 2 for prefer light. It defines
+`Read`, `ReadOne`, `ReadAll`, and `SettingChanged` on the frontend portal and
+similar backend methods/signals for desktop implementations. Orange implements
+the color-scheme subset for GTK/libadwaita and portal-aware clients.
 
 Apple's current appearance documentation says light/dark appearance applies to
 the menu bar, Dock, windows, and built-in apps. For Orange this means context
@@ -275,6 +322,23 @@ Orange should therefore make Dock removal a drag-off alias operation, keep
 Trash and the launcher available as permanent shell affordances, and let app
 icons from the launcher become Dock aliases when dropped on the Dock.
 
+Mac Dock shortcut-menu references confirm that running applications are
+represented distinctly in the Dock and expose app lifecycle actions from their
+Dock menu. TechRadar describes open apps as marked by a small dot and says an
+open app can be closed from the Dock shortcut menu with Quit; Lifewire also
+documents quitting a running Mac app from the Dock with right-click > Quit.
+The macOS Dock behavior reference describes extended Dock menus with common
+actions such as Quit, Keep in Dock, and Remove from Dock, and Mission
+Control/App Expose references describe Show All Windows from an app's Dock
+icon. Orange maps that shape to Linux/wlroots by adding a running Dock menu
+variant with Show All Windows, Hide, and Quit, while preserving its existing
+Show in Files, Remove from Dock, Open at Login, and Dock Settings rows.
+
+Because Dock and menu-bar surfaces are foreground shell chrome, right-clicks on
+their empty glass/background regions should be consumed by shell hit testing.
+They should not be treated as empty desktop background hits merely because the
+pointer is not over a child icon or text item.
+
 ## Risks
 
 - wlroots APIs are explicitly unstable; code targets 0.17.1 as installed.
@@ -351,8 +415,18 @@ icons from the launcher become Dock aliases when dropped on the Dock.
   https://support.apple.com/guide/imac/system-settings-apda966cb8af/mac
 - GNOME Settings source mirror:
   https://github.com/GNOME/gnome-control-center
+- xdg-desktop-portal Settings frontend interface:
+  https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Settings.html
+- xdg-desktop-portal Settings backend interface:
+  https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.impl.portal.Settings.html
 - Dock (macOS) behavior reference:
   https://en.wikipedia.org/wiki/Dock_(macOS)
+- TechRadar, "What is the macOS Dock?":
+  https://www.techradar.com/computing/mac-os/what-is-the-macos-dock-heres-how-to-master-apples-taskbar-rival-on-your-brand-new-macbook-neo
+- Lifewire, "How to Close Applications on Mac":
+  https://www.lifewire.com/close-applications-on-mac-5184824
+- Mission Control (macOS) App Expose reference:
+  https://en.wikipedia.org/wiki/Mission_Control_(macOS)
 - Apple Human Interface Guidelines, "Liquid Glass":
   https://developer.apple.com/design/human-interface-guidelines/liquid-glass
 - Apple Human Interface Guidelines, "Menus":

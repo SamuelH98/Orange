@@ -224,6 +224,14 @@ Meson startup smoke test for custom headless compositor arguments.
   bases for the same theme name.
 - Replaced the old Cairo blur pass with a real sliding-window blur for direct
   CPU cost reduction on context menus, dropdowns, launcher glass, and Dock glass.
+- Restored dropdowns, context menus, and launcher surfaces to the shared base
+  glass material used by the Dock and menu bar instead of the brighter raised
+  panel material, preventing the overlay buffer from producing a washed-out
+  white source layer on light backdrops.
+- Overlay glass now captures a bounded composed-scene backdrop with the overlay
+  node hidden before drawing transient menus/launcher surfaces, so blur samples
+  desktop shell content and client app windows underneath the menu. If readback
+  is unavailable, it falls back to the shell buffer backdrop.
 
 #### Tests Added
 
@@ -352,6 +360,54 @@ Meson startup smoke test for custom headless compositor arguments.
 - Wire up individual status-icon features (Wi-Fi, Sound, Battery, Spotlight,
   Control Center) for interactive status menus.
 
+### Dark/Light Appearance Advertising
+
+- Written `color-scheme` to GSettings `org.gnome.desktop.interface` schema so
+  GTK4/libadwaita apps (Firefox, GNOME apps) receive the correct theme hint.
+- Written `gtk-application-prefer-dark-theme` and `color-scheme` to
+  `~/.config/gtk-3.0/settings.ini` and `~/.config/gtk-4.0/settings.ini` at
+  runtime so GTK3 apps started from the compositor session (including Firefox
+  in GTK fallback mode) receive the dark/light preference through the
+  traditional GTK settings file path.
+- Orange now also reads `org.gnome.desktop.interface color-scheme` while
+  running so GNOME Settings' Style selector can change Orange between
+  light/default and dark appearance. The compositor pumps the default GLib
+  context from its timer so GSettings notifications are serviced without a
+  separate GLib main loop.
+- Implemented `org.freedesktop.impl.portal.Settings` D-Bus backend at
+  `/org/freedesktop/portal/desktop` with bus name
+  `org.freedesktop.impl.portal.desktop.orange`. The backend responds to `Read`
+  and `ReadAll` calls for `org.freedesktop.appearance.color-scheme` and emits
+  `SettingChanged` signals when the appearance toggles at runtime. This lets
+  Firefox and other portal-aware clients receive the color-scheme through the
+  xdg-desktop-portal chain.
+- `GTK_THEME`, `GTK_ICON_THEME`, and `ORANGE_APPEARANCE` environment variables
+  continue to be exported for apps started from the compositor session.
+- Extended the Settings portal surface to also answer the
+  `org.freedesktop.portal.Settings` frontend interface, including `Read`,
+  `ReadOne`, `ReadAll`, the `version` property, and `SettingChanged` for the
+  `org.freedesktop.appearance.color-scheme` key.
+
+### GNOME Control Center And Wallpapers
+
+- Settings, status-panel actions, GNOME Settings desktop entries, and the
+  desktop "Change Desktop Background..." action now launch
+  `gnome-control-center` through a GNOME/Unity-compatible environment wrapper
+  when it is installed, with KDE/Xfce/MATE/standalone fallbacks retained.
+- The wrapper advertises `XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu`,
+  `XDG_SESSION_DESKTOP=gnome`, and `DESKTOP_SESSION=gnome`, and unsets forced
+  GTK theme environment variables so GNOME Settings follows system appearance.
+- The compositor reads `org.gnome.desktop.background` at startup and polls it
+  while running. Light/dark picture URIs, picture options, opacity, solid
+  colors, and gradient colors feed the wallpaper asset cache.
+- The asset layer can compose GNOME-selected wallpapers before shell rendering,
+  including `none`, `wallpaper`, `centered`, `scaled`, `stretched`, `zoom`, and
+  `spanned` placement. Bundled Orange wallpapers remain the fallback when GNOME
+  background settings are unavailable.
+- Light-mode system menus, context menus, and dropdowns now use white text,
+  white separators, and white-tinted icons, matching the dark-mode transient
+  menu foreground treatment.
+
 ---
 
 ## Next Actions
@@ -360,6 +416,8 @@ Meson startup smoke test for custom headless compositor arguments.
 3. Test Dock and desktop interactively under WSLg/nested Wayland.
 4. Keep Orange GTK/icon theme assets in a separate project and install them
    into normal user/system GTK and icon theme directories for testing.
+5. Verify dark/light follow-through with Firefox (appearance set to "System"),
+   GTK4 apps (GTK_THEME / GSettings path), and portal-aware clients.
 
 ---
 
@@ -450,6 +508,39 @@ build here. They remain conditional for systems without GTK4 development files.
   `gnome-control-center` in Dock fallback commands. `test-shell-visual` checks
   Notification Center panel/card/button rendering. `orange-render-shell` now
   supports `--notification-center` and `status-wifi` context-menu rendering.
+- **Notification Center now uses real DBus notifications**: The compositor owns
+  the freedesktop `org.freedesktop.Notifications` service on the session bus,
+  stores recent notifications in an in-memory capped store, supports
+  replacement and close requests, emits `NotificationClosed`, and renders
+  captured app notifications above the widget cards instead of hard-coded
+  placeholder notification text.
+- **Overlay glass backdrop includes client windows**: Overlay glass rendering
+  now builds an offscreen backdrop from the base shell buffer plus visible
+  client scene buffers below the overlay when import/readback is available.
+  This fixes menu/Notification Center glass over app windows sampling only the
+  wallpaper/shell backdrop, with a shell-only fallback for unsupported
+  renderer/buffer combinations.
+- **Menu popover glass strengthened over app content**: System and context
+  menus now use the raised glass panel material instead of bare low-opacity
+  glass, and light menus use dark text/icons. This prevents high-contrast app
+  UI underneath a menu from remaining readable through the overlay.
+- **Launcher glass strengthened and invalidated on client repaint**: Full
+  launcher panels, compact search fields, and launcher mode buttons now use the
+  same raised glass panel material as menu popovers. When a mapped client
+  commits a new buffer while a backdrop-dependent overlay is visible, the
+  compositor marks the overlay dirty so the glass backdrop is refreshed against
+  the current app content.
+- **Overlay glass keeps material alpha over light apps**: Transparent overlay
+  unblending now renders a separate alpha mask for launcher/menu/notification
+  overlays. This prevents white or near-white app content from canceling out
+  the panel source alpha, matching macOS-style glass behavior where the app
+  behind the UI is frosted instead of readable through the panel.
+- **Widget data and rendering split out of shell.c**: Calendar, Screen Time,
+  and Weather widgets now render through `src/widgets.c`, while
+  `src/widget_data.c` gathers real local data. Calendar reads GNOME/Evolution
+  `.ics` files, Screen Time uses systemd-logind session start when available
+  with an Orange-session fallback, and Weather reads a local weather file plus
+  GNOME Weather's configured location instead of showing fixed demo values.
 - **Settings theme dropdowns and themed sidebar icons added**: Orange Settings
   now uses dropdowns for installed GTK, icon, and cursor themes, preserving a
   saved custom value when it is not discoverable. The Settings sidebar renders
@@ -484,11 +575,48 @@ build here. They remain conditional for systems without GTK4 development files.
   installed for `gnome-calendar`, `gnome-contacts`, `gnome-software`, and
   `loupe`. The configured apt sources did not provide packages or desktop
   entries for `org.gnome.Showtime.desktop` or `org.gnome.Decibels.desktop`.
+- **Dock and menu-bar right-click hit testing fixed**: Empty Dock glass and
+  empty menu-bar chrome now return shell chrome hit kinds instead of empty
+  desktop hits, preventing right-clicks through those surfaces from opening the
+  desktop context menu.
+- **Running Dock menus added**: Dock item right-click dispatch now selects a
+  running-app context menu when the launcher is open. The menu adds Show All
+  Windows, Hide, and Quit while preserving existing file/settings actions.
+  Show All Windows raises/unminimizes matching toplevels, Hide minimizes them,
+  and Quit sends xdg-toplevel close requests.
+- **Side Dock bounce direction fixed**: Dock opening bounce now maps the same
+  waveform to edge-aware displacement: up for bottom Dock, right for left Dock,
+  and left for right Dock.
 
 #### Latest Validation
 
-- `ninja -C build` passed after all feature merges.
-- `meson test -C build --print-errorlogs` passed (6/6 tests).
+- `ninja -C build` passed after GNOME Control Center wrapper, Settings portal,
+  and GNOME wallpaper bridge changes.
+- `meson test -C build --print-errorlogs` passed (8/8 tests).
+- `test-shell-visual` now checks that light-mode context menu labels do not
+  render dark glyph pixels.
+- `XDG_CURRENT_DESKTOP=Orange gnome-control-center --list` exited 1 with the
+  GNOME/Unity support guard, confirming the local guard behavior.
+- `env -u GTK_THEME -u GTK_ICON_THEME XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu
+  XDG_SESSION_DESKTOP=gnome DESKTOP_SESSION=gnome
+  GNOME_DESKTOP_SESSION_ID=this-is-deprecated gnome-control-center --list`
+  exited 0 and listed panels including `background`, `wifi`, `network`,
+  `notifications`, `display`, `sound`, `power`, and `keyboard`.
+- `gsettings get org.gnome.desktop.background picture-uri` and
+  `picture-uri-dark` returned local `file://` wallpaper URIs under
+  `/usr/share/backgrounds` in this environment.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once`
+  exited 0. The sandbox emitted dconf/GIO session-bus warnings because
+  `/run/user/1000/dconf` is read-only and session-bus access is restricted, but
+  wlroots selected Pixman, enabled the headless output, rendered, and exited.
+- A temporary-config style-sync smoke run also exited 0, but this sandbox could
+  not prove live GNOME Settings toggling because dconf writes are blocked.
+- `meson test -C build` passed (8/8 tests) after DBus notifications, composed
+  overlay backdrop readback, menu popover material fixes, transient glass
+  material alignment, client-commit overlay invalidation, alpha-preserving
+  overlay unblending, and real widget data/rendering split.
+- `build/orange-render-shell --foreground-only --context-menu desktop --context-x 720 --context-y 450 /tmp/orange-context-menu.png` passed.
+- `build/orange-render-shell --foreground-only --launcher /tmp/orange-launcher.png` passed.
 - `build/orange-render-shell --width 1440 --height 900 --launcher-search /tmp/orange-search-pill.png` passed.
 - `build/orange-render-shell --width 1440 --height 900 --launcher-search --launcher-query cal /tmp/orange-search-pill-typed.png` passed.
 - `build/orange-render-shell --width 1440 --height 900 --launcher /tmp/orange-launcher-small.png` passed.

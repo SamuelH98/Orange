@@ -59,11 +59,31 @@ Dock item menus remain app-specific. Bottom Dock layout uses horizontal item
 geometry; side Dock layout uses vertical item geometry, rotated separator
 drawing, side-aware drag insertion, and maximize bounds that reserve the side
 Dock strip.
+The Dock glass rectangle and menu-bar glass rectangle are also first-class
+chrome hit targets. Child controls such as Dock items, the Dock separator,
+menu tabs, and status items win first; otherwise the chrome background consumes
+the pointer hit so right-click dispatch cannot fall through to the desktop
+background menu.
+
+Dock item menus are selected by compositor state after hit testing. The layout
+module exposes the static non-running and running Dock menu shapes, while the
+compositor chooses the running variant when `dock_open[launcher_idx]` is true.
+Running Dock menu actions reuse the same view-to-launcher matching as Dock
+indicators: Show All Windows unminimizes, raises, and focuses matching mapped
+toplevels; Hide minimizes matching mapped toplevels; Quit sends xdg-toplevel
+close requests to matching mapped toplevels.
+
+Dock bounce remains a Dock renderer concern. The scalar bounce waveform is
+kept as a reusable helper, and a position-aware displacement helper maps it to
+upward movement for the bottom Dock, rightward movement for the left Dock, and
+leftward movement for the right Dock.
 
 ### Widget Layer
 
 Root-window widget registry for desktop cards. Calendar and Weather are the
-initial built-in widgets.
+initial built-in widgets. Widget painting lives in `src/widgets.c` so
+`src/shell.c` owns layout, hit testing, and composition orchestration rather
+than individual widget visuals.
 
 Responsibilities:
 
@@ -73,10 +93,31 @@ Responsibilities:
 - expose widget hit targets and shortcut-menu actions,
 - draw widgets beneath application windows,
 - expose deterministic layout for tests.
+- render Notification Center widget cards for Calendar, Screen Time, and
+  Weather from shared widget data.
+
+### Widget Data Provider
+
+`src/widget_data.c` collects local data for widget rendering without making
+the renderer depend on GNOME libraries at compile time.
+
+Responsibilities:
+
+- read upcoming events from local iCalendar files used by Evolution Data
+  Server/GNOME Calendar,
+- report Screen Time from the systemd-logind session start when available,
+  falling back to the Orange compositor start time,
+- read local weather key/value data from `ORANGE_WEATHER_FILE` or
+  `$XDG_CACHE_HOME/orange/weather`,
+- read GNOME Weather's configured location from `org.gnome.GWeather4`
+  settings when that schema is installed,
+- provide empty/unavailable states instead of demo values when live data is
+  missing.
 
 ### Asset Loader
 
-Loads wallpapers from local `./assets/` roots and resolves PNG/SVG icons from
+Loads bundled wallpapers from local `./assets/` roots, accepts runtime GNOME
+Background settings from the compositor, and resolves PNG/SVG icons from
 freedesktop-style icon theme directories. The loader maps specific Dock,
 desktop, weather, and status icon names so shell code asks for semantic icon
 names while the asset layer handles configured themes, inherited themes,
@@ -86,7 +127,11 @@ names.
 Responsibilities:
 
 - keep tracked assets wallpaper-only,
-- lazily decode wallpapers and cache output-sized wallpaper surfaces,
+- lazily decode bundled and GNOME-selected wallpapers and cache output-sized
+  wallpaper surfaces,
+- compose GNOME Background picture options (`none`, `wallpaper`, `centered`,
+  `scaled`, `stretched`, `zoom`, and `spanned`), opacity, solid color, and
+  gradient colors before shell drawing,
 - lazily resolve and cache only requested icon names,
 - resolve desktop shortcut icons from each parsed `.desktop` file's `Icon=`
   name,
@@ -107,6 +152,27 @@ Responsibilities:
   dragged desktop icon positions,
 - provide defaults when config is missing,
 - expose one struct consumed by shell layout and rendering.
+
+### GNOME Settings Bridge
+
+The compositor mirrors the subset of GNOME desktop settings that GNOME Control
+Center and GTK/libadwaita clients expect in an Orange session.
+
+Responsibilities:
+
+- write `org.gnome.desktop.interface` appearance, GTK theme, icon theme,
+  cursor theme, and cursor size when Orange appearance settings change,
+- read `org.gnome.desktop.interface color-scheme` while running so GNOME
+  Settings' Style selector can change Orange appearance between light/default
+  and dark,
+- expose `org.freedesktop.appearance.color-scheme` through the Settings portal
+  backend and local frontend interfaces,
+- read `org.gnome.desktop.background` at startup and poll it periodically so
+  GNOME Control Center wallpaper changes redraw the shell,
+- keep GNOME-specific failures non-fatal when GSettings schemas, dconf, or the
+  session bus are unavailable.
+- pump the default GLib context from the compositor timer so GSettings/DBus
+  notifications are serviced without adding a second event loop.
 
 ### GTK Utility Apps
 
@@ -181,6 +247,9 @@ Responsibilities:
 - prefer user-configured environment variables for terminal/app picker,
 - export `GTK_THEME`, `GTK_ICON_THEME`, and `ORANGE_APPEARANCE` for launched
   GTK clients,
+- wrap `gnome-control-center` launches with `XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu`
+  and GNOME session identity variables, unsetting forced GTK theme variables
+  so GNOME Settings and panel desktop entries use system appearance settings,
 - avoid blocking the compositor event loop.
 
 ## Data Flow
@@ -189,13 +258,22 @@ Responsibilities:
 2. Runtime updates each output's Cairo-backed base shell buffer when persistent
    shell state changes.
 3. Runtime updates or clears the transparent overlay buffer when transient
-   launcher/menu/notification state changes.
+   launcher/menu/notification state changes, and also marks the overlay dirty
+   when an app commits new pixels under a backdrop-dependent overlay. Before
+   drawing glass overlays, it builds an offscreen backdrop from the shell buffer
+   plus visible client scene buffers below the overlay when the renderer can
+   import them, falling back to the shell buffer if readback/import is
+   unavailable. Overlay unblending uses a separate transparent alpha mask so a
+   light glass panel over a light app still keeps its material opacity instead
+   of collapsing to a transparent source layer.
 4. The shell and overlay buffers are exposed as wlroots scene buffers below and
    above mapped client surfaces respectively.
 5. wlroots scene nodes render shell buffers and mapped client surfaces.
 6. Runtime commits the scene output and sends frame callbacks.
 7. Pointer hit testing first finds client surfaces; if none, shell hit testing
    handles Dock, desktop, and menu clicks.
+8. A compositor timer refreshes widget data and dirties the shell/overlay when
+   Calendar, Screen Time, or Weather values change.
 8. Clicking or right-clicking the active app title or one of the app menu tabs
    opens a shell-rendered app menu anchored under that tab. The compositor fills
    the menu bar label from the focused view's Dock entry, app ID, or title.
@@ -214,6 +292,8 @@ Responsibilities:
    `orange.conf` on release.
 11. Right-click hit testing opens a shell context menu above a Dock item, near a
    widget, near a desktop item, or at the empty desktop cursor location.
+   Empty Dock and menu-bar chrome hits clear/consume the shell interaction
+   without opening the desktop menu.
 12. Left-clicking status items dispatches by item: Wi-Fi, Sound, Battery,
     Search, Control Center, and Clock each have their own hit rectangle and
     action. Wi-Fi, Sound, and Battery open item-specific status menus; Search
@@ -228,13 +308,20 @@ Responsibilities:
     shell geometry, hit testing treats the overlay and Edit Widgets button as
     top-level shell targets, and the compositor maps Edit Widgets to Orange
     Settings.
+14. The compositor owns `org.freedesktop.Notifications` on the session DBus
+    when available, stores recent notifications in memory, updates existing
+    notifications by `replaces_id`, emits `NotificationClosed` for explicit
+    closes and evictions, and passes the current notification list into shell
+    overlay rendering.
 
 ## Failure Modes
 
 - Renderer creation failure: exit with an error.
 - Output render initialization failure: disable that output and continue.
 - Asset load failure: use procedural background fallback only.
-- Missing wallpaper assets: use the procedural background fallback.
+- Missing bundled wallpaper assets: use the procedural background fallback.
+- Missing or undecodable GNOME Background picture URI: render the configured
+  GNOME background color/gradient and keep the compositor running.
 - Missing icon theme or icon names: cache the miss and leave that icon slot
   empty while continuing to render.
 - Missing cursor theme: wlroots falls back according to xcursor lookup rules.
@@ -242,9 +329,10 @@ Responsibilities:
 - Vulkan unavailable: wlroots renderer creation may fail; the log identifies
   the selected renderer when it succeeds.
 - Launcher command missing: child exits; compositor remains running.
-- GNOME settings launcher unavailable or unsupported outside GNOME/Unity:
-  commands skip `gnome-control-center` and prefer Orange Settings or
-  desktop-neutral tools.
+- GNOME settings launcher unavailable: fall back to Orange Settings or
+  desktop-neutral tools. When `gnome-control-center` is installed, launch it
+  with a GNOME/Unity-compatible desktop identity so its built-in session guard
+  and individual panel desktop entries work inside Orange.
 - Input device absent in headless mode: shell still renders and exits in
   `--once` validation.
 - GTK missing at build time: Settings app target is skipped, compositor and

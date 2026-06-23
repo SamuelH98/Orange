@@ -49,6 +49,12 @@ shell.
   - widgets are defined as typed objects with stable IDs, rectangles, and
     visibility flags,
   - the existing Calendar and Weather cards render through this widget layer,
+  - widget painting is isolated from the main shell renderer,
+  - Calendar, Screen Time, and Weather widget cards must use real local data
+    when available rather than fixed demo text,
+  - Calendar reads local GNOME/Evolution calendar files, Screen Time reports
+    the current login or Orange session duration, and Weather reads a local
+    weather data file plus GNOME Weather's configured location when available,
   - widgets expose shortcut-menu edit, size, and remove actions,
   - widgets remain pinned below floating application windows.
 - Provide a native GTK Settings application source that controls this
@@ -95,11 +101,36 @@ shell.
   change screen position, choose the minimize effect preference, and open Dock
   settings. Dock size, position, magnification, and minimize-effect choices
   must persist to `orange.conf`.
-- Notification Center renders missed-notification cards, widget cards, and an
-  Edit Widgets affordance that opens Orange Settings for widget preferences.
-- Avoid launching `gnome-control-center` from Orange fallback actions because
-  it exits outside GNOME/Unity sessions; prefer Orange Settings, freedesktop,
-  KDE, Xfce, or standalone Linux tools that do not require a GNOME session.
+- Right-clicking empty Dock glass or non-interactive menu-bar chrome must be
+  consumed by shell chrome hit testing and must not fall through to the empty
+  desktop background context menu.
+- Dock item shortcut menus must be stateful. A non-running Dock item uses the
+  normal launcher menu, while a running Dock item exposes window/app controls
+  including Show All Windows, Hide, and Quit, with Quit closing mapped windows
+  that match that Dock launcher.
+- Dock opening bounce animation must move away from the Dock edge: upward for
+  a bottom Dock, rightward for a left Dock, and leftward for a right Dock.
+- Notification Center must render real missed-notification cards received
+  through the freedesktop `org.freedesktop.Notifications` DBus service, keep
+  widget cards below the notifications, show an empty state when no app
+  notifications have arrived, and include an Edit Widgets affordance that opens
+  Orange Settings for widget preferences.
+- Launch GNOME Control Center through a GNOME-compatible environment wrapper
+  when it is installed, including the main Settings app and direct panel
+  shortcuts for Background, Wi-Fi/Network, Bluetooth, Notifications, Sound,
+  Display, Power, and Keyboard. Keep desktop-neutral fallbacks for systems
+  without `gnome-control-center`.
+- Follow GNOME Background settings from `org.gnome.desktop.background` so
+  wallpapers selected in GNOME Control Center apply to the compositor shell,
+  including light/dark picture URIs, placement mode, opacity, and background
+  colors.
+- Advertise system dark/light preference through GNOME interface GSettings,
+  GTK settings files, and the standardized Settings portal color-scheme key.
+- Consume GNOME interface `color-scheme` changes so GNOME Settings' Style
+  selector maps `default`/light to Orange light appearance and `prefer-dark`
+  to Orange dark appearance.
+- Context menus and dropdown menus must render white text and white tinted
+  icons in both light and dark appearance modes.
 - Match macOS dark appearance behavior for menus: system menu and context menu
   panels must switch to a dark translucent material when global appearance is
   dark.
@@ -199,6 +230,8 @@ shell.
   menu dismissal cannot leave stale scene-buffer pixels behind.
 - Dock add/remove/reorder tests cover alias compaction, duplicate prevention,
   and keeping permanent Dock affordances available.
+- Shell layout tests cover menu-bar and Dock chrome background hit targets,
+  running Dock context-menu options, and side-aware Dock bounce direction.
 - Documentation lists the Wayland/freedesktop specs implemented in the current
   surface area and explicitly scopes non-implemented specs.
 - `PROJECT_STATE.md` documents status, risks, and continuation steps.
