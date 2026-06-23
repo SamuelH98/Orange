@@ -6563,7 +6563,8 @@ static void orange_log_handler(enum wlr_log_importance importance,
 	if (importance == WLR_ERROR &&
 			(strstr(fmt, "No free output buffer slot") != NULL ||
 			strstr(fmt, "Failed to render cursor buffer") != NULL ||
-			strstr(fmt, "Falling back to software cursor") != NULL)) {
+			strstr(fmt, "Falling back to software cursor") != NULL ||
+			strstr(fmt, "Unsupported buffer format") != NULL)) {
 		return;
 	}
 	char buf[1024];
