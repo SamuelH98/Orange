@@ -1891,7 +1891,7 @@ static bool focus_view_for_dock_launcher(
 	}
 	struct orange_view *view;
 	wl_list_for_each(view, &server->views, link) {
-		if (!view->mapped || view->minimized) {
+		if (!view->mapped) {
 			continue;
 		}
 		if (dock_launcher_for_view(server, view) == launcher_idx) {
