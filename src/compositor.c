@@ -3879,6 +3879,56 @@ static void handle_app_tools_menu_action(
 	}
 }
 
+static void toggle_open_at_login(struct orange_server *server, int launcher_idx) {
+	if (server == NULL || launcher_idx < 0 || launcher_idx >= ORANGE_DOCK_MAX ||
+			server->config.dock_apps[launcher_idx][0] == '\0') {
+		return;
+	}
+	const char *app_id = server->config.dock_apps[launcher_idx];
+	const char *home = getenv("HOME");
+	if (home == NULL || home[0] == '\0') {
+		return;
+	}
+	char path[576];
+	snprintf(path, sizeof(path),
+		"%s/.config/autostart/orange-%s.desktop", home, app_id);
+	struct stat st;
+	if (stat(path, &st) == 0) {
+		char cmd[640];
+		snprintf(cmd, sizeof(cmd), "rm -f '%s'", path);
+		launch_command(cmd);
+		return;
+	}
+	const struct orange_desktop_entry *entry =
+		server_desktop_entry_for_app_id(server, app_id);
+	const char *name = (entry != NULL) ? entry->name : app_id;
+	char exec_buf[1024] = "";
+	const char *exec = NULL;
+	if (entry != NULL &&
+			orange_desktop_entry_expand_exec(entry, exec_buf, sizeof(exec_buf))) {
+		exec = exec_buf;
+	}
+	if (exec == NULL) {
+		exec = orange_dock_command(launcher_idx,
+			server->desktop_entries, (int)server->desktop_entry_count,
+			&server->config);
+	}
+	if (exec == NULL || exec[0] == '\0') {
+		return;
+	}
+	char cmd[4096];
+	snprintf(cmd, sizeof(cmd),
+		"mkdir -p '%s/.config/autostart' && cat > '%s' << 'ORANGE_EOF'\n"
+		"[Desktop Entry]\n"
+		"Type=Application\n"
+		"Name=%s\n"
+		"Exec=%s\n"
+		"X-GNOME-Autostart-enabled=true\n"
+		"ORANGE_EOF",
+		home, path, name, exec);
+	launch_command(cmd);
+}
+
 static void handle_context_menu_action(struct orange_server *server, int item_index) {
 	enum orange_context_menu_kind kind = server->context_menu_kind;
 	int target = server->context_menu_index;
@@ -3976,8 +4026,14 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		case 0:
 			launch_dock_launcher(server, launcher_idx);
 			break;
+		case 1:
+			launch_dock_launcher(server, launcher_idx);
+			break;
 		case 2:
 			launch_command("xdg-open \"$HOME\" || true");
+			break;
+		case 3:
+			toggle_open_at_login(server, launcher_idx);
 			break;
 		case 4:
 			if (orange_dock_config_remove_visible(&server->config, target)) {
@@ -3998,8 +4054,18 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		case 1:
 			hide_windows_for_dock_launcher(server, launcher_idx);
 			break;
+		case 2:
+			if (orange_dock_config_remove_visible(&server->config, target)) {
+				orange_config_save(&server->config,
+					server->options->config_path);
+				server_mark_shell_dirty(server);
+			}
+			break;
 		case 3:
 			launch_command("xdg-open \"$HOME\" || true");
+			break;
+		case 4:
+			toggle_open_at_login(server, launcher_idx);
 			break;
 		case 5:
 			close_windows_for_dock_launcher(server, launcher_idx);
