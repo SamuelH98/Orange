@@ -8,6 +8,8 @@
 #include "orange/assets.h"
 #include "orange/config.h"
 #include "orange/desktop_entry.h"
+#include "orange/notifications.h"
+#include "orange/widget_data.h"
 #define ORANGE_DESKTOP_MAX 32
 #define ORANGE_DESKTOP_GRID_COLS 6
 #define ORANGE_MENU_ITEM_MAX 20
@@ -53,8 +55,10 @@ enum orange_shell_hit_kind {
 	ORANGE_HIT_APP_MENU,
 	ORANGE_HIT_STATUS_AREA,
 	ORANGE_HIT_STATUS_ITEM,
+	ORANGE_HIT_MENU_BAR,
 	ORANGE_HIT_NOTIFICATION_CENTER,
 	ORANGE_HIT_NOTIFICATION_CENTER_EDIT,
+	ORANGE_HIT_DOCK,
 	ORANGE_HIT_DOCK_ITEM,
 	ORANGE_HIT_DOCK_SEPARATOR,
 	ORANGE_HIT_WIDGET,
@@ -110,6 +114,7 @@ enum orange_context_menu_kind {
 	ORANGE_CONTEXT_MENU_APP_TOOLS,
 	ORANGE_CONTEXT_MENU_APP_HELP,
 	ORANGE_CONTEXT_MENU_DOCK,
+	ORANGE_CONTEXT_MENU_DOCK_RUNNING,
 	ORANGE_CONTEXT_MENU_DOCK_SEPARATOR,
 	ORANGE_CONTEXT_MENU_WIDGET,
 	ORANGE_CONTEXT_MENU_DESKTOP,
@@ -128,6 +133,14 @@ enum orange_status_item {
 	ORANGE_STATUS_ITEM_SEARCH,
 	ORANGE_STATUS_ITEM_CONTROL_CENTER,
 	ORANGE_STATUS_ITEM_CLOCK,
+};
+
+enum orange_notification_center_card_kind {
+	ORANGE_NOTIFICATION_CENTER_CARD_EMPTY,
+	ORANGE_NOTIFICATION_CENTER_CARD_NOTIFICATION,
+	ORANGE_NOTIFICATION_CENTER_CARD_CALENDAR_WIDGET,
+	ORANGE_NOTIFICATION_CENTER_CARD_SCREEN_TIME_WIDGET,
+	ORANGE_NOTIFICATION_CENTER_CARD_WEATHER_WIDGET,
 };
 
 struct orange_status_state {
@@ -188,6 +201,8 @@ struct orange_shell_layout {
 	struct orange_rect status_items[ORANGE_STATUS_ITEM_COUNT];
 	struct orange_rect notification_center_panel;
 	struct orange_rect notification_center_cards[ORANGE_NOTIFICATION_CENTER_CARD_MAX];
+	enum orange_notification_center_card_kind notification_center_card_kinds[
+		ORANGE_NOTIFICATION_CENTER_CARD_MAX];
 	int notification_center_card_count;
 	struct orange_rect notification_center_edit_button;
 	struct orange_rect system_menu_panel;
@@ -265,6 +280,9 @@ struct orange_shell_state {
 	const struct orange_volume_info *volumes;
 	int volume_count;
 	int desktop_volume_count;
+	const struct orange_notification *notifications;
+	int notification_count;
+	const struct orange_widget_data *widget_data;
 	struct orange_app_menu_model app_menu;
 	bool dock_open[ORANGE_DOCK_MAX];
 	char active_app_label[ORANGE_APP_MENU_LABEL_MAX];
@@ -352,7 +370,8 @@ void orange_shell_layout_set_context_menu(
 	int cursor_y,
 	const struct orange_app_menu_model *app_menu);
 void orange_shell_layout_set_notification_center(
-	struct orange_shell_layout *layout);
+	struct orange_shell_layout *layout,
+	int notification_count);
 struct orange_rect orange_shell_layout_work_area(
 	const struct orange_shell_layout *layout);
 void orange_shell_layout_set_launcher(

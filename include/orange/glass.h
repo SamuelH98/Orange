@@ -30,4 +30,6 @@ void orange_glass_draw_panel(cairo_t *cr,
 	double radius,
 	bool dark);
 
+
+
 #endif

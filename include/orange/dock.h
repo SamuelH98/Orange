@@ -13,8 +13,18 @@ struct orange_dock_bounce {
 	uint32_t start_time;
 };
 
+struct orange_dock_bounce_displacement {
+	double x;
+	double y;
+};
+
 double orange_dock_bounce_offset(const struct orange_dock_bounce *bounce,
 	uint32_t now_ms, double scale);
+struct orange_dock_bounce_displacement orange_dock_bounce_displacement(
+	const struct orange_dock_bounce *bounce,
+	uint32_t now_ms,
+	enum orange_dock_position position,
+	double scale);
 
 void orange_dock_draw(
 	cairo_t *cr,

@@ -117,6 +117,14 @@ static uint32_t composite_over_opaque(uint32_t src, uint32_t dst) {
 		(uint32_t)b;
 }
 
+static void fill_pixels(uint32_t *pixels, int width, int height, uint32_t color) {
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			pixels[(size_t)y * (size_t)width + (size_t)x] = color;
+		}
+	}
+}
+
 static void test_context_menu_glass_and_scaling(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
@@ -173,6 +181,53 @@ static void test_context_menu_glass_and_scaling(void) {
 		}
 	}
 	assert(found_translucent_glass);
+	free(pixels);
+}
+
+static void test_light_context_menu_text_uses_white_palette(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.appearance = ORANGE_APPEARANCE_LIGHT;
+
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT,
+		false, &config, 0, 0, &layout);
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900, NULL);
+
+	int stride = VISUAL_WIDTH * 4;
+	uint32_t *pixels = calloc((size_t)VISUAL_HEIGHT, (size_t)stride);
+	assert(pixels != NULL);
+	struct orange_shell_state state = {
+		.system_menu_open = false,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1757638380,
+		.assets = NULL,
+		.config = &config,
+		.context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP,
+		.context_menu_index = -1,
+		.context_menu_cursor_x = 1440,
+		.context_menu_cursor_y = 900,
+	};
+	const struct orange_shell_draw_options options = {
+		.draw_wallpaper = false,
+	};
+	orange_shell_draw_with_options(pixels, VISUAL_WIDTH, VISUAL_HEIGHT,
+		stride, &state, &options);
+
+	struct orange_rect item = layout.context_menu_items[0];
+	int dark_pixels = 0;
+	for (int y = item.y + 12; y < item.y + 40; y++) {
+		for (int x = item.x + 42; x < item.x + 190; x++) {
+			struct color c = pixel_at(pixels, stride, x, y);
+			if (c.a > 100 && c.r < 110 && c.g < 110 && c.b < 120) {
+				dark_pixels++;
+			}
+		}
+	}
+	assert(dark_pixels == 0);
 	free(pixels);
 }
 
@@ -438,6 +493,271 @@ static void test_backdrop_overlay_matches_direct_launcher_glass(void) {
 		ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY);
 }
 
+static void test_notification_overlay_uses_backdrop_color(void) {
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *red_backdrop = calloc((size_t)height, (size_t)stride);
+	uint32_t *blue_backdrop = calloc((size_t)height, (size_t)stride);
+	uint32_t *red_overlay = calloc((size_t)height, (size_t)stride);
+	uint32_t *blue_overlay = calloc((size_t)height, (size_t)stride);
+	assert(red_backdrop != NULL);
+	assert(blue_backdrop != NULL);
+	assert(red_overlay != NULL);
+	assert(blue_overlay != NULL);
+
+	fill_pixels(red_backdrop, width, height, 0xffd02020u);
+	fill_pixels(blue_backdrop, width, height, 0xff2048d0u);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+	struct orange_shell_state state = {
+		.notification_center_open = true,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1781451600,
+		.assets = NULL,
+		.config = &config,
+	};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_set_notification_center(&layout, 0);
+	struct orange_rect card = layout.notification_center_cards[0];
+	int sample_x = card.x + card.width - 30;
+	int sample_y = card.y + card.height - 24;
+
+	orange_shell_draw_overlay_with_backdrop(red_overlay, width, height,
+		stride, red_backdrop, stride, &state);
+	orange_shell_draw_overlay_with_backdrop(blue_overlay, width, height,
+		stride, blue_backdrop, stride, &state);
+
+	size_t idx = (size_t)sample_y * (size_t)width + (size_t)sample_x;
+	assert(red_overlay[idx] != blue_overlay[idx]);
+
+	free(red_backdrop);
+	free(blue_backdrop);
+	free(red_overlay);
+	free(blue_overlay);
+}
+
+static void test_context_menu_frosts_high_contrast_backdrop(void) {
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *backdrop = calloc((size_t)height, (size_t)stride);
+	uint32_t *overlay = calloc((size_t)height, (size_t)stride);
+	assert(backdrop != NULL);
+	assert(overlay != NULL);
+
+	fill_pixels(backdrop, width, height, 0xffffffffu);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	struct orange_shell_state state = {
+		.context_menu_kind = ORANGE_CONTEXT_MENU_APP_EDIT,
+		.context_menu_index = -1,
+		.context_menu_cursor_x = 220,
+		.context_menu_cursor_y = 50,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1781451600,
+		.assets = NULL,
+		.config = &config,
+	};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_APP_EDIT, -1, 220, 50, NULL);
+	struct orange_rect panel = layout.context_menu_panel;
+	int sample_x = panel.x + panel.width - 24;
+	int sample_y = panel.y + panel.height / 2;
+
+	for (int y = panel.y; y < panel.y + panel.height; y++) {
+		backdrop[(size_t)y * (size_t)width + (size_t)sample_x] = 0xff000000u;
+	}
+
+	orange_shell_draw_overlay_with_backdrop(overlay, width, height,
+		stride, backdrop, stride, &state);
+
+	size_t idx = (size_t)sample_y * (size_t)width + (size_t)sample_x;
+	struct color composed = pixel_from_u32(
+		composite_over_opaque(overlay[idx], backdrop[idx]));
+	assert(composed.r > 120);
+	assert(composed.g > 120);
+	assert(composed.b > 120);
+
+	free(backdrop);
+	free(overlay);
+}
+
+static void test_launcher_panel_frosts_high_contrast_backdrop(void) {
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *backdrop = calloc((size_t)height, (size_t)stride);
+	uint32_t *overlay = calloc((size_t)height, (size_t)stride);
+	assert(backdrop != NULL);
+	assert(overlay != NULL);
+
+	fill_pixels(backdrop, width, height, 0xffffffffu);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+	struct orange_shell_state state = {
+		.launcher_open = true,
+		.launcher_display_mode = ORANGE_LAUNCHER_DISPLAY_FULL,
+		.launcher_search_focus = true,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1781451600,
+		.assets = NULL,
+		.config = &config,
+	};
+	snprintf(state.launcher_categories[0],
+		sizeof(state.launcher_categories[0]), "%s", "All");
+	state.launcher_category_count = 1;
+
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_set_launcher(&layout, false,
+		ORANGE_LAUNCHER_DISPLAY_FULL, 0);
+	struct orange_rect panel = layout.launcher_panel;
+	int sample_x = panel.x + panel.width - 28;
+	int sample_y = panel.y + panel.height / 2;
+
+	for (int y = panel.y; y < panel.y + panel.height; y++) {
+		backdrop[(size_t)y * (size_t)width + (size_t)sample_x] = 0xff000000u;
+	}
+
+	orange_shell_draw_overlay_with_backdrop(overlay, width, height,
+		stride, backdrop, stride, &state);
+
+	size_t idx = (size_t)sample_y * (size_t)width + (size_t)sample_x;
+	struct color composed = pixel_from_u32(
+		composite_over_opaque(overlay[idx], backdrop[idx]));
+	assert(composed.r > 120);
+	assert(composed.g > 120);
+	assert(composed.b > 120);
+
+	free(backdrop);
+	free(overlay);
+}
+
+static void assert_overlay_source_not_washed_out(uint32_t pixel) {
+	struct color source = pixel_from_u32(pixel);
+	assert(source.a > 0);
+	assert(source.a < 100);
+
+	struct color over_black = pixel_from_u32(
+		composite_over_opaque(pixel, 0xff000000u));
+	assert(over_black.r < 100);
+	assert(over_black.g < 100);
+	assert(over_black.b < 100);
+}
+
+static void test_transient_glass_stays_subtle_on_light_backdrop(void) {
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *backdrop = calloc((size_t)height, (size_t)stride);
+	uint32_t *overlay = calloc((size_t)height, (size_t)stride);
+	assert(backdrop != NULL);
+	assert(overlay != NULL);
+
+	fill_pixels(backdrop, width, height, 0xffffffffu);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+
+	struct orange_shell_state menu_state = {
+		.system_menu_open = true,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1781451600,
+		.assets = NULL,
+		.config = &config,
+	};
+	struct orange_shell_layout menu_layout;
+	orange_shell_layout_compute(width, height, true, &config, 0, 0,
+		&menu_layout);
+	struct orange_rect system_panel = menu_layout.system_menu_panel;
+	int sample_x = system_panel.x + system_panel.width - 24;
+	int sample_y = system_panel.y + system_panel.height / 2;
+	orange_shell_draw_overlay_with_backdrop(overlay, width, height,
+		stride, backdrop, stride, &menu_state);
+	assert_overlay_source_not_washed_out(
+		overlay[(size_t)sample_y * (size_t)width + (size_t)sample_x]);
+
+	memset(overlay, 0, (size_t)height * (size_t)stride);
+	struct orange_shell_state context_state = {
+		.context_menu_kind = ORANGE_CONTEXT_MENU_APP_EDIT,
+		.context_menu_index = -1,
+		.context_menu_cursor_x = 220,
+		.context_menu_cursor_y = 50,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1781451600,
+		.assets = NULL,
+		.config = &config,
+	};
+	struct orange_shell_layout context_layout;
+	orange_shell_layout_compute(width, height, false, &config, 0, 0,
+		&context_layout);
+	orange_shell_layout_set_context_menu(&context_layout,
+		ORANGE_CONTEXT_MENU_APP_EDIT, -1, 220, 50, NULL);
+	struct orange_rect context_panel = context_layout.context_menu_panel;
+	sample_x = context_panel.x + context_panel.width - 24;
+	sample_y = context_panel.y + context_panel.height / 2;
+	orange_shell_draw_overlay_with_backdrop(overlay, width, height,
+		stride, backdrop, stride, &context_state);
+	assert_overlay_source_not_washed_out(
+		overlay[(size_t)sample_y * (size_t)width + (size_t)sample_x]);
+
+	memset(overlay, 0, (size_t)height * (size_t)stride);
+	struct orange_shell_state launcher_state = {
+		.launcher_open = true,
+		.launcher_display_mode = ORANGE_LAUNCHER_DISPLAY_FULL,
+		.launcher_search_focus = true,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1781451600,
+		.assets = NULL,
+		.config = &config,
+	};
+	snprintf(launcher_state.launcher_categories[0],
+		sizeof(launcher_state.launcher_categories[0]), "%s", "All");
+	launcher_state.launcher_category_count = 1;
+
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_set_launcher(&layout, false,
+		ORANGE_LAUNCHER_DISPLAY_FULL, 0);
+	struct orange_rect panel = layout.launcher_panel;
+	sample_x = panel.x + panel.width - 34;
+	sample_y = panel.y + panel.height / 2;
+
+	orange_shell_draw_overlay_with_backdrop(overlay, width, height,
+		stride, backdrop, stride, &launcher_state);
+
+	size_t idx = (size_t)sample_y * (size_t)width + (size_t)sample_x;
+	assert_overlay_source_not_washed_out(overlay[idx]);
+
+	free(backdrop);
+	free(overlay);
+}
+
 static void test_notification_center_renders_panel_cards_and_button(void) {
 	const int width = 1440;
 	const int height = 900;
@@ -452,8 +772,20 @@ static void test_notification_center_renders_panel_cards_and_button(void) {
 
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
-	orange_shell_layout_set_notification_center(&layout);
+	orange_shell_layout_set_notification_center(&layout, 1);
 	assert(layout.notification_center_card_count >= 4);
+	assert(layout.notification_center_card_kinds[0] ==
+		ORANGE_NOTIFICATION_CENTER_CARD_NOTIFICATION);
+
+	struct orange_notification notifications[1] = {{
+		.id = 7,
+		.created_at = 1781451540,
+		.expire_timeout = -1,
+		.app_name = "Build",
+		.app_icon = "dialog-information",
+		.summary = "Tests finished",
+		.body = "All checks passed",
+	}};
 
 	struct orange_shell_state state = {
 		.system_menu_open = false,
@@ -464,6 +796,8 @@ static void test_notification_center_renders_panel_cards_and_button(void) {
 		.now = 1781451600,
 		.assets = NULL,
 		.config = &config,
+		.notifications = notifications,
+		.notification_count = 1,
 	};
 	const struct orange_shell_draw_options options = {
 		.draw_wallpaper = false,
@@ -758,11 +1092,16 @@ static void test_default_dock_prefers_desktop_icons_before_role_icons(void) {
 
 int main(void) {
 	test_context_menu_glass_and_scaling();
+	test_light_context_menu_text_uses_white_palette();
 	test_dark_context_menu_uses_dark_material();
 	test_base_shell_can_skip_transient_overlays();
 	test_overlay_draw_clears_when_no_overlay_is_active();
 	test_menu_overlay_bounds_are_tight();
 	test_backdrop_overlay_matches_direct_launcher_glass();
+	test_context_menu_frosts_high_contrast_backdrop();
+	test_launcher_panel_frosts_high_contrast_backdrop();
+	test_transient_glass_stays_subtle_on_light_backdrop();
+	test_notification_overlay_uses_backdrop_color();
 	test_notification_center_renders_panel_cards_and_button();
 	test_desktop_volume_icon_draws();
 	test_dock_magnification_wave_paints_above_base_icons();

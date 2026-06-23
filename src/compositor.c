@@ -8,6 +8,7 @@
 
 #include <gio/gio.h>
 #include <assert.h>
+#include <drm_fourcc.h>
 #include <linux/input-event-codes.h>
 #include <limits.h>
 #include <math.h>
@@ -74,6 +75,7 @@ struct orange_output {
 	struct orange_buffer *shell_buffer;
 	struct wlr_scene_buffer *overlay_scene_buffer;
 	struct orange_buffer *overlay_buffer;
+	struct orange_buffer *backdrop_buffer;
 	struct wl_listener frame;
 	struct wl_listener present;
 	struct wl_listener destroy;
@@ -254,6 +256,15 @@ struct orange_server {
 	bool cursor_loading_active;
 	int cursor_loading_launcher_idx;
 	uint32_t cursor_loading_start_ms;
+	GSettings *gnome_interface_settings;
+	int interface_poll_ticks;
+	GSettings *background_settings;
+	int background_poll_ticks;
+
+	guint portal_backend_name_id;
+	guint portal_frontend_name_id;
+	guint portal_backend_registration_id;
+	guint portal_frontend_registration_id;
 };
 
 static void server_mark_shell_dirty(struct orange_server *server);
@@ -268,9 +279,20 @@ static void process_launcher_drag(struct orange_server *server);
 static void process_launcher_scroll_drag(struct orange_server *server);
 static void process_launcher_app_drag(struct orange_server *server);
 static void finish_launcher_app_drag(struct orange_server *server);
+static void set_view_minimized(struct orange_view *view, bool minimized);
+
+#define ORANGE_GNOME_SETTINGS_DESKTOP "GNOME:Unity:ubuntu"
+#define ORANGE_GNOME_SETTINGS_ENV \
+	"env -u GTK_THEME -u GTK_ICON_THEME " \
+	"XDG_CURRENT_DESKTOP=" ORANGE_GNOME_SETTINGS_DESKTOP " " \
+	"XDG_SESSION_DESKTOP=gnome " \
+	"DESKTOP_SESSION=gnome " \
+	"GNOME_DESKTOP_SESSION_ID=this-is-deprecated "
 
 static const char *orange_settings_command =
-	"if [ -x build/orange-settings ]; then "
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center; "
+	"elif [ -x build/orange-settings ]; then "
 	"GSK_RENDERER=cairo build/orange-settings orange.conf; "
 	"elif command -v systemsettings >/dev/null 2>&1; then "
 	"systemsettings; "
@@ -280,22 +302,38 @@ static const char *orange_settings_command =
 	"mate-control-center; "
 	"fi; true";
 
+static const char *background_settings_command =
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center background; "
+	"elif [ -x build/orange-settings ]; then "
+	"GSK_RENDERER=cairo build/orange-settings orange.conf; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings kcm_wallpaper; "
+	"fi; true";
+
 static const char *network_settings_command =
-	"if command -v nm-connection-editor >/dev/null 2>&1; then "
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center wifi || "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center network; "
+	"elif command -v nm-connection-editor >/dev/null 2>&1; then "
 	"nm-connection-editor; "
 	"elif command -v systemsettings >/dev/null 2>&1; then "
 	"systemsettings kcm_networkmanagement; "
 	"fi; true";
 
 static const char *bluetooth_settings_command =
-	"if command -v blueman-manager >/dev/null 2>&1; then "
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center bluetooth; "
+	"elif command -v blueman-manager >/dev/null 2>&1; then "
 	"blueman-manager; "
 	"elif command -v systemsettings >/dev/null 2>&1; then "
 	"systemsettings kcm_bluetooth; "
 	"fi; true";
 
 static const char *notification_settings_command =
-	"if command -v systemsettings >/dev/null 2>&1; then "
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center notifications; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
 	"systemsettings kcm_notifications; "
 	"elif command -v xfce4-notifyd-config >/dev/null 2>&1; then "
 	"xfce4-notifyd-config; "
@@ -304,14 +342,18 @@ static const char *notification_settings_command =
 	"fi; true";
 
 static const char *sound_settings_command =
-	"if command -v pavucontrol >/dev/null 2>&1; then "
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center sound; "
+	"elif command -v pavucontrol >/dev/null 2>&1; then "
 	"pavucontrol; "
 	"elif command -v systemsettings >/dev/null 2>&1; then "
 	"systemsettings kcm_pulseaudio; "
 	"fi; true";
 
 static const char *display_settings_command =
-	"if command -v wdisplays >/dev/null 2>&1; then "
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center display; "
+	"elif command -v wdisplays >/dev/null 2>&1; then "
 	"wdisplays; "
 	"elif command -v arandr >/dev/null 2>&1; then "
 	"arandr; "
@@ -322,7 +364,9 @@ static const char *display_settings_command =
 	"fi; true";
 
 static const char *power_settings_command =
-	"if command -v xfce4-power-manager-settings >/dev/null 2>&1; then "
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center power; "
+	"elif command -v xfce4-power-manager-settings >/dev/null 2>&1; then "
 	"xfce4-power-manager-settings; "
 	"elif command -v mate-power-preferences >/dev/null 2>&1; then "
 	"mate-power-preferences; "
@@ -331,7 +375,9 @@ static const char *power_settings_command =
 	"fi; true";
 
 static const char *keyboard_settings_command =
-	"if command -v systemsettings >/dev/null 2>&1; then "
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center keyboard; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
 	"systemsettings kcm_keyboard; "
 	"elif command -v xfce4-keyboard-settings >/dev/null 2>&1; then "
 	"xfce4-keyboard-settings; "
@@ -696,41 +742,500 @@ static void set_gsettings_int_if_writable(GSettings *settings,
 	g_settings_set_int(settings, key, value);
 }
 
+static void server_update_settings_ini(const char *config_dir, bool dark);
+static void portal_backend_emit_setting_changed(struct orange_server *server);
+static void server_apply_theme_env(struct orange_server *server);
+
+static enum orange_appearance appearance_from_gnome_color_scheme(
+		const char *scheme,
+		enum orange_appearance fallback) {
+	if (scheme == NULL || scheme[0] == '\0') {
+		return fallback;
+	}
+	if (strcmp(scheme, "prefer-dark") == 0) {
+		return ORANGE_APPEARANCE_DARK;
+	}
+	if (strcmp(scheme, "default") == 0 ||
+			strcmp(scheme, "prefer-light") == 0) {
+		return ORANGE_APPEARANCE_LIGHT;
+	}
+	return fallback;
+}
+
 static void server_apply_interface_settings(struct orange_server *server) {
 	server->interface_settings_applied = true;
 	const char *session_bus = getenv("DBUS_SESSION_BUS_ADDRESS");
-	if (session_bus == NULL || session_bus[0] == '\0') {
-		return;
+	if (session_bus != NULL && session_bus[0] != '\0') {
+		GSettingsSchemaSource *source = g_settings_schema_source_get_default();
+		if (source != NULL) {
+			GSettingsSchema *schema = g_settings_schema_source_lookup(source,
+				"org.gnome.desktop.interface", true);
+			if (schema != NULL) {
+				GSettings *settings = g_settings_new_full(schema, NULL, NULL);
+				if (settings != NULL) {
+					const char *gtk_theme =
+						server->config.appearance == ORANGE_APPEARANCE_DARK ?
+						server->config.gtk_theme_dark : server->config.gtk_theme_light;
+					set_gsettings_string_if_writable(settings, schema, "gtk-theme",
+						gtk_theme);
+					set_gsettings_string_if_writable(settings, schema, "icon-theme",
+						server->config.icon_theme);
+					set_gsettings_string_if_writable(settings, schema, "color-scheme",
+						server->config.appearance == ORANGE_APPEARANCE_DARK ?
+							"prefer-dark" : "default");
+					set_gsettings_string_if_writable(settings, schema, "cursor-theme",
+						config_resolved_cursor_theme(&server->config));
+					set_gsettings_int_if_writable(settings, schema, "cursor-size",
+						config_resolved_cursor_size(&server->config));
+					g_settings_sync();
+					g_object_unref(settings);
+				}
+				g_settings_schema_unref(schema);
+			}
+		}
 	}
 
+	bool dark = server->config.appearance == ORANGE_APPEARANCE_DARK;
+	const char *xdg_config = getenv("XDG_CONFIG_HOME");
+	const char *home = getenv("HOME");
+	const char *config_dir = (xdg_config != NULL && xdg_config[0] != '\0')
+		? xdg_config : NULL;
+	char fallback[4096];
+	if (config_dir == NULL && home != NULL) {
+		int n = snprintf(fallback, sizeof(fallback), "%s/.config", home);
+		if (n > 0 && n < (int)sizeof(fallback)) {
+			config_dir = fallback;
+		}
+	}
+	if (config_dir != NULL) {
+		server_update_settings_ini(config_dir, dark);
+	}
+}
+
+static bool server_sync_appearance_from_gnome_interface(
+		struct orange_server *server) {
+	if (server == NULL || server->gnome_interface_settings == NULL) {
+		return false;
+	}
+
+	GSettings *settings = g_settings_new("org.gnome.desktop.interface");
+	if (settings == NULL) {
+		return false;
+	}
+	char *scheme = g_settings_get_string(settings, "color-scheme");
+	g_object_unref(settings);
+	enum orange_appearance next = appearance_from_gnome_color_scheme(
+		scheme, server->config.appearance);
+	g_free(scheme);
+	if (next == server->config.appearance) {
+		return false;
+	}
+
+	server->config.appearance = next;
+	orange_config_save(&server->config, server->options->config_path);
+	server_apply_theme_env(server);
+	server_apply_interface_settings(server);
+	portal_backend_emit_setting_changed(server);
+	server_mark_shell_dirty(server);
+	server_mark_overlay_dirty(server);
+	return true;
+}
+
+static void server_setup_gnome_interface_settings(struct orange_server *server) {
 	GSettingsSchemaSource *source = g_settings_schema_source_get_default();
 	if (source == NULL) {
 		return;
 	}
-
 	GSettingsSchema *schema = g_settings_schema_source_lookup(source,
 		"org.gnome.desktop.interface", true);
 	if (schema == NULL) {
 		return;
 	}
-
-	GSettings *settings = g_settings_new_full(schema, NULL, NULL);
-	if (settings != NULL) {
-		const char *gtk_theme =
-			server->config.appearance == ORANGE_APPEARANCE_DARK ?
-			server->config.gtk_theme_dark : server->config.gtk_theme_light;
-		set_gsettings_string_if_writable(settings, schema, "gtk-theme",
-			gtk_theme);
-		set_gsettings_string_if_writable(settings, schema, "icon-theme",
-			server->config.icon_theme);
-		set_gsettings_string_if_writable(settings, schema, "cursor-theme",
-			config_resolved_cursor_theme(&server->config));
-		set_gsettings_int_if_writable(settings, schema, "cursor-size",
-			config_resolved_cursor_size(&server->config));
-		g_settings_sync();
-		g_object_unref(settings);
-	}
+	server->gnome_interface_settings = g_settings_new_full(schema, NULL, NULL);
 	g_settings_schema_unref(schema);
+	if (server->gnome_interface_settings == NULL) {
+		return;
+	}
+	server->interface_poll_ticks = 0;
+	server_sync_appearance_from_gnome_interface(server);
+}
+
+static void server_update_settings_ini(const char *config_dir, bool dark) {
+	static const char *versions[] = {"gtk-4.0", "gtk-3.0"};
+	for (size_t vi = 0; vi < sizeof(versions) / sizeof(versions[0]); vi++) {
+		char path[4096];
+		int n = snprintf(path, sizeof(path), "%s/%s/settings.ini",
+			config_dir, versions[vi]);
+		if (n <= 0 || n >= (int)sizeof(path)) {
+			continue;
+		}
+		char *slash = strrchr(path, '/');
+		if (slash != NULL) {
+			*slash = '\0';
+			mkdir(path, 0755);
+			*slash = '/';
+		}
+		GKeyFile *keyfile = g_key_file_new();
+		g_key_file_load_from_file(keyfile, path, G_KEY_FILE_NONE, NULL);
+		g_key_file_set_string(keyfile, "Settings", "color-scheme",
+			dark ? "prefer-dark" : "default");
+		if (vi == 1) {
+			g_key_file_set_boolean(keyfile, "Settings",
+				"gtk-application-prefer-dark-theme", dark);
+		}
+		gsize length = 0;
+		char *data = g_key_file_to_data(keyfile, &length, NULL);
+		if (data != NULL) {
+			FILE *f = fopen(path, "w");
+			if (f != NULL) {
+				fwrite(data, 1, length, f);
+				fclose(f);
+			}
+			g_free(data);
+		}
+		g_key_file_unref(keyfile);
+	}
+}
+
+static void background_uri_to_path(const char *uri,
+		char *out,
+		size_t out_size) {
+	if (out == NULL || out_size == 0) {
+		return;
+	}
+	out[0] = '\0';
+	if (uri == NULL || uri[0] == '\0') {
+		return;
+	}
+	if (strncmp(uri, "file://", 7) == 0) {
+		GError *error = NULL;
+		char *path = g_filename_from_uri(uri, NULL, &error);
+		if (path != NULL) {
+			snprintf(out, out_size, "%s", path);
+			g_free(path);
+		}
+		if (error != NULL) {
+			g_error_free(error);
+		}
+	} else if (uri[0] == '/') {
+		snprintf(out, out_size, "%s", uri);
+	}
+}
+
+static bool server_refresh_background_settings(struct orange_server *server) {
+	if (server == NULL || server->background_settings == NULL) {
+		return false;
+	}
+
+	char *light_uri = g_settings_get_string(
+		server->background_settings, "picture-uri");
+	char *dark_uri = g_settings_get_string(
+		server->background_settings, "picture-uri-dark");
+	char *options = g_settings_get_string(
+		server->background_settings, "picture-options");
+	char *primary = g_settings_get_string(
+		server->background_settings, "primary-color");
+	char *secondary = g_settings_get_string(
+		server->background_settings, "secondary-color");
+	char *shading = g_settings_get_string(
+		server->background_settings, "color-shading-type");
+	int opacity = g_settings_get_int(
+		server->background_settings, "picture-opacity");
+
+	char light_path[4096];
+	char dark_path[4096];
+	background_uri_to_path(light_uri, light_path, sizeof(light_path));
+	background_uri_to_path(dark_uri, dark_path, sizeof(dark_path));
+
+	bool changed = orange_assets_set_wallpaper_settings(&server->assets,
+		light_path,
+		dark_path,
+		options,
+		primary,
+		secondary,
+		shading,
+		opacity);
+
+	g_free(light_uri);
+	g_free(dark_uri);
+	g_free(options);
+	g_free(primary);
+	g_free(secondary);
+	g_free(shading);
+
+	if (changed) {
+		server_mark_shell_dirty(server);
+		server_mark_overlay_dirty(server);
+	}
+	return changed;
+}
+
+static void server_setup_background_settings(struct orange_server *server) {
+	GSettingsSchemaSource *source = g_settings_schema_source_get_default();
+	if (source == NULL) {
+		return;
+	}
+	GSettingsSchema *schema = g_settings_schema_source_lookup(source,
+		"org.gnome.desktop.background", true);
+	if (schema == NULL) {
+		return;
+	}
+	server->background_settings = g_settings_new_full(schema, NULL, NULL);
+	g_settings_schema_unref(schema);
+	if (server->background_settings == NULL) {
+		return;
+	}
+	server->background_poll_ticks = 0;
+	server_refresh_background_settings(server);
+}
+
+static const char portal_settings_introspection_xml[] =
+	"<node>"
+	"  <interface name='org.freedesktop.impl.portal.Settings'>"
+	"    <method name='Read'>"
+	"      <arg type='s' name='namespace' direction='in'/>"
+	"      <arg type='s' name='key' direction='in'/>"
+	"      <arg type='v' name='value' direction='out'/>"
+	"    </method>"
+	"    <method name='ReadAll'>"
+	"      <arg type='as' name='namespaces' direction='in'/>"
+	"      <arg type='a{sa{sv}}' name='value' direction='out'/>"
+	"    </method>"
+	"    <signal name='SettingChanged'>"
+	"      <arg type='s' name='namespace'/>"
+	"      <arg type='s' name='key'/>"
+	"      <arg type='v' name='value'/>"
+	"    </signal>"
+	"  </interface>"
+	"  <interface name='org.freedesktop.portal.Settings'>"
+	"    <method name='ReadAll'>"
+	"      <arg type='as' name='namespaces' direction='in'/>"
+	"      <arg type='a{sa{sv}}' name='value' direction='out'/>"
+	"    </method>"
+	"    <method name='Read'>"
+	"      <arg type='s' name='namespace' direction='in'/>"
+	"      <arg type='s' name='key' direction='in'/>"
+	"      <arg type='v' name='value' direction='out'/>"
+	"    </method>"
+	"    <method name='ReadOne'>"
+	"      <arg type='s' name='namespace' direction='in'/>"
+	"      <arg type='s' name='key' direction='in'/>"
+	"      <arg type='v' name='value' direction='out'/>"
+	"    </method>"
+	"    <property name='version' type='u' access='read'/>"
+	"    <signal name='SettingChanged'>"
+	"      <arg type='s' name='namespace'/>"
+	"      <arg type='s' name='key'/>"
+	"      <arg type='v' name='value'/>"
+	"    </signal>"
+	"  </interface>"
+	"</node>";
+
+static uint32_t portal_appearance_to_color_scheme(enum orange_appearance appearance) {
+	return appearance == ORANGE_APPEARANCE_DARK ? 1 : 2;
+}
+
+static bool portal_namespace_requested(char **namespaces, const char *needle) {
+	if (namespaces == NULL || namespaces[0] == NULL) {
+		return true;
+	}
+	for (int i = 0; namespaces[i] != NULL; i++) {
+		if (strcmp(namespaces[i], needle) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void portal_settings_return_color_scheme(
+		GDBusMethodInvocation *invocation,
+		enum orange_appearance appearance) {
+	uint32_t cs = portal_appearance_to_color_scheme(appearance);
+	GVariant *value = g_variant_new_variant(g_variant_new_uint32(cs));
+	g_dbus_method_invocation_return_value(invocation,
+		g_variant_new_tuple(&value, 1));
+}
+
+static void portal_settings_return_read_all(
+		GDBusMethodInvocation *invocation,
+		enum orange_appearance appearance,
+		char **namespaces) {
+	GVariantBuilder outer;
+	g_variant_builder_init(&outer, G_VARIANT_TYPE("a{sa{sv}}"));
+	if (portal_namespace_requested(namespaces, "org.freedesktop.appearance")) {
+		GVariantBuilder inner;
+		g_variant_builder_init(&inner, G_VARIANT_TYPE("a{sv}"));
+		uint32_t cs = portal_appearance_to_color_scheme(appearance);
+		g_variant_builder_add(&inner, "{sv}", "color-scheme",
+			g_variant_new_variant(g_variant_new_uint32(cs)));
+		g_variant_builder_add(&outer, "{sa{sv}}",
+			"org.freedesktop.appearance", &inner);
+	}
+	g_dbus_method_invocation_return_value(invocation,
+		g_variant_new("(a{sa{sv}})", &outer));
+}
+
+static void handle_portal_settings_method_call(GDBusConnection *connection,
+		const gchar *sender, const gchar *object_path,
+		const gchar *interface_name, const gchar *method_name,
+		GVariant *parameters, GDBusMethodInvocation *invocation,
+		gpointer user_data) {
+	struct orange_server *server = user_data;
+	(void)connection;
+	(void)sender;
+	(void)object_path;
+	(void)interface_name;
+
+	if (strcmp(method_name, "Read") == 0 ||
+			strcmp(method_name, "ReadOne") == 0) {
+		const char *ns;
+		const char *key;
+		g_variant_get(parameters, "(&s&s)", &ns, &key);
+		if (strcmp(ns, "org.freedesktop.appearance") == 0 &&
+				strcmp(key, "color-scheme") == 0) {
+			portal_settings_return_color_scheme(invocation,
+				server->config.appearance);
+		} else {
+			g_dbus_method_invocation_return_dbus_error(invocation,
+				"org.freedesktop.impl.portal.Settings.Error.NotFound",
+				"Setting not found");
+		}
+	} else if (strcmp(method_name, "ReadAll") == 0) {
+		char **namespaces = NULL;
+		g_variant_get(parameters, "(^as)", &namespaces);
+		portal_settings_return_read_all(invocation,
+			server->config.appearance,
+			namespaces);
+		g_strfreev(namespaces);
+	} else {
+		g_dbus_method_invocation_return_error(invocation,
+			G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD,
+			"Unknown method: %s", method_name);
+	}
+}
+
+static GVariant *handle_portal_settings_get_property(
+		GDBusConnection *connection,
+		const gchar *sender,
+		const gchar *object_path,
+		const gchar *interface_name,
+		const gchar *property_name,
+		GError **error,
+		gpointer user_data) {
+	(void)connection;
+	(void)sender;
+	(void)object_path;
+	(void)interface_name;
+	(void)error;
+	(void)user_data;
+	if (strcmp(property_name, "version") == 0) {
+		return g_variant_new_uint32(2);
+	}
+	return NULL;
+}
+
+static void server_setup_portal_backend(struct orange_server *server) {
+	GDBusConnection *connection = dbus_cached_connection(G_BUS_TYPE_SESSION);
+	if (connection == NULL) {
+		return;
+	}
+
+	GError *error = NULL;
+	GDBusNodeInfo *introspection_data = g_dbus_node_info_new_for_xml(
+		portal_settings_introspection_xml, &error);
+	if (introspection_data == NULL) {
+		wlr_log(WLR_ERROR, "failed to parse portal introspection XML: %s",
+			error != NULL ? error->message : "unknown");
+		if (error != NULL) {
+			g_error_free(error);
+		}
+		return;
+	}
+
+	static const GDBusInterfaceVTable interface_vtable = {
+		.method_call = handle_portal_settings_method_call,
+		.get_property = handle_portal_settings_get_property,
+	};
+
+	server->portal_backend_registration_id = g_dbus_connection_register_object(
+		connection,
+		"/org/freedesktop/portal/desktop",
+		introspection_data->interfaces[0],
+		&interface_vtable,
+		server,
+		NULL,
+		&error);
+	if (server->portal_backend_registration_id == 0) {
+		wlr_log(WLR_ERROR, "failed to register portal settings backend: %s",
+			error != NULL ? error->message : "unknown");
+		if (error != NULL) {
+			g_error_free(error);
+		}
+		g_dbus_node_info_unref(introspection_data);
+		return;
+	}
+
+	server->portal_frontend_registration_id = g_dbus_connection_register_object(
+		connection,
+		"/org/freedesktop/portal/desktop",
+		introspection_data->interfaces[1],
+		&interface_vtable,
+		server,
+		NULL,
+		&error);
+	if (server->portal_frontend_registration_id == 0) {
+		wlr_log(WLR_ERROR, "failed to register portal settings frontend: %s",
+			error != NULL ? error->message : "unknown");
+		if (error != NULL) {
+			g_error_free(error);
+			error = NULL;
+		}
+	}
+
+	g_dbus_node_info_unref(introspection_data);
+
+	server->portal_backend_name_id = g_bus_own_name_on_connection(
+		connection,
+		"org.freedesktop.impl.portal.desktop.orange",
+		G_BUS_NAME_OWNER_FLAGS_NONE,
+		NULL,
+		NULL,
+		NULL,
+		NULL);
+	server->portal_frontend_name_id = g_bus_own_name_on_connection(
+		connection,
+		"org.freedesktop.portal.Desktop",
+		G_BUS_NAME_OWNER_FLAGS_NONE,
+		NULL,
+		NULL,
+		NULL,
+		NULL);
+}
+
+static void portal_backend_emit_setting_changed(struct orange_server *server) {
+	GDBusConnection *connection = dbus_cached_connection(G_BUS_TYPE_SESSION);
+	if (connection == NULL) {
+		return;
+	}
+	uint32_t cs = portal_appearance_to_color_scheme(server->config.appearance);
+	GVariant *value = g_variant_new_variant(g_variant_new_uint32(cs));
+	g_dbus_connection_emit_signal(
+		connection,
+		NULL,
+		"/org/freedesktop/portal/desktop",
+		"org.freedesktop.impl.portal.Settings",
+		"SettingChanged",
+		g_variant_new("(ssv)", "org.freedesktop.appearance", "color-scheme", value),
+		NULL);
+	value = g_variant_new_variant(g_variant_new_uint32(cs));
+	g_dbus_connection_emit_signal(
+		connection,
+		NULL,
+		"/org/freedesktop/portal/desktop",
+		"org.freedesktop.portal.Settings",
+		"SettingChanged",
+		g_variant_new("(ssv)", "org.freedesktop.appearance", "color-scheme", value),
+		NULL);
 }
 
 static void server_ensure_xcursor_path(void) {
@@ -808,6 +1313,7 @@ static void server_reload_assets_if_ready(struct orange_server *server) {
 	orange_assets_finish(&server->assets);
 	orange_assets_init(&server->assets);
 	orange_assets_load(&server->assets, asset_root, server->config.icon_theme);
+	server_refresh_background_settings(server);
 }
 
 static void server_load_config(struct orange_server *server, bool force_dirty) {
@@ -829,6 +1335,9 @@ static void server_load_config(struct orange_server *server, bool force_dirty) {
 	if (!server->interface_settings_applied || appearance_changed ||
 			icon_theme_changed || cursor_changed || force_dirty) {
 		server_apply_interface_settings(server);
+	}
+	if (appearance_changed) {
+		portal_backend_emit_setting_changed(server);
 	}
 	if (cursor_changed || icon_theme_changed || force_dirty) {
 		server_apply_cursor_config(server);
@@ -1215,7 +1724,7 @@ static void launch_desktop_entry(
 			strstr(exec, "gnome-control-center") != NULL) {
 		char wrapped[1200];
 		snprintf(wrapped, sizeof(wrapped),
-			"XDG_CURRENT_DESKTOP=GNOME %s", exec);
+			ORANGE_GNOME_SETTINGS_ENV "%s", exec);
 		launch_command(wrapped);
 	} else {
 		launch_command(exec);
@@ -1410,6 +1919,71 @@ static bool focus_view_for_app_id(struct orange_server *server,
 		}
 	}
 	return false;
+}
+
+static bool show_windows_for_dock_launcher(
+		struct orange_server *server,
+		int launcher_idx) {
+	if (server == NULL || launcher_idx < 0) {
+		return false;
+	}
+	struct orange_view *view;
+	struct orange_view *focus_target = NULL;
+	bool found = false;
+	wl_list_for_each(view, &server->views, link) {
+		if (!view->mapped ||
+				dock_launcher_for_view(server, view) != launcher_idx) {
+			continue;
+		}
+		found = true;
+		if (view->minimized) {
+			set_view_minimized(view, false);
+		}
+		wlr_scene_node_raise_to_top(&view->scene_tree->node);
+		focus_target = view;
+	}
+	if (focus_target != NULL) {
+		focus_view(focus_target, focus_target->xdg_surface->surface);
+	}
+	return found;
+}
+
+static bool hide_windows_for_dock_launcher(
+		struct orange_server *server,
+		int launcher_idx) {
+	if (server == NULL || launcher_idx < 0) {
+		return false;
+	}
+	bool found = false;
+	struct orange_view *view;
+	wl_list_for_each(view, &server->views, link) {
+		if (!view->mapped ||
+				dock_launcher_for_view(server, view) != launcher_idx) {
+			continue;
+		}
+		found = true;
+		set_view_minimized(view, true);
+	}
+	return found;
+}
+
+static bool close_windows_for_dock_launcher(
+		struct orange_server *server,
+		int launcher_idx) {
+	if (server == NULL || launcher_idx < 0) {
+		return false;
+	}
+	bool found = false;
+	struct orange_view *view;
+	wl_list_for_each(view, &server->views, link) {
+		if (!view->mapped ||
+				dock_launcher_for_view(server, view) != launcher_idx) {
+			continue;
+		}
+		found = true;
+		wlr_xdg_toplevel_send_close(view->xdg_surface->toplevel);
+	}
+	return found;
 }
 
 static void server_update_dock_open(struct orange_server *server) {
@@ -1683,7 +2257,7 @@ static void compute_shell_layout_for_output(
 		server->context_menu_cursor_y,
 		&server->app_menu);
 	if (server->notification_center_open) {
-		orange_shell_layout_set_notification_center(layout);
+		orange_shell_layout_set_notification_center(layout, 0);
 	}
 	if (server->launcher_open) {
 		launcher_refresh_filter(server);
@@ -1833,6 +2407,10 @@ static bool output_ensure_shell_buffer(struct orange_output *output) {
 		wlr_buffer_drop(&output->overlay_buffer->base);
 		output->overlay_buffer = NULL;
 	}
+	if (output->backdrop_buffer != NULL) {
+		wlr_buffer_drop(&output->backdrop_buffer->base);
+		output->backdrop_buffer = NULL;
+	}
 	output->overlay_buffer = orange_buffer_create(width, height);
 	if (output->overlay_buffer == NULL) {
 		wlr_log(WLR_ERROR, "failed to allocate overlay buffer");
@@ -1853,6 +2431,10 @@ static bool output_ensure_shell_buffer(struct orange_output *output) {
 					output->layout_output->y);
 			}
 		}
+	}
+	output->backdrop_buffer = orange_buffer_create(width, height);
+	if (output->backdrop_buffer == NULL) {
+		wlr_log(WLR_ERROR, "failed to allocate overlay backdrop buffer");
 	}
 
 	output->width = width;
@@ -2062,6 +2644,129 @@ static void output_set_overlay_damage(struct orange_output *output,
 	pixman_region32_fini(&damage);
 }
 
+static void output_normalize_readback_pixels(
+		uint32_t *pixels,
+		int width,
+		int height,
+		int stride,
+		uint32_t format) {
+	if (pixels == NULL || width <= 0 || height <= 0 || stride < width * 4) {
+		return;
+	}
+	for (int y = 0; y < height; y++) {
+		uint32_t *row = (uint32_t *)((unsigned char *)pixels +
+			(size_t)y * (size_t)stride);
+		for (int x = 0; x < width; x++) {
+			uint32_t p = row[x];
+			switch (format) {
+			case DRM_FORMAT_ARGB8888:
+				if ((p & 0xff000000u) == 0) {
+					p |= 0xff000000u;
+				}
+				break;
+			case DRM_FORMAT_XRGB8888:
+				p |= 0xff000000u;
+				break;
+			case DRM_FORMAT_ABGR8888:
+				p = (p & 0xff000000u) |
+					((p & 0x000000ffu) << 16) |
+					(p & 0x0000ff00u) |
+					((p & 0x00ff0000u) >> 16);
+				if ((p & 0xff000000u) == 0) {
+					p |= 0xff000000u;
+				}
+				break;
+			case DRM_FORMAT_XBGR8888:
+				p = 0xff000000u |
+					((p & 0x000000ffu) << 16) |
+					(p & 0x0000ff00u) |
+					((p & 0x00ff0000u) >> 16);
+				break;
+			default:
+				p |= 0xff000000u;
+				break;
+			}
+			row[x] = p;
+		}
+	}
+}
+
+static bool output_read_backdrop_from_state(
+		struct orange_output *output,
+		struct wlr_output_state *state,
+		const struct orange_rect *bounds,
+		uint32_t format) {
+	if (output == NULL || state == NULL || state->buffer == NULL ||
+			output->backdrop_buffer == NULL || !output_rect_has_area(bounds)) {
+		return false;
+	}
+	if (!wlr_renderer_begin_with_buffer(output->server->renderer,
+			state->buffer)) {
+		return false;
+	}
+
+	uint32_t *dst = (uint32_t *)((unsigned char *)output->backdrop_buffer->pixels +
+		(size_t)bounds->y * (size_t)output->backdrop_buffer->stride +
+		(size_t)bounds->x * sizeof(uint32_t));
+	bool ok = wlr_renderer_read_pixels(output->server->renderer, format,
+		(uint32_t)output->backdrop_buffer->stride,
+		(uint32_t)bounds->width,
+		(uint32_t)bounds->height,
+		(uint32_t)bounds->x,
+		(uint32_t)bounds->y,
+		0,
+		0,
+		dst);
+	wlr_renderer_end(output->server->renderer);
+	if (!ok) {
+		return false;
+	}
+
+	output_normalize_readback_pixels(dst, bounds->width, bounds->height,
+		output->backdrop_buffer->stride, format);
+	return true;
+}
+
+static bool output_capture_composed_backdrop(
+		struct orange_output *output,
+		const struct orange_rect *bounds) {
+	if (output == NULL || output->backdrop_buffer == NULL ||
+			output->scene_output == NULL || output->overlay_scene_buffer == NULL ||
+			!output_rect_has_area(bounds)) {
+		return false;
+	}
+
+	bool overlay_enabled = output->overlay_scene_buffer->node.enabled;
+	if (overlay_enabled) {
+		wlr_scene_node_set_enabled(&output->overlay_scene_buffer->node, false);
+	}
+
+	struct wlr_output_state state;
+	wlr_output_state_init(&state);
+	bool built = wlr_scene_output_build_state(output->scene_output,
+		&state, NULL);
+	if (overlay_enabled) {
+		wlr_scene_node_set_enabled(&output->overlay_scene_buffer->node, true);
+	}
+	if (!built || state.buffer == NULL) {
+		wlr_output_state_finish(&state);
+		return false;
+	}
+
+	bool ok = output_read_backdrop_from_state(output, &state, bounds,
+		DRM_FORMAT_ARGB8888);
+	if (!ok) {
+		uint32_t preferred =
+			wlr_output_preferred_read_format(output->wlr_output);
+		if (preferred != DRM_FORMAT_ARGB8888) {
+			ok = output_read_backdrop_from_state(output, &state, bounds,
+				preferred);
+		}
+	}
+	wlr_output_state_finish(&state);
+	return ok;
+}
+
 static void output_redraw_overlay(struct orange_output *output) {
 	if (!output_ensure_shell_buffer(output)) {
 		return;
@@ -2185,12 +2890,18 @@ static void output_redraw_overlay(struct orange_output *output) {
 			output->overlay_bounds);
 	}
 	output_clear_overlay_region(output, &damage_bounds);
+	const uint32_t *backdrop_pixels = output->shell_buffer->pixels;
+	int backdrop_stride = output->shell_buffer->stride;
+	if (output_capture_composed_backdrop(output, &current_bounds)) {
+		backdrop_pixels = output->backdrop_buffer->pixels;
+		backdrop_stride = output->backdrop_buffer->stride;
+	}
 	orange_shell_draw_overlay_with_backdrop(output->overlay_buffer->pixels,
 		output->width,
 		output->height,
 		output->overlay_buffer->stride,
-		output->shell_buffer->pixels,
-		output->shell_buffer->stride,
+		backdrop_pixels,
+		backdrop_stride,
 		&state);
 
 	output_set_overlay_damage(output, &damage_bounds);
@@ -3281,6 +3992,37 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		default:
 			break;
 		}
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_RUNNING) {
+		int launcher_idx = dock_launcher_for_visible_index(server, target);
+		switch (item_index) {
+		case 0:
+			launch_dock_launcher(server, launcher_idx);
+			break;
+		case 1:
+			show_windows_for_dock_launcher(server, launcher_idx);
+			break;
+		case 2:
+			hide_windows_for_dock_launcher(server, launcher_idx);
+			break;
+		case 3:
+			launch_command("xdg-open \"$HOME\" || true");
+			break;
+		case 4:
+			if (orange_dock_config_remove_visible(&server->config, target)) {
+				orange_config_save(&server->config,
+					server->options->config_path);
+				server_mark_shell_dirty(server);
+			}
+			break;
+		case 6:
+			launch_command(orange_settings_command);
+			break;
+		case 7:
+			close_windows_for_dock_launcher(server, launcher_idx);
+			break;
+		default:
+			break;
+		}
 	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR) {
 		switch (item_index) {
 		case 0:
@@ -3373,7 +4115,7 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			launch_command("xdg-open \"$HOME/Desktop\" || true");
 			break;
 		case 6:
-			launch_command(orange_settings_command);
+			launch_command(background_settings_command);
 			break;
 		case 7:
 			launch_command(orange_settings_command);
@@ -4183,6 +4925,16 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		break;
 	case ORANGE_HIT_STATUS_AREA:
 		break;
+	case ORANGE_HIT_MENU_BAR:
+		clear_context_menu(server);
+		if (server->notification_center_open) {
+			server->notification_center_open = false;
+		}
+		if (server->system_menu_open) {
+			server->system_menu_open = false;
+		}
+		server_mark_overlay_dirty(server);
+		break;
 	case ORANGE_HIT_NOTIFICATION_CENTER:
 		clear_context_menu(server);
 		server->system_menu_open = false;
@@ -4203,6 +4955,12 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		server_mark_overlay_dirty(server);
 		break;
 	case ORANGE_HIT_DOCK_SEPARATOR:
+		server->notification_center_open = false;
+		clear_context_menu(server);
+		server->system_menu_open = false;
+		server_mark_overlay_dirty(server);
+		break;
+	case ORANGE_HIT_DOCK:
 		server->notification_center_open = false;
 		clear_context_menu(server);
 		server->system_menu_open = false;
@@ -4308,7 +5066,11 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK_SEPARATOR;
 		server->context_menu_index = -1;
 	} else if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
-		server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK;
+		int launcher_idx = dock_launcher_for_visible_index(server, hit.index);
+		server->context_menu_kind =
+			launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
+				server->dock_open[launcher_idx] ?
+			ORANGE_CONTEXT_MENU_DOCK_RUNNING : ORANGE_CONTEXT_MENU_DOCK;
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_STATUS_ITEM) {
 		switch (hit.index) {
@@ -5294,8 +6056,17 @@ static void handle_output_destroy(struct wl_listener *listener, void *data) {
 	if (output->shell_scene_buffer != NULL) {
 		wlr_scene_node_destroy(&output->shell_scene_buffer->node);
 	}
+	if (output->overlay_scene_buffer != NULL) {
+		wlr_scene_node_destroy(&output->overlay_scene_buffer->node);
+	}
 	if (output->shell_buffer != NULL) {
 		wlr_buffer_drop(&output->shell_buffer->base);
+	}
+	if (output->overlay_buffer != NULL) {
+		wlr_buffer_drop(&output->overlay_buffer->base);
+	}
+	if (output->backdrop_buffer != NULL) {
+		wlr_buffer_drop(&output->backdrop_buffer->base);
 	}
 	if (output->scene_output != NULL) {
 		wlr_scene_output_destroy(output->scene_output);
@@ -5436,6 +6207,9 @@ static bool volumes_changed_since(struct orange_server *server,
 
 static int handle_clock_timer(void *data) {
 	struct orange_server *server = data;
+	while (g_main_context_pending(NULL)) {
+		g_main_context_iteration(NULL, false);
+	}
 	if (!server->desktop_drag_active) {
 		if (server->desktop_entry_poll_ticks <= 0) {
 			server_load_config(server, false);
@@ -5466,6 +6240,25 @@ static int handle_clock_timer(void *data) {
 		} else {
 			server->status_poll_ticks--;
 		}
+		if (server->background_settings != NULL) {
+			if (server->background_poll_ticks <= 0) {
+				need_redraw = server_refresh_background_settings(server) ||
+					need_redraw;
+				server->background_poll_ticks = 3;
+			} else {
+				server->background_poll_ticks--;
+			}
+		}
+		if (server->gnome_interface_settings != NULL) {
+			if (server->interface_poll_ticks <= 0) {
+				need_redraw =
+					server_sync_appearance_from_gnome_interface(server) ||
+					need_redraw;
+				server->interface_poll_ticks = 1;
+			} else {
+				server->interface_poll_ticks--;
+			}
+		}
 		if (need_redraw || status_changed) {
 			server_mark_shell_dirty(server);
 		}
@@ -5476,6 +6269,22 @@ static int handle_clock_timer(void *data) {
 			server->status_poll_ticks = 15;
 		} else {
 			server->status_poll_ticks--;
+		}
+		if (server->background_settings != NULL) {
+			if (server->background_poll_ticks <= 0) {
+				server_refresh_background_settings(server);
+				server->background_poll_ticks = 3;
+			} else {
+				server->background_poll_ticks--;
+			}
+		}
+		if (server->gnome_interface_settings != NULL) {
+			if (server->interface_poll_ticks <= 0) {
+				server_sync_appearance_from_gnome_interface(server);
+				server->interface_poll_ticks = 1;
+			} else {
+				server->interface_poll_ticks--;
+			}
 		}
 		if (status_changed) {
 			server_mark_shell_dirty(server);
@@ -5522,6 +6331,8 @@ static bool server_init(struct orange_server *server,
 	server->status_poll_ticks = 0;
 	server->desktop_entry_poll_ticks = 0;
 	server->volume_poll_ticks = 0;
+	server->interface_poll_ticks = 0;
+	server->background_poll_ticks = 0;
 	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 	server->context_menu_index = -1;
 	server->desktop_drag_index = -1;
@@ -5541,6 +6352,8 @@ static bool server_init(struct orange_server *server,
 	orange_assets_init(&server->assets);
 	orange_assets_load(&server->assets, options->asset_root,
 		server->config.icon_theme);
+	server_setup_gnome_interface_settings(server);
+	server_setup_background_settings(server);
 	orange_menubar_warm_assets(&server->assets);
 	server_preload_app_icons(server);
 
@@ -5696,6 +6509,8 @@ static bool server_init(struct orange_server *server,
 			server->xcursor_manager, "default");
 	}
 
+	server_setup_portal_backend(server);
+
 	if (socket != NULL) {
 		wlr_log(WLR_INFO, "running on Wayland display %s", socket);
 	}
@@ -5703,6 +6518,35 @@ static bool server_init(struct orange_server *server,
 }
 
 static void server_finish(struct orange_server *server) {
+	if (server->portal_backend_name_id != 0) {
+		g_bus_unown_name(server->portal_backend_name_id);
+		server->portal_backend_name_id = 0;
+	}
+	if (server->portal_frontend_name_id != 0) {
+		g_bus_unown_name(server->portal_frontend_name_id);
+		server->portal_frontend_name_id = 0;
+	}
+	GDBusConnection *session = dbus_cached_connection(G_BUS_TYPE_SESSION);
+	if (session != NULL) {
+		if (server->portal_backend_registration_id != 0) {
+			g_dbus_connection_unregister_object(session,
+				server->portal_backend_registration_id);
+			server->portal_backend_registration_id = 0;
+		}
+		if (server->portal_frontend_registration_id != 0) {
+			g_dbus_connection_unregister_object(session,
+				server->portal_frontend_registration_id);
+			server->portal_frontend_registration_id = 0;
+		}
+	}
+	if (server->background_settings != NULL) {
+		g_object_unref(server->background_settings);
+		server->background_settings = NULL;
+	}
+	if (server->gnome_interface_settings != NULL) {
+		g_object_unref(server->gnome_interface_settings);
+		server->gnome_interface_settings = NULL;
+	}
 	orange_assets_finish(&server->assets);
 	if (server->xcursor_manager != NULL) {
 		wlr_xcursor_manager_destroy(server->xcursor_manager);
@@ -5714,6 +6558,21 @@ static void server_finish(struct orange_server *server) {
 	}
 }
 
+static void orange_log_handler(enum wlr_log_importance importance,
+		const char *fmt, va_list args) {
+	if (importance == WLR_ERROR &&
+			strstr(fmt, "No free output buffer slot") != NULL) {
+		return;
+	}
+	char buf[1024];
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	fprintf(stderr, "%02ld:%02ld:%02ld.%03ld %s\n",
+		(ts.tv_sec / 3600) % 24, (ts.tv_sec / 60) % 60,
+		ts.tv_sec % 60, ts.tv_nsec / 1000000, buf);
+}
+
 int orange_compositor_run(const struct orange_options *options) {
 	struct sigaction sigchld = {
 		.sa_handler = SIG_IGN,
@@ -5722,7 +6581,7 @@ int orange_compositor_run(const struct orange_options *options) {
 	sigemptyset(&sigchld.sa_mask);
 	sigaction(SIGCHLD, &sigchld, NULL);
 
-	wlr_log_init(WLR_INFO, NULL);
+	wlr_log_init(WLR_INFO, orange_log_handler);
 
 	const char *xdg_config = getenv("XDG_CONFIG_HOME");
 	const char *home = getenv("HOME");

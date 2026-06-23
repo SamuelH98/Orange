@@ -1,8 +1,10 @@
 #include "orange/assets.h"
 
 #include <dirent.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <librsvg/rsvg.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +66,61 @@ static cairo_surface_t *load_png(const char *path) {
 	return surface;
 }
 
+static cairo_surface_t *load_raster_image(const char *path) {
+	if (has_png_suffix(path)) {
+		return load_png(path);
+	}
+
+	GError *error = NULL;
+	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(path, &error);
+	if (pixbuf == NULL) {
+		if (error != NULL) {
+			g_error_free(error);
+		}
+		return NULL;
+	}
+
+	int width = gdk_pixbuf_get_width(pixbuf);
+	int height = gdk_pixbuf_get_height(pixbuf);
+	int channels = gdk_pixbuf_get_n_channels(pixbuf);
+	int stride = gdk_pixbuf_get_rowstride(pixbuf);
+	bool has_alpha = gdk_pixbuf_get_has_alpha(pixbuf);
+	const guchar *src = gdk_pixbuf_read_pixels(pixbuf);
+	if (width <= 0 || height <= 0 || channels < 3 || src == NULL) {
+		g_object_unref(pixbuf);
+		return NULL;
+	}
+
+	cairo_surface_t *surface = cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, width, height);
+	if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+		cairo_surface_destroy(surface);
+		g_object_unref(pixbuf);
+		return NULL;
+	}
+	uint32_t *dst = (uint32_t *)cairo_image_surface_get_data(surface);
+	int dst_stride = cairo_image_surface_get_stride(surface);
+	for (int y = 0; y < height; y++) {
+		const guchar *row = src + (size_t)y * (size_t)stride;
+		uint32_t *out = (uint32_t *)((unsigned char *)dst +
+			(size_t)y * (size_t)dst_stride);
+		for (int x = 0; x < width; x++) {
+			const guchar *p = row + (size_t)x * (size_t)channels;
+			int a = has_alpha && channels >= 4 ? p[3] : 255;
+			int r = (p[0] * a + 127) / 255;
+			int g = (p[1] * a + 127) / 255;
+			int b = (p[2] * a + 127) / 255;
+			out[x] = ((uint32_t)a << 24) |
+				((uint32_t)r << 16) |
+				((uint32_t)g << 8) |
+				(uint32_t)b;
+		}
+	}
+	cairo_surface_mark_dirty(surface);
+	g_object_unref(pixbuf);
+	return surface;
+}
+
 static cairo_surface_t *load_root_png(const char *root, const char *relative) {
 	char path[4096];
 	snprintf(path, sizeof(path), "%s/%s", root, relative);
@@ -113,6 +170,206 @@ static cairo_surface_t *scale_wallpaper(cairo_surface_t *source,
 		return NULL;
 	}
 	return scaled;
+}
+
+static void destroy_surface(cairo_surface_t **surface) {
+	if (surface != NULL && *surface != NULL) {
+		cairo_surface_destroy(*surface);
+		*surface = NULL;
+	}
+}
+
+static void clear_scaled_wallpaper_cache(
+		cairo_surface_t **scaled,
+		int *scaled_width,
+		int *scaled_height) {
+	destroy_surface(scaled);
+	if (scaled_width != NULL) {
+		*scaled_width = 0;
+	}
+	if (scaled_height != NULL) {
+		*scaled_height = 0;
+	}
+}
+
+static bool parse_hex_color(const char *value,
+		double *red,
+		double *green,
+		double *blue) {
+	if (value == NULL || value[0] != '#') {
+		return false;
+	}
+	unsigned int r = 0;
+	unsigned int g = 0;
+	unsigned int b = 0;
+	if (strlen(value) == 7 &&
+			sscanf(value + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+		*red = (double)r / 255.0;
+		*green = (double)g / 255.0;
+		*blue = (double)b / 255.0;
+		return true;
+	}
+	if (strlen(value) == 4) {
+		char rr[3] = {value[1], value[1], '\0'};
+		char gg[3] = {value[2], value[2], '\0'};
+		char bb[3] = {value[3], value[3], '\0'};
+		if (sscanf(rr, "%02x", &r) == 1 &&
+				sscanf(gg, "%02x", &g) == 1 &&
+				sscanf(bb, "%02x", &b) == 1) {
+			*red = (double)r / 255.0;
+			*green = (double)g / 255.0;
+			*blue = (double)b / 255.0;
+			return true;
+		}
+	}
+	return false;
+}
+
+static void wallpaper_color(const char *value,
+		double fallback_red,
+		double fallback_green,
+		double fallback_blue,
+		double *red,
+		double *green,
+		double *blue) {
+	if (!parse_hex_color(value, red, green, blue)) {
+		*red = fallback_red;
+		*green = fallback_green;
+		*blue = fallback_blue;
+	}
+}
+
+static void draw_wallpaper_background(cairo_t *cr,
+		const struct orange_assets *assets,
+		int width,
+		int height) {
+	double r1 = 0.02;
+	double g1 = 0.05;
+	double b1 = 0.10;
+	double r2 = 0.11;
+	double g2 = 0.18;
+	double b2 = 0.30;
+	wallpaper_color(assets->wallpaper_primary_color,
+		r1, g1, b1, &r1, &g1, &b1);
+	wallpaper_color(assets->wallpaper_secondary_color,
+		r2, g2, b2, &r2, &g2, &b2);
+
+	if (strcmp(assets->wallpaper_shading_type, "horizontal") == 0 ||
+			strcmp(assets->wallpaper_shading_type, "vertical") == 0) {
+		cairo_pattern_t *pattern = strcmp(assets->wallpaper_shading_type,
+			"horizontal") == 0 ?
+			cairo_pattern_create_linear(0, 0, width, 0) :
+			cairo_pattern_create_linear(0, 0, 0, height);
+		cairo_pattern_add_color_stop_rgb(pattern, 0.0, r1, g1, b1);
+		cairo_pattern_add_color_stop_rgb(pattern, 1.0, r2, g2, b2);
+		cairo_set_source(cr, pattern);
+		cairo_paint(cr);
+		cairo_pattern_destroy(pattern);
+	} else {
+		cairo_set_source_rgb(cr, r1, g1, b1);
+		cairo_paint(cr);
+	}
+}
+
+static void paint_wallpaper_image(cairo_t *cr,
+		cairo_surface_t *source,
+		const char *options,
+		int width,
+		int height,
+		double opacity) {
+	if (source == NULL || opacity <= 0.0 ||
+			options == NULL || strcmp(options, "none") == 0) {
+		return;
+	}
+
+	int sw = cairo_image_surface_get_width(source);
+	int sh = cairo_image_surface_get_height(source);
+	if (sw <= 0 || sh <= 0) {
+		return;
+	}
+
+	if (strcmp(options, "wallpaper") == 0) {
+		cairo_pattern_t *pattern = cairo_pattern_create_for_surface(source);
+		cairo_pattern_set_extend(pattern, CAIRO_EXTEND_REPEAT);
+		cairo_pattern_set_filter(pattern, CAIRO_FILTER_BILINEAR);
+		cairo_set_source(cr, pattern);
+		cairo_paint_with_alpha(cr, opacity);
+		cairo_pattern_destroy(pattern);
+		return;
+	}
+
+	double scale_x = (double)width / (double)sw;
+	double scale_y = (double)height / (double)sh;
+	double scale = scale_x > scale_y ? scale_x : scale_y;
+	if (strcmp(options, "scaled") == 0) {
+		scale = scale_x < scale_y ? scale_x : scale_y;
+	} else if (strcmp(options, "centered") == 0) {
+		scale = 1.0;
+	}
+
+	double dst_w = sw * scale;
+	double dst_h = sh * scale;
+	double tx = ((double)width - dst_w) * 0.5;
+	double ty = ((double)height - dst_h) * 0.5;
+
+	cairo_save(cr);
+	cairo_rectangle(cr, 0, 0, width, height);
+	cairo_clip(cr);
+	cairo_translate(cr, tx, ty);
+	if (strcmp(options, "stretched") == 0) {
+		cairo_scale(cr, scale_x, scale_y);
+	} else {
+		cairo_scale(cr, scale, scale);
+	}
+	cairo_set_source_surface(cr, source, 0, 0);
+	cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BILINEAR);
+	cairo_paint_with_alpha(cr, opacity);
+	cairo_restore(cr);
+}
+
+static cairo_surface_t *compose_wallpaper(cairo_surface_t *source,
+		const struct orange_assets *assets,
+		int width,
+		int height) {
+	if (assets == NULL || width <= 0 || height <= 0) {
+		return NULL;
+	}
+	cairo_surface_t *surface = cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, width, height);
+	if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+		cairo_surface_destroy(surface);
+		return NULL;
+	}
+	cairo_t *cr = cairo_create(surface);
+	draw_wallpaper_background(cr, assets, width, height);
+	const char *options = assets->wallpaper_options[0] != '\0' ?
+		assets->wallpaper_options : "zoom";
+	double opacity = assets->wallpaper_opacity < 0 ? 100.0 :
+		(double)assets->wallpaper_opacity;
+	if (opacity > 100.0) {
+		opacity = 100.0;
+	}
+	paint_wallpaper_image(cr, source, options, width, height, opacity / 100.0);
+	cairo_destroy(cr);
+	if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+		cairo_surface_destroy(surface);
+		return NULL;
+	}
+	return surface;
+}
+
+static cairo_surface_t *ensure_custom_wallpaper_loaded(
+		cairo_surface_t **surface,
+		bool *checked,
+		const char *path) {
+	if (path == NULL || path[0] == '\0') {
+		return NULL;
+	}
+	if (!*checked) {
+		*surface = load_raster_image(path);
+		*checked = true;
+	}
+	return *surface;
 }
 
 static cairo_surface_t *ensure_wallpaper_loaded(
@@ -1333,26 +1590,98 @@ bool orange_assets_load(
 	return true;
 }
 
+static bool string_value_changed(const char *current, const char *next) {
+	const char *safe_next = next != NULL ? next : "";
+	return strcmp(current, safe_next) != 0;
+}
+
+static void copy_string_value(char *destination,
+		size_t destination_size,
+		const char *value) {
+	snprintf(destination, destination_size, "%s", value != NULL ? value : "");
+}
+
+bool orange_assets_set_wallpaper_settings(
+		struct orange_assets *assets,
+		const char *light_path,
+		const char *dark_path,
+		const char *options,
+		const char *primary_color,
+		const char *secondary_color,
+		const char *shading_type,
+		int opacity) {
+	if (assets == NULL) {
+		return false;
+	}
+
+	bool changed = !assets->wallpaper_configured ||
+		string_value_changed(assets->wallpaper_path, light_path) ||
+		string_value_changed(assets->wallpaper_dark_path, dark_path) ||
+		string_value_changed(assets->wallpaper_options, options) ||
+		string_value_changed(assets->wallpaper_primary_color, primary_color) ||
+		string_value_changed(assets->wallpaper_secondary_color, secondary_color) ||
+		string_value_changed(assets->wallpaper_shading_type, shading_type) ||
+		assets->wallpaper_opacity != opacity;
+	if (!changed) {
+		return false;
+	}
+
+	bool light_path_changed = !assets->wallpaper_configured ||
+		string_value_changed(assets->wallpaper_path, light_path);
+	bool dark_path_changed = !assets->wallpaper_configured ||
+		string_value_changed(assets->wallpaper_dark_path, dark_path);
+
+	assets->wallpaper_configured = true;
+	copy_string_value(assets->wallpaper_path,
+		sizeof(assets->wallpaper_path), light_path);
+	copy_string_value(assets->wallpaper_dark_path,
+		sizeof(assets->wallpaper_dark_path), dark_path);
+	copy_string_value(assets->wallpaper_options,
+		sizeof(assets->wallpaper_options),
+		options != NULL && options[0] != '\0' ? options : "zoom");
+	copy_string_value(assets->wallpaper_primary_color,
+		sizeof(assets->wallpaper_primary_color),
+		primary_color != NULL && primary_color[0] != '\0' ?
+			primary_color : "#023c88");
+	copy_string_value(assets->wallpaper_secondary_color,
+		sizeof(assets->wallpaper_secondary_color),
+		secondary_color != NULL && secondary_color[0] != '\0' ?
+			secondary_color : "#5789ca");
+	copy_string_value(assets->wallpaper_shading_type,
+		sizeof(assets->wallpaper_shading_type),
+		shading_type != NULL && shading_type[0] != '\0' ?
+			shading_type : "solid");
+	assets->wallpaper_opacity = opacity < 0 ? 100 : opacity;
+
+	if (light_path_changed) {
+		destroy_surface(&assets->wallpaper_custom);
+		assets->wallpaper_custom_checked = false;
+	}
+	if (dark_path_changed) {
+		destroy_surface(&assets->wallpaper_custom_dark);
+		assets->wallpaper_custom_dark_checked = false;
+	}
+	clear_scaled_wallpaper_cache(&assets->wallpaper_custom_scaled,
+		&assets->wallpaper_custom_scaled_width,
+		&assets->wallpaper_custom_scaled_height);
+	clear_scaled_wallpaper_cache(&assets->wallpaper_custom_dark_scaled,
+		&assets->wallpaper_custom_dark_scaled_width,
+		&assets->wallpaper_custom_dark_scaled_height);
+	return true;
+}
+
 void orange_assets_finish(struct orange_assets *assets) {
 	if (assets == NULL) {
 		return;
 	}
-	if (assets->wallpaper != NULL) {
-		cairo_surface_destroy(assets->wallpaper);
-		assets->wallpaper = NULL;
-	}
-	if (assets->wallpaper_dark != NULL) {
-		cairo_surface_destroy(assets->wallpaper_dark);
-		assets->wallpaper_dark = NULL;
-	}
-	if (assets->wallpaper_scaled != NULL) {
-		cairo_surface_destroy(assets->wallpaper_scaled);
-		assets->wallpaper_scaled = NULL;
-	}
-	if (assets->wallpaper_dark_scaled != NULL) {
-		cairo_surface_destroy(assets->wallpaper_dark_scaled);
-		assets->wallpaper_dark_scaled = NULL;
-	}
+	destroy_surface(&assets->wallpaper);
+	destroy_surface(&assets->wallpaper_dark);
+	destroy_surface(&assets->wallpaper_scaled);
+	destroy_surface(&assets->wallpaper_dark_scaled);
+	destroy_surface(&assets->wallpaper_custom);
+	destroy_surface(&assets->wallpaper_custom_dark);
+	destroy_surface(&assets->wallpaper_custom_scaled);
+	destroy_surface(&assets->wallpaper_custom_dark_scaled);
 	for (int i = 0; i < assets->icon_count; i++) {
 		for (int variant = 0; variant < ORANGE_ASSET_ICON_VARIANTS; variant++) {
 			if (assets->icons[i].surface[variant] != NULL) {
@@ -1376,6 +1705,20 @@ void orange_assets_finish(struct orange_assets *assets) {
 	assets->wallpaper_scaled_height = 0;
 	assets->wallpaper_dark_scaled_width = 0;
 	assets->wallpaper_dark_scaled_height = 0;
+	assets->wallpaper_custom_checked = false;
+	assets->wallpaper_custom_dark_checked = false;
+	assets->wallpaper_custom_scaled_width = 0;
+	assets->wallpaper_custom_scaled_height = 0;
+	assets->wallpaper_custom_dark_scaled_width = 0;
+	assets->wallpaper_custom_dark_scaled_height = 0;
+	assets->wallpaper_configured = false;
+	assets->wallpaper_path[0] = '\0';
+	assets->wallpaper_dark_path[0] = '\0';
+	assets->wallpaper_options[0] = '\0';
+	assets->wallpaper_shading_type[0] = '\0';
+	assets->wallpaper_primary_color[0] = '\0';
+	assets->wallpaper_secondary_color[0] = '\0';
+	assets->wallpaper_opacity = 0;
 }
 
 cairo_surface_t *orange_assets_wallpaper(
@@ -1385,6 +1728,47 @@ cairo_surface_t *orange_assets_wallpaper(
 		int height) {
 	if (assets == NULL || width <= 0 || height <= 0) {
 		return NULL;
+	}
+
+	if (assets->wallpaper_configured) {
+		bool use_dark = dark && assets->wallpaper_dark_path[0] != '\0';
+		cairo_surface_t *source = NULL;
+		cairo_surface_t **scaled = NULL;
+		int *scaled_width = NULL;
+		int *scaled_height = NULL;
+		if (use_dark) {
+			source = ensure_custom_wallpaper_loaded(
+				&assets->wallpaper_custom_dark,
+				&assets->wallpaper_custom_dark_checked,
+				assets->wallpaper_dark_path);
+			scaled = &assets->wallpaper_custom_dark_scaled;
+			scaled_width = &assets->wallpaper_custom_dark_scaled_width;
+			scaled_height = &assets->wallpaper_custom_dark_scaled_height;
+		}
+		if (source == NULL) {
+			source = ensure_custom_wallpaper_loaded(
+				&assets->wallpaper_custom,
+				&assets->wallpaper_custom_checked,
+				assets->wallpaper_path);
+			scaled = &assets->wallpaper_custom_scaled;
+			scaled_width = &assets->wallpaper_custom_scaled_width;
+			scaled_height = &assets->wallpaper_custom_scaled_height;
+		}
+		if (scaled == NULL) {
+			scaled = &assets->wallpaper_custom_scaled;
+			scaled_width = &assets->wallpaper_custom_scaled_width;
+			scaled_height = &assets->wallpaper_custom_scaled_height;
+		}
+		if (*scaled != NULL &&
+				*scaled_width == width &&
+				*scaled_height == height) {
+			return *scaled;
+		}
+		clear_scaled_wallpaper_cache(scaled, scaled_width, scaled_height);
+		*scaled = compose_wallpaper(source, assets, width, height);
+		*scaled_width = *scaled != NULL ? width : 0;
+		*scaled_height = *scaled != NULL ? height : 0;
+		return *scaled;
 	}
 
 	cairo_surface_t *source = ensure_wallpaper_loaded(assets, dark);

@@ -201,6 +201,19 @@ static const char *dock_context_labels[] = {
 
 static const int dock_context_separator_before[] = {2, 4, -1};
 
+static const char *dock_running_context_labels[] = {
+	"Open",
+	"Show All Windows",
+	"Hide",
+	"Show in Files",
+	"Remove from Dock",
+	"Open at Login",
+	"Dock Settings",
+	"Quit",
+};
+
+static const int dock_running_context_separator_before[] = {3, 6, 7, -1};
+
 static const char *dock_separator_context_labels[] = {
 	"Turn Magnification On/Off",
 	"Adjust Dock Size...",
@@ -1136,6 +1149,24 @@ static void draw_notification_calendar_card(cairo_t *cr,
 		18 * s, primary, primary, primary, 0.82, false);
 }
 
+static void draw_notification_empty_card(cairo_t *cr,
+		const struct orange_shell_layout *layout,
+		const struct orange_config *config,
+		struct orange_rect r) {
+	double s = layout_scale(layout);
+	bool dark = is_dark_config(config);
+	int primary = dark ? 244 : 28;
+	int secondary = dark ? 188 : 88;
+
+	draw_notification_card_background(cr, &r, 23 * s, dark);
+	draw_text(cr, "No Notifications",
+		r.x + scaled_i(20, s), r.y + scaled_i(48, s),
+		23 * s, primary, primary, primary, 0.94, true);
+	draw_text(cr, "You're all caught up.",
+		r.x + scaled_i(20, s), r.y + scaled_i(80, s),
+		18 * s, secondary, secondary, secondary, 0.78, false);
+}
+
 static void draw_notification_calendar_widget(cairo_t *cr,
 		const struct orange_shell_layout *layout,
 		const struct orange_shell_state *state,
@@ -1296,21 +1327,28 @@ static void draw_notification_center(cairo_t *cr,
 
 	int primary = dark ? 246 : 26;
 
+	int notification_index = 0;
 	for (int i = 0; i < layout->notification_center_card_count; i++) {
 		struct orange_rect card = layout->notification_center_cards[i];
-		switch (i) {
-		case 0:
-			draw_notification_message_card(cr, layout, state, config, card);
+		switch (layout->notification_center_card_kinds[i]) {
+		case ORANGE_NOTIFICATION_CENTER_CARD_EMPTY:
+			draw_notification_empty_card(cr, layout, config, card);
 			break;
-		case 1:
-			draw_notification_calendar_card(cr, layout, state, config, card);
+		case ORANGE_NOTIFICATION_CENTER_CARD_NOTIFICATION:
+			if (notification_index == 1) {
+				draw_notification_calendar_card(cr, layout, state, config, card);
+			} else {
+				draw_notification_message_card(cr, layout, state, config, card);
+			}
+			notification_index++;
 			break;
-		case 2:
+		case ORANGE_NOTIFICATION_CENTER_CARD_CALENDAR_WIDGET:
 			draw_notification_calendar_widget(cr, layout, state, config, card);
 			break;
-		case 3:
+		case ORANGE_NOTIFICATION_CENTER_CARD_SCREEN_TIME_WIDGET:
 			draw_notification_screen_time_widget(cr, layout, config, card);
 			break;
+		case ORANGE_NOTIFICATION_CENTER_CARD_WEATHER_WIDGET:
 		default:
 			draw_notification_weather_widget(cr, layout, state, config, card);
 			break;
@@ -1436,6 +1474,7 @@ void orange_shell_layout_compute(
 		int desktop_entry_count,
 		int desktop_volume_count,
 		struct orange_shell_layout *layout) {
+	(void)desktop_entry_count;
 	memset(layout, 0, sizeof(*layout));
 	struct orange_config defaults;
 	if (config == NULL) {
@@ -1743,6 +1782,7 @@ void orange_shell_layout_compute(
 void orange_shell_layout_clean_up(
 		struct orange_shell_layout *layout,
 		const struct orange_config *config) {
+	(void)layout;
 	(void)config;
 	for (int i = 0; i < ORANGE_DESKTOP_POSITION_MAX; i++) {
 	}
@@ -1756,8 +1796,11 @@ void orange_shell_layout_sort_by(
 		int entry_count,
 		const struct orange_volume_info *volumes,
 		int volume_count) {
+	(void)layout;
 	(void)sort_by;
 	(void)config;
+	(void)entries;
+	(void)entry_count;
 	(void)volumes;
 	(void)volume_count;
 	if (sort_by == ORANGE_DESKTOP_SORT_NAME && entries != NULL) {
@@ -1771,6 +1814,7 @@ void orange_shell_layout_snap_to_grid(
 		int *y,
 		const struct orange_config *config) {
 	(void)layout;
+	(void)index;
 	double s = ui_scale_for_size(layout->width, layout->height);
 	int icon_w = scaled_i(100 * config->desktop_icon_scale, s);
 	int icon_h = scaled_i(100 * config->desktop_icon_scale, s);
@@ -1887,6 +1931,12 @@ void orange_shell_layout_set_context_menu(
 		item_count = (int)(sizeof(dock_context_labels) /
 			sizeof(dock_context_labels[0]));
 		separator_before = dock_context_separator_before;
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_RUNNING &&
+			index >= 0 && index < layout->dock_item_count) {
+		anchor = layout->dock_items[index];
+		item_count = (int)(sizeof(dock_running_context_labels) /
+			sizeof(dock_running_context_labels[0]));
+		separator_before = dock_running_context_separator_before;
 	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR &&
 			layout->dock_separator.width > 0) {
 		anchor = layout->dock_separator;
@@ -2019,6 +2069,8 @@ void orange_shell_layout_set_context_menu(
 		panel_width_base = 280;
 	} else if (kind == ORANGE_CONTEXT_MENU_DOCK) {
 		panel_width_base = 234;
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_RUNNING) {
+		panel_width_base = 282;
 	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR) {
 		panel_width_base = 340;
 	} else if (kind == ORANGE_CONTEXT_MENU_WIDGET) {
@@ -2043,6 +2095,7 @@ void orange_shell_layout_set_context_menu(
 		x = anchor.x;
 		y = layout->menu_bar.height + scaled_i(6, s);
 	} else if (kind == ORANGE_CONTEXT_MENU_DOCK ||
+			kind == ORANGE_CONTEXT_MENU_DOCK_RUNNING ||
 			kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR) {
 		if (layout->dock_position == ORANGE_DOCK_POSITION_LEFT) {
 			x = layout->dock.x + layout->dock.width + scaled_i(10, s);
@@ -2116,7 +2169,8 @@ void orange_shell_layout_set_context_menu(
 }
 
 void orange_shell_layout_set_notification_center(
-		struct orange_shell_layout *layout) {
+		struct orange_shell_layout *layout,
+		int notification_count) {
 	if (layout == NULL) {
 		return;
 	}
@@ -2151,17 +2205,48 @@ void orange_shell_layout_set_notification_center(
 	int card_w = panel_w - pad * 2;
 	int y = panel_y + pad;
 	int limit = panel_bottom - edit_h - gap - pad;
-	const int card_heights[] = {126, 116, 196, 142, 154};
 	layout->notification_center_card_count = 0;
-	for (size_t i = 0; i < sizeof(card_heights) / sizeof(card_heights[0]) &&
+
+	enum orange_notification_center_card_kind kinds[ORANGE_NOTIFICATION_CENTER_CARD_MAX];
+	int card_heights[ORANGE_NOTIFICATION_CENTER_CARD_MAX];
+	int requested = 0;
+	if (notification_count <= 0) {
+		kinds[requested] = ORANGE_NOTIFICATION_CENTER_CARD_EMPTY;
+		card_heights[requested++] = 126;
+	} else {
+		int visible_notifications = notification_count;
+		if (visible_notifications > ORANGE_NOTIFICATION_CENTER_CARD_MAX - 3) {
+			visible_notifications = ORANGE_NOTIFICATION_CENTER_CARD_MAX - 3;
+		}
+		for (int i = 0; i < visible_notifications; i++) {
+			kinds[requested] = ORANGE_NOTIFICATION_CENTER_CARD_NOTIFICATION;
+			card_heights[requested++] = i == 0 ? 126 : 116;
+		}
+	}
+	if (requested < ORANGE_NOTIFICATION_CENTER_CARD_MAX) {
+		kinds[requested] = ORANGE_NOTIFICATION_CENTER_CARD_CALENDAR_WIDGET;
+		card_heights[requested++] = 196;
+	}
+	if (requested < ORANGE_NOTIFICATION_CENTER_CARD_MAX) {
+		kinds[requested] = ORANGE_NOTIFICATION_CENTER_CARD_SCREEN_TIME_WIDGET;
+		card_heights[requested++] = 142;
+	}
+	if (requested < ORANGE_NOTIFICATION_CENTER_CARD_MAX) {
+		kinds[requested] = ORANGE_NOTIFICATION_CENTER_CARD_WEATHER_WIDGET;
+		card_heights[requested++] = 154;
+	}
+
+	for (int i = 0; i < requested &&
 			layout->notification_center_card_count <
 				ORANGE_NOTIFICATION_CENTER_CARD_MAX; i++) {
 		int card_h = scaled_i(card_heights[i], s);
 		if (y + card_h > limit) {
 			break;
 		}
-		layout->notification_center_cards[layout->notification_center_card_count++] =
+		int index = layout->notification_center_card_count++;
+		layout->notification_center_cards[index] =
 			(struct orange_rect){card_x, y, card_w, card_h};
+		layout->notification_center_card_kinds[index] = kinds[i];
 		y += card_h + gap;
 	}
 	if (layout->notification_center_card_count > 0) {
@@ -2631,6 +2716,9 @@ struct orange_shell_hit orange_shell_hit_test(
 	if (rect_contains(&layout->status_area, x, y)) {
 		return (struct orange_shell_hit){ORANGE_HIT_STATUS_AREA, -1};
 	}
+	if (rect_contains(&layout->menu_bar, x, y)) {
+		return (struct orange_shell_hit){ORANGE_HIT_MENU_BAR, -1};
+	}
 	if (layout->dock_separator.width > 0 &&
 			rect_contains(&layout->dock_separator, x, y)) {
 		return (struct orange_shell_hit){ORANGE_HIT_DOCK_SEPARATOR, -1};
@@ -2639,6 +2727,9 @@ struct orange_shell_hit orange_shell_hit_test(
 		if (rect_contains(&layout->dock_items[i], x, y)) {
 			return (struct orange_shell_hit){ORANGE_HIT_DOCK_ITEM, i};
 		}
+	}
+	if (rect_contains(&layout->dock, x, y)) {
+		return (struct orange_shell_hit){ORANGE_HIT_DOCK, -1};
 	}
 	for (int i = 0; i < layout->widget_count; i++) {
 		if (layout->widgets[i].visible &&
@@ -2718,7 +2809,8 @@ void orange_shell_draw_with_options(
 		state->context_menu_cursor_y,
 		&state->app_menu);
 	if (state->notification_center_open) {
-		orange_shell_layout_set_notification_center(&layout);
+		orange_shell_layout_set_notification_center(&layout,
+			state->notification_count);
 	}
 	if (state->launcher_open) {
 		bool searching = state->launcher_query[0] != '\0';
@@ -2870,7 +2962,8 @@ static const struct orange_config *compute_overlay_layout(
 		state->context_menu_cursor_y,
 		&state->app_menu);
 	if (state->notification_center_open) {
-		orange_shell_layout_set_notification_center(layout);
+		orange_shell_layout_set_notification_center(layout,
+			state->notification_count);
 	}
 	if (state->launcher_open) {
 		bool searching = state->launcher_query[0] != '\0';

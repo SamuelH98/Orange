@@ -50,6 +50,12 @@ static void test_dock_hit(void) {
 		layout.dock_separator.y + layout.dock_separator.height / 2);
 	assert(hit.kind == ORANGE_HIT_DOCK_SEPARATOR);
 	assert(hit.index == -1);
+	hit = orange_shell_hit_test(
+		&layout,
+		layout.dock.x + 4,
+		layout.dock.y + layout.dock.height / 2);
+	assert(hit.kind == ORANGE_HIT_DOCK);
+	assert(hit.index == -1);
 	struct orange_rect work = orange_shell_layout_work_area(&layout);
 	assert(work.x == 0);
 	assert(work.y == layout.menu_bar.height);
@@ -139,8 +145,21 @@ static void test_default_dock_apps_have_fallback_commands(void) {
 			i, NULL, 0, &config);
 		assert(command != NULL);
 		assert(command[0] != '\0');
-		assert(strstr(command, "gnome-control-center") == NULL);
+		if (strstr(command, "gnome-control-center") != NULL) {
+			assert(strstr(command,
+				"XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu") != NULL);
+			assert(strstr(command,
+				"env -u GTK_THEME -u GTK_ICON_THEME") != NULL);
+		}
 	}
+	const char *settings_command =
+		orange_dock_builtin_command("org.gnome.Settings.desktop");
+	assert(settings_command != NULL);
+	assert(strstr(settings_command, "gnome-control-center") != NULL);
+	assert(strstr(settings_command,
+		"XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu") != NULL);
+	assert(strstr(settings_command,
+		"env -u GTK_THEME -u GTK_ICON_THEME") != NULL);
 }
 
 static void test_firefox_dock_matches_snap_desktop_entry(void) {
@@ -500,7 +519,7 @@ static void test_notification_center_layout_and_hit(void) {
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(1920, 1080, false, &config, 0, 0, &layout);
-	orange_shell_layout_set_notification_center(&layout);
+	orange_shell_layout_set_notification_center(&layout, 2);
 
 	assert(layout.notification_center_panel.width > 0);
 	assert(layout.notification_center_panel.x >= 0);
@@ -508,6 +527,12 @@ static void test_notification_center_layout_and_hit(void) {
 		layout.notification_center_panel.width <= layout.width);
 	assert(layout.notification_center_panel.y > layout.menu_bar.height);
 	assert(layout.notification_center_card_count >= 4);
+	assert(layout.notification_center_card_kinds[0] ==
+		ORANGE_NOTIFICATION_CENTER_CARD_NOTIFICATION);
+	assert(layout.notification_center_card_kinds[1] ==
+		ORANGE_NOTIFICATION_CENTER_CARD_NOTIFICATION);
+	assert(layout.notification_center_card_kinds[2] ==
+		ORANGE_NOTIFICATION_CENTER_CARD_CALENDAR_WIDGET);
 	assert(layout.notification_center_edit_button.y >
 		layout.notification_center_cards[
 			layout.notification_center_card_count - 1].y);
@@ -523,6 +548,13 @@ static void test_notification_center_layout_and_hit(void) {
 		edit.x + edit.width / 2,
 		edit.y + edit.height / 2);
 	assert(hit.kind == ORANGE_HIT_NOTIFICATION_CENTER_EDIT);
+
+	struct orange_shell_layout empty;
+	orange_shell_layout_compute(1920, 1080, false, &config, 0, 0, &empty);
+	orange_shell_layout_set_notification_center(&empty, 0);
+	assert(empty.notification_center_card_count >= 3);
+	assert(empty.notification_center_card_kinds[0] ==
+		ORANGE_NOTIFICATION_CENTER_CARD_EMPTY);
 
 	struct orange_rect clock = layout.status_items[ORANGE_STATUS_ITEM_CLOCK];
 	hit = orange_shell_hit_test(&layout,
@@ -843,8 +875,8 @@ static void test_major_surfaces_scale_by_resolution(void) {
 	assert_roughly_double(large.context_menu_items[0].height,
 		small.context_menu_items[0].height);
 
-	orange_shell_layout_set_notification_center(&small);
-	orange_shell_layout_set_notification_center(&large);
+	orange_shell_layout_set_notification_center(&small, 1);
+	orange_shell_layout_set_notification_center(&large, 1);
 	assert_roughly_double(large.notification_center_panel.width,
 		small.notification_center_panel.width);
 	assert_roughly_double(large.notification_center_cards[0].height,
@@ -862,6 +894,39 @@ static void test_desktop_background_hit(void) {
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout, 500, 500);
 	assert(hit.kind == ORANGE_HIT_DESKTOP);
 	assert(hit.index == -1);
+}
+
+static void test_chrome_background_blocks_desktop_hit(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+
+	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
+		layout.status_area.x - 4,
+		layout.menu_bar.y + layout.menu_bar.height / 2);
+	assert(hit.kind == ORANGE_HIT_MENU_BAR);
+	assert(hit.index == -1);
+
+	hit = orange_shell_hit_test(&layout,
+		layout.dock.x + 4,
+		layout.dock.y + layout.dock.height / 2);
+	assert(hit.kind == ORANGE_HIT_DOCK);
+	assert(hit.index == -1);
+
+	config.dock_position = ORANGE_DOCK_POSITION_LEFT;
+	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	hit = orange_shell_hit_test(&layout,
+		layout.dock.x + layout.dock.width / 2,
+		layout.dock.y + 4);
+	assert(hit.kind == ORANGE_HIT_DOCK);
+
+	config.dock_position = ORANGE_DOCK_POSITION_RIGHT;
+	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	hit = orange_shell_hit_test(&layout,
+		layout.dock.x + layout.dock.width / 2,
+		layout.dock.y + 4);
+	assert(hit.kind == ORANGE_HIT_DOCK);
 }
 
 static void test_context_menu_hit(void) {
@@ -883,6 +948,21 @@ static void test_context_menu_hit(void) {
 	assert(hit.kind == ORANGE_HIT_CONTEXT_MENU_ITEM);
 	assert(hit.index == 1);
 	assert(orange_menubar_context_menu_label(ORANGE_CONTEXT_MENU_DOCK, hit.index) != NULL);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 0, 0, 0, NULL);
+	assert(layout.context_menu_item_count == 8);
+	assert(layout.context_menu_separator[3]);
+	assert(layout.context_menu_separator[6]);
+	assert(layout.context_menu_separator[7]);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 1),
+		"Show All Windows") == 0);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 7), "Quit") == 0);
+	assert(strcmp(orange_menubar_context_menu_icon_name(
+		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 7),
+		"application-exit") == 0);
 
 	orange_shell_layout_set_context_menu(&layout, ORANGE_CONTEXT_MENU_DOCK,
 		layout.dock_item_count - 1, layout.width, layout.height, NULL);
@@ -1040,6 +1120,24 @@ static void test_dock_bounce_offset(void) {
 	double t_mid = orange_dock_bounce_offset(&bounce,
 		1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS / 6, scale);
 	assert(t_mid < 0.0);
+	struct orange_dock_bounce_displacement bottom =
+		orange_dock_bounce_displacement(&bounce,
+			1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS / 6,
+			ORANGE_DOCK_POSITION_BOTTOM, scale);
+	assert(bottom.x == 0.0);
+	assert(bottom.y < 0.0);
+	struct orange_dock_bounce_displacement left =
+		orange_dock_bounce_displacement(&bounce,
+			1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS / 6,
+			ORANGE_DOCK_POSITION_LEFT, scale);
+	assert(left.x > 0.0);
+	assert(left.y == 0.0);
+	struct orange_dock_bounce_displacement right =
+		orange_dock_bounce_displacement(&bounce,
+			1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS / 6,
+			ORANGE_DOCK_POSITION_RIGHT, scale);
+	assert(right.x < 0.0);
+	assert(right.y == 0.0);
 
 	double t_end = orange_dock_bounce_offset(&bounce,
 		1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS, scale);
@@ -1087,6 +1185,7 @@ int main(void) {
 	test_dark_render_smoke();
 	test_widget_layer_exists();
 	test_dock_bounce_offset();
+	test_chrome_background_blocks_desktop_hit();
 	puts("shell layout tests passed");
 	return 0;
 }

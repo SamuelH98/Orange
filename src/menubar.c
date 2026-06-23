@@ -224,6 +224,28 @@ static const char *dock_context_icon_names[] = {
 	"preferences-system",
 };
 
+static const char *dock_running_context_labels[] = {
+	"Open",
+	"Show All Windows",
+	"Hide",
+	"Show in Files",
+	"Remove from Dock",
+	"Open at Login",
+	"Dock Settings",
+	"Quit",
+};
+
+static const char *dock_running_context_icon_names[] = {
+	"document-open",
+	"view-restore",
+	"view-hidden",
+	"system-file-manager",
+	"list-remove",
+	"system-run",
+	"preferences-system",
+	"application-exit",
+};
+
 static const char *dock_separator_context_labels[] = {
 	"Turn Magnification On/Off",
 	"Adjust Dock Size...",
@@ -493,14 +515,14 @@ static struct menu_palette menu_palette_for_config(
 		const struct orange_config *config) {
 	bool dark = is_dark_config(config);
 	return (struct menu_palette){
-	.text_r = 255,
-	.text_g = 255,
-	.text_b = 255,
-		.text_alpha = dark ? 0.94 : 0.92,
-		.separator_r = dark ? 255 : 32,
-		.separator_g = dark ? 255 : 36,
-		.separator_b = dark ? 255 : 42,
-		.separator_alpha = dark ? 0.14 : 0.13,
+		.text_r = 255,
+		.text_g = 255,
+		.text_b = 255,
+		.text_alpha = dark ? 0.94 : 0.96,
+		.separator_r = 255,
+		.separator_g = 255,
+		.separator_b = 255,
+		.separator_alpha = dark ? 0.14 : 0.22,
 		.icon_variant = dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT,
 	};
 }
@@ -747,7 +769,8 @@ static void draw_system_menu(cairo_t *cr,
 					icon_size,
 					icon_size,
 				};
-				draw_tinted_image_cover(cr, icon, icon_rect, 0.85, 255, 255, 255);
+				draw_tinted_image_cover(cr, icon, icon_rect, 0.85,
+					palette.text_r, palette.text_g, palette.text_b);
 			}
 		}
 		draw_text(cr, orange_menubar_menu_label(i),
@@ -926,7 +949,8 @@ static void draw_context_menu(cairo_t *cr,
 						icon_size,
 						icon_size,
 					};
-					draw_tinted_image_cover(cr, icon, icon_rect, 0.85, 255, 255, 255);
+					draw_tinted_image_cover(cr, icon, icon_rect, 0.85,
+						palette.text_r, palette.text_g, palette.text_b);
 				}
 			}
 		}
@@ -1059,6 +1083,11 @@ void orange_menubar_warm_assets(struct orange_assets *assets) {
 		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
 	warm_icon_array(assets, dock_context_icon_names,
 		(int)(sizeof(dock_context_icon_names) / sizeof(dock_context_icon_names[0])),
+		surface_seen, &surface_seen_count,
+		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
+	warm_icon_array(assets, dock_running_context_icon_names,
+		(int)(sizeof(dock_running_context_icon_names) /
+			sizeof(dock_running_context_icon_names[0])),
 		surface_seen, &surface_seen_count,
 		(int)(sizeof(surface_seen) / sizeof(surface_seen[0])));
 	warm_icon_array(assets, dock_separator_context_icon_names,
@@ -1202,6 +1231,13 @@ void orange_menubar_warm_assets(struct orange_assets *assets) {
 				index < (int)(sizeof(dock_context_labels) /
 					sizeof(dock_context_labels[0]))) {
 			return dock_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_DOCK_RUNNING:
+		if (index >= 0 &&
+				index < (int)(sizeof(dock_running_context_labels) /
+					sizeof(dock_running_context_labels[0]))) {
+			return dock_running_context_labels[index];
 		}
 		break;
 	case ORANGE_CONTEXT_MENU_DOCK_SEPARATOR:
@@ -1358,6 +1394,13 @@ void orange_menubar_warm_assets(struct orange_assets *assets) {
 				index < (int)(sizeof(dock_context_icon_names) /
 					sizeof(dock_context_icon_names[0]))) {
 			return dock_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_DOCK_RUNNING:
+		if (index >= 0 &&
+				index < (int)(sizeof(dock_running_context_icon_names) /
+					sizeof(dock_running_context_icon_names[0]))) {
+			return dock_running_context_icon_names[index];
 		}
 		break;
 	case ORANGE_CONTEXT_MENU_DOCK_SEPARATOR:

@@ -44,9 +44,13 @@ static void assert_pixel_rgb(cairo_surface_t *surface,
 	int r = (pixel >> 16) & 0xff;
 	int g = (pixel >> 8) & 0xff;
 	int b = pixel & 0xff;
-	assert(abs(r - expected_r) <= 2);
-	assert(abs(g - expected_g) <= 2);
-	assert(abs(b - expected_b) <= 2);
+	if (abs(r - expected_r) > 2 ||
+			abs(g - expected_g) > 2 ||
+			abs(b - expected_b) > 2) {
+		fprintf(stderr, "pixel rgb %d,%d,%d expected %d,%d,%d\n",
+			r, g, b, expected_r, expected_g, expected_b);
+		assert(false);
+	}
 }
 
 static void write_index(const char *path, const char *inherits) {
@@ -149,11 +153,39 @@ int main(void) {
 	write_png("/tmp/orange-assets-test/extra/icons/TestTheme/128x128/apps/split-theme-app.png",
 		0.95, 0.55, 0.1);
 	write_png("/tmp/orange-assets-test/absolute-icon.png", 0.7, 0.1, 0.35);
+	write_png("/tmp/orange-assets-test/gnome-light.png", 1.0, 0.0, 0.0);
+	write_png("/tmp/orange-assets-test/gnome-dark.png", 0.0, 0.0, 1.0);
 
 	struct orange_assets assets;
 	orange_assets_init(&assets);
 	orange_assets_load(&assets, "/tmp/orange-assets-test/assets", "TestTheme");
 	assert(assets.icon_count == 0);
+
+	assert(orange_assets_set_wallpaper_settings(&assets,
+		"/tmp/orange-assets-test/gnome-light.png",
+		"/tmp/orange-assets-test/gnome-dark.png",
+		"zoom",
+		"#000000",
+		"#ffffff",
+		"solid",
+		100));
+	cairo_surface_t *wallpaper = orange_assets_wallpaper(
+		&assets, false, 32, 32);
+	assert_pixel_rgb(wallpaper, 255, 0, 0);
+	cairo_surface_t *dark_wallpaper = orange_assets_wallpaper(
+		&assets, true, 32, 32);
+	assert_pixel_rgb(dark_wallpaper, 0, 0, 255);
+	assert(orange_assets_set_wallpaper_settings(&assets,
+		"",
+		"",
+		"none",
+		"#112233",
+		"#445566",
+		"solid",
+		100));
+	cairo_surface_t *solid_wallpaper = orange_assets_wallpaper(
+		&assets, false, 32, 32);
+	assert_pixel_rgb(solid_wallpaper, 17, 34, 51);
 
 	cairo_surface_t *icon = orange_assets_icon(&assets,
 		ORANGE_ASSET_ICON_LIGHT, "test-app");

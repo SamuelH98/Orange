@@ -12,7 +12,9 @@
 #include "orange/glass.h"
 #include "orange/shell.h"
 #include "orange/util.h"
-#define ORANGE_SETTINGS_COMMAND "if [ -x build/orange-settings ]; then GSK_RENDERER=cairo build/orange-settings orange.conf; elif command -v systemsettings >/dev/null 2>&1; then systemsettings; elif command -v xfce4-settings-manager >/dev/null 2>&1; then xfce4-settings-manager; fi; true"
+#define ORANGE_GNOME_SETTINGS_DESKTOP "GNOME:Unity:ubuntu"
+#define ORANGE_GNOME_SETTINGS_ENV "env -u GTK_THEME -u GTK_ICON_THEME XDG_CURRENT_DESKTOP=" ORANGE_GNOME_SETTINGS_DESKTOP " XDG_SESSION_DESKTOP=gnome DESKTOP_SESSION=gnome GNOME_DESKTOP_SESSION_ID=this-is-deprecated "
+#define ORANGE_SETTINGS_COMMAND "if command -v gnome-control-center >/dev/null 2>&1; then " ORANGE_GNOME_SETTINGS_ENV "gnome-control-center; elif [ -x build/orange-settings ]; then GSK_RENDERER=cairo build/orange-settings orange.conf; elif command -v systemsettings >/dev/null 2>&1; then systemsettings; elif command -v xfce4-settings-manager >/dev/null 2>&1; then xfce4-settings-manager; fi; true"
 
 /* Built-in dock entries (not from .desktop files) */
 static const char *builtin_label(const char *app_id) {
@@ -258,11 +260,6 @@ static const struct orange_desktop_entry *lookup_entry(
 	return NULL;
 }
 
-static bool rect_contains(const struct orange_rect *rect, int x, int y) {
-	return x >= rect->x && y >= rect->y &&
-		x < rect->x + rect->width && y < rect->y + rect->height;
-}
-
 static double layout_scale(const struct orange_shell_layout *layout) {
 	return clamp(ui_scale_for_size(layout->width, layout->height),
 		ORANGE_MIN_UI_SCALE, ORANGE_MAX_UI_SCALE);
@@ -321,30 +318,7 @@ static void draw_image_tinted(cairo_t *cr, cairo_surface_t *surface,
 	cairo_restore(cr);
 }
 
-static void draw_tinted_image_fit(cairo_t *cr, cairo_surface_t *surface,
-		struct orange_rect r, double opacity, int red, int green, int blue) {
-	int sw = cairo_image_surface_get_width(surface);
-	int sh = cairo_image_surface_get_height(surface);
-	if (sw <= 0 || sh <= 0) {
-		return;
-	}
-	double scale = fmin((double)r.width / (double)sw,
-		(double)r.height / (double)sh);
-	double tx = r.x + ((double)r.width - sw * scale) * 0.5;
-	double ty = r.y + ((double)r.height - sh * scale) * 0.5;
-	cairo_save(cr);
-	cairo_translate(cr, tx, ty);
-	cairo_scale(cr, scale, scale);
-	cairo_set_source_rgba(cr,
-		red / 255.0,
-		green / 255.0,
-		blue / 255.0,
-		opacity);
-	cairo_mask_surface(cr, surface, 0, 0);
-	cairo_restore(cr);
-}
-
-static struct orange_rect centered_rect_in(
+__attribute__((unused)) static struct orange_rect centered_rect_in(
 		struct orange_rect bounds,
 		int width,
 		int height) {
@@ -993,6 +967,23 @@ double orange_dock_bounce_offset(const struct orange_dock_bounce *bounce,
 	return -result * 22.0 * scale;
 }
 
+struct orange_dock_bounce_displacement orange_dock_bounce_displacement(
+		const struct orange_dock_bounce *bounce,
+		uint32_t now_ms,
+		enum orange_dock_position position,
+		double scale) {
+	double offset = orange_dock_bounce_offset(bounce, now_ms, scale);
+	switch (position) {
+	case ORANGE_DOCK_POSITION_LEFT:
+		return (struct orange_dock_bounce_displacement){-offset, 0.0};
+	case ORANGE_DOCK_POSITION_RIGHT:
+		return (struct orange_dock_bounce_displacement){offset, 0.0};
+	case ORANGE_DOCK_POSITION_BOTTOM:
+	default:
+		return (struct orange_dock_bounce_displacement){0.0, offset};
+	}
+}
+
 static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 		const struct orange_shell_state *state,
 		const struct orange_config *config) {
@@ -1042,7 +1033,11 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 			struct timespec ts;
 			clock_gettime(CLOCK_MONOTONIC, &ts);
 			uint32_t now_ms = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-			item.y += (int)orange_dock_bounce_offset(&tmp, now_ms, s);
+			struct orange_dock_bounce_displacement bounce =
+				orange_dock_bounce_displacement(
+					&tmp, now_ms, layout->dock_position, s);
+			item.x += (int)bounce.x;
+			item.y += (int)bounce.y;
 		}
 		int variant = dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT;
 		bool grid_icon = dock_launcher_is_grid(config, launcher_idx);
