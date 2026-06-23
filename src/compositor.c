@@ -6561,7 +6561,9 @@ static void server_finish(struct orange_server *server) {
 static void orange_log_handler(enum wlr_log_importance importance,
 		const char *fmt, va_list args) {
 	if (importance == WLR_ERROR &&
-			strstr(fmt, "No free output buffer slot") != NULL) {
+			(strstr(fmt, "No free output buffer slot") != NULL ||
+			strstr(fmt, "Failed to render cursor buffer") != NULL ||
+			strstr(fmt, "Falling back to software cursor") != NULL)) {
 		return;
 	}
 	char buf[1024];
