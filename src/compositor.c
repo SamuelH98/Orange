@@ -4546,28 +4546,31 @@ static void finish_dock_drag(struct orange_server *server) {
 		server_mark_shell_dirty(server);
 	} else if (!moved && index >= 0 && index < dock_count) {
 		int launcher_idx = dock_launcher_for_visible_index(server, index);
-		if (launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
-				server->config.dock_apps[launcher_idx][0] != '\0' &&
-				!orange_dock_app_is_permanent(
+		if (launcher_idx < 0 || launcher_idx >= ORANGE_DOCK_MAX ||
+				server->config.dock_apps[launcher_idx][0] == '\0') {
+			server_mark_shell_dirty(server);
+			return;
+		}
+		if (!focus_view_for_dock_launcher(server, launcher_idx)) {
+			if (!orange_dock_app_is_permanent(
 					server->config.dock_apps[launcher_idx]) &&
-				server->config.animate_opening_applications) {
-			server->dock_bounce_active = true;
-			server->dock_bounce_start = monotonic_time_msec();
-			server->dock_bounce_launcher_idx = launcher_idx;
-		}
-		if (launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
-				server->config.dock_apps[launcher_idx][0] != '\0' &&
-				!orange_dock_app_is_permanent(
-					server->config.dock_apps[launcher_idx])) {
-			server->cursor_loading_active = true;
-			server->cursor_loading_launcher_idx = launcher_idx;
-			server->cursor_loading_start_ms = monotonic_time_msec();
-			if (server->xcursor_manager != NULL) {
-				wlr_cursor_set_xcursor(server->cursor,
-					server->xcursor_manager, "progress");
+					server->config.animate_opening_applications) {
+				server->dock_bounce_active = true;
+				server->dock_bounce_start = monotonic_time_msec();
+				server->dock_bounce_launcher_idx = launcher_idx;
 			}
+			if (!orange_dock_app_is_permanent(
+					server->config.dock_apps[launcher_idx])) {
+				server->cursor_loading_active = true;
+				server->cursor_loading_launcher_idx = launcher_idx;
+				server->cursor_loading_start_ms = monotonic_time_msec();
+				if (server->xcursor_manager != NULL) {
+					wlr_cursor_set_xcursor(server->cursor,
+						server->xcursor_manager, "progress");
+				}
+			}
+			launch_dock_launcher(server, launcher_idx);
 		}
-		launch_dock_launcher(server, launcher_idx);
 		server_mark_shell_dirty(server);
 	}
 }
