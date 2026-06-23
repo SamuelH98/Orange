@@ -3976,10 +3976,10 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		case 0:
 			launch_dock_launcher(server, launcher_idx);
 			break;
-		case 1:
+		case 2:
 			launch_command("xdg-open \"$HOME\" || true");
 			break;
-		case 2:
+		case 4:
 			if (orange_dock_config_remove_visible(&server->config, target)) {
 				orange_config_save(&server->config,
 					server->options->config_path);
@@ -3998,17 +3998,10 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		case 1:
 			hide_windows_for_dock_launcher(server, launcher_idx);
 			break;
-		case 2:
+		case 3:
 			launch_command("xdg-open \"$HOME\" || true");
 			break;
-		case 3:
-			if (orange_dock_config_remove_visible(&server->config, target)) {
-				orange_config_save(&server->config,
-					server->options->config_path);
-				server_mark_shell_dirty(server);
-			}
-			break;
-		case 4:
+		case 5:
 			close_windows_for_dock_launcher(server, launcher_idx);
 			break;
 		default:

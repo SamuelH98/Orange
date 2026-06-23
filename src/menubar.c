@@ -210,29 +210,35 @@ static const char *help_context_icon_names[] = {
 
 static const char *dock_context_labels[] = {
 	"Open",
+	"Show Recents",
 	"Show in Files",
+	"Open at Login",
 	"Remove from Dock",
 };
 
 static const char *dock_context_icon_names[] = {
 	"document-open",
+	"document-open-recent",
 	"system-file-manager",
+	"system-run",
 	"list-remove",
 };
 
 static const char *dock_running_context_labels[] = {
 	"Show All Windows",
 	"Hide",
+	"Keep in Dock",
 	"Show in Files",
-	"Remove from Dock",
+	"Open at Login",
 	"Quit",
 };
 
 static const char *dock_running_context_icon_names[] = {
 	"view-restore",
 	"view-hidden",
+	"starred",
 	"system-file-manager",
-	"list-remove",
+	"system-run",
 	"application-exit",
 };
 

@@ -193,7 +193,9 @@ static const int help_context_separator_before[] = {1, -1};
 
 static const char *dock_context_labels[] = {
 	"Open",
+	"Show Recents",
 	"Show in Files",
+	"Open at Login",
 	"Remove from Dock",
 };
 
@@ -202,12 +204,13 @@ static const int dock_context_separator_before[] = {1, 2, -1};
 static const char *dock_running_context_labels[] = {
 	"Show All Windows",
 	"Hide",
+	"Keep in Dock",
 	"Show in Files",
-	"Remove from Dock",
+	"Open at Login",
 	"Quit",
 };
 
-static const int dock_running_context_separator_before[] = {2, 4, -1};
+static const int dock_running_context_separator_before[] = {2, 5, -1};
 
 static const char *dock_separator_context_labels[] = {
 	"Turn Magnification On/Off",
