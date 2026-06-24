@@ -8,6 +8,7 @@
 
 #include <gio/gio.h>
 #include <assert.h>
+#include <dirent.h>
 #include <drm_fourcc.h>
 #include <linux/input-event-codes.h>
 #include <limits.h>
@@ -56,6 +57,7 @@
 
 #define DESKTOP_ENTRY_RELOAD_TICKS 5
 #define VOLUME_RELOAD_TICKS 3
+#define DESKTOP_FILE_RELOAD_TICKS 3
 
 enum orange_cursor_mode {
 	ORANGE_CURSOR_PASSTHROUGH,
@@ -220,6 +222,7 @@ struct orange_server {
 	int status_poll_ticks;
 	int desktop_entry_poll_ticks;
 	int volume_poll_ticks;
+	int desktop_file_poll_ticks;
 	int hot_dock_index;
 	int last_dock_pointer_x;
 	int last_dock_pointer_y;
@@ -240,6 +243,10 @@ struct orange_server {
 	int volume_count;
 	int desktop_volume_count;
 	struct wl_event_source *volume_timer;
+
+	struct orange_file_info desktop_files[ORANGE_DESKTOP_FILE_MAX];
+	int desktop_file_count;
+	struct wl_event_source *desktop_file_timer;
 
 	bool dock_drag_active;
 	bool dock_drag_moved;
@@ -676,6 +683,107 @@ static void update_volumes(struct orange_server *server) {
 	server->desktop_volume_count = desktop_count;
 	server->volume_count = count;
 	memcpy(server->volumes, volumes, sizeof(volumes[0]) * count);
+}
+
+static const char *file_icon_by_extension(const char *name) {
+	if (name == NULL) return "text-x-generic";
+	const char *dot = strrchr(name, '.');
+	if (dot == NULL || dot == name) {
+		return "text-x-generic";
+	}
+	dot++;
+	if (strcasecmp(dot, "png") == 0 || strcasecmp(dot, "jpg") == 0 ||
+			strcasecmp(dot, "jpeg") == 0 || strcasecmp(dot, "gif") == 0 ||
+			strcasecmp(dot, "bmp") == 0 || strcasecmp(dot, "svg") == 0 ||
+			strcasecmp(dot, "webp") == 0) {
+		return "image-x-generic";
+	}
+	if (strcasecmp(dot, "pdf") == 0) {
+		return "application-pdf";
+	}
+	if (strcasecmp(dot, "txt") == 0 || strcasecmp(dot, "md") == 0 ||
+			strcasecmp(dot, "rst") == 0) {
+		return "text-x-generic";
+	}
+	if (strcasecmp(dot, "mp3") == 0 || strcasecmp(dot, "wav") == 0 ||
+			strcasecmp(dot, "flac") == 0 || strcasecmp(dot, "ogg") == 0 ||
+			strcasecmp(dot, "m4a") == 0) {
+		return "audio-x-generic";
+	}
+	if (strcasecmp(dot, "mp4") == 0 || strcasecmp(dot, "avi") == 0 ||
+			strcasecmp(dot, "mkv") == 0 || strcasecmp(dot, "mov") == 0 ||
+			strcasecmp(dot, "webm") == 0) {
+		return "video-x-generic";
+	}
+	if (strcasecmp(dot, "zip") == 0 || strcasecmp(dot, "tar") == 0 ||
+			strcasecmp(dot, "gz") == 0 || strcasecmp(dot, "rar") == 0 ||
+			strcasecmp(dot, "7z") == 0) {
+		return "package-x-generic";
+	}
+	if (strcasecmp(dot, "doc") == 0 || strcasecmp(dot, "docx") == 0) {
+		return "application-msword";
+	}
+	if (strcasecmp(dot, "xls") == 0 || strcasecmp(dot, "xlsx") == 0) {
+		return "application-vnd.ms-excel";
+	}
+	if (strcasecmp(dot, "html") == 0 || strcasecmp(dot, "htm") == 0) {
+		return "text-html";
+	}
+	return "text-x-generic";
+}
+
+static void update_desktop_files(struct orange_server *server) {
+	server->desktop_file_count = 0;
+	const char *home = getenv("HOME");
+	if (home == NULL || home[0] == '\0') {
+		return;
+	}
+	char desktop_path[1024];
+	snprintf(desktop_path, sizeof(desktop_path), "%s/Desktop", home);
+
+	DIR *dir = opendir(desktop_path);
+	if (dir == NULL) {
+		return;
+	}
+	struct dirent *entry;
+	while ((entry = readdir(dir)) != NULL &&
+			server->desktop_file_count < ORANGE_DESKTOP_FILE_MAX) {
+		if (entry->d_name[0] == '.') {
+			continue;
+		}
+		size_t len = strlen(entry->d_name);
+		if (len == 0) {
+			continue;
+		}
+		/* Skip .desktop files — they belong in the launcher */
+		if (len > 8 && strcmp(entry->d_name + len - 8, ".desktop") == 0) {
+			continue;
+		}
+		int idx = server->desktop_file_count;
+		snprintf(server->desktop_files[idx].name,
+			sizeof(server->desktop_files[idx].name), "%s", entry->d_name);
+		snprintf(server->desktop_files[idx].path,
+			sizeof(server->desktop_files[idx].path),
+			"%s/%s", desktop_path, entry->d_name);
+
+		struct stat st;
+		if (stat(server->desktop_files[idx].path, &st) == 0) {
+			server->desktop_files[idx].is_directory = S_ISDIR(st.st_mode);
+		} else {
+			server->desktop_files[idx].is_directory = false;
+		}
+
+		if (server->desktop_files[idx].is_directory) {
+			snprintf(server->desktop_files[idx].icon_name,
+				sizeof(server->desktop_files[idx].icon_name), "%s", "folder");
+		} else {
+			const char *icon = file_icon_by_extension(entry->d_name);
+			snprintf(server->desktop_files[idx].icon_name,
+				sizeof(server->desktop_files[idx].icon_name), "%s", icon);
+		}
+		server->desktop_file_count++;
+	}
+	closedir(dir);
 }
 
 static bool server_update_status(struct orange_server *server) {
@@ -2245,6 +2353,8 @@ static void compute_shell_layout_for_output(
 		&server->config,
 		(int)server->desktop_entry_count,
 		server->desktop_volume_count,
+		server->desktop_files,
+		server->desktop_file_count,
 		layout);
 	char active_app_label[ORANGE_APP_MENU_LABEL_MAX];
 	server_active_app_label(server, active_app_label, sizeof(active_app_label));
@@ -2494,6 +2604,8 @@ static void output_redraw_shell(struct orange_output *output) {
 		.volumes = output->server->volumes,
 		.volume_count = output->server->volume_count,
 		.desktop_volume_count = output->server->desktop_volume_count,
+		.desktop_files = output->server->desktop_files,
+		.desktop_file_count = output->server->desktop_file_count,
 		.context_menu_kind = output->server->context_menu_kind,
 		.context_menu_index = output->server->context_menu_index,
 		.context_menu_cursor_x = output->server->context_menu_cursor_x,
@@ -2835,6 +2947,8 @@ static void output_redraw_overlay(struct orange_output *output) {
 		.volumes = output->server->volumes,
 		.volume_count = output->server->volume_count,
 		.desktop_volume_count = output->server->desktop_volume_count,
+		.desktop_files = output->server->desktop_files,
+		.desktop_file_count = output->server->desktop_file_count,
 		.context_menu_kind = output->server->context_menu_kind,
 		.context_menu_index = output->server->context_menu_index,
 		.context_menu_cursor_x = output->server->context_menu_cursor_x,
@@ -4172,9 +4286,33 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		default:
 			break;
 		}
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE) {
+		int file_idx = target;
+		if (file_idx >= 0 && file_idx < server->desktop_file_count) {
+			const struct orange_file_info *info = &server->desktop_files[file_idx];
+			switch (item_index) {
+			case 0: /* Open */
+				launch_command("xdg-open \"$HOME/Desktop\" || true");
+				break;
+			case 1: /* Show in Files */
+				launch_command("xdg-open \"$HOME/Desktop\" || true");
+				break;
+			case 2: /* Move to Trash */
+			{
+				char cmd[2048];
+				snprintf(cmd, sizeof(cmd),
+					"gio trash \"%s\" || true", info->path);
+				launch_command(cmd);
+				break;
+			}
+			default:
+				break;
+			}
+		}
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_VOLUME) {
-		if (target >= 0 && target < server->desktop_volume_count) {
-			const struct orange_volume_info *vol = &server->volumes[target];
+		int vol_idx = target - server->desktop_file_count;
+		if (vol_idx >= 0 && vol_idx < server->desktop_volume_count) {
+			const struct orange_volume_info *vol = &server->volumes[vol_idx];
 			switch (item_index) {
 			case 0: /* Open */
 				if (vol->mount_path[0] != '\0') {
@@ -5223,8 +5361,12 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_WIDGET;
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_DESKTOP_ITEM) {
-		/* Desktop items are volumes (macOS behavior) */
-		server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_VOLUME;
+		/* Desktop items are files or volumes (macOS behavior) */
+		if (hit.index >= 0 && hit.index < server->desktop_file_count) {
+			server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_FILE;
+		} else {
+			server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_VOLUME;
+		}
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_DESKTOP) {
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP;
@@ -6344,6 +6486,13 @@ static int handle_clock_timer(void *data) {
 		} else {
 			server->volume_poll_ticks--;
 		}
+		if (server->desktop_file_poll_ticks <= 0) {
+			update_desktop_files(server);
+			need_redraw = true;
+			server->desktop_file_poll_ticks = DESKTOP_FILE_RELOAD_TICKS;
+		} else {
+			server->desktop_file_poll_ticks--;
+		}
 		bool status_changed = false;
 		if (server->status_poll_ticks <= 0) {
 			status_changed = server_update_status(server);
@@ -6442,6 +6591,7 @@ static bool server_init(struct orange_server *server,
 	server->status_poll_ticks = 0;
 	server->desktop_entry_poll_ticks = 0;
 	server->volume_poll_ticks = 0;
+	server->desktop_file_poll_ticks = 0;
 	server->interface_poll_ticks = 0;
 	server->background_poll_ticks = 0;
 	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
@@ -6449,7 +6599,9 @@ static bool server_init(struct orange_server *server,
 	server->desktop_drag_index = -1;
 	server->volume_count = 0;
 	server->desktop_volume_count = 0;
+	server->desktop_file_count = 0;
 	server->volume_timer = NULL;
+	server->desktop_file_timer = NULL;
 	server->cursor_mode = ORANGE_CURSOR_PASSTHROUGH;
 	wl_list_init(&server->outputs);
 	wl_list_init(&server->views);
@@ -6460,6 +6612,7 @@ static bool server_init(struct orange_server *server,
 	server_update_status(server);
 	server_reload_desktop_entries(server);
 	update_volumes(server);
+	update_desktop_files(server);
 	orange_assets_init(&server->assets);
 	orange_assets_load(&server->assets, options->asset_root,
 		server->config.icon_theme);

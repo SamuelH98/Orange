@@ -10,7 +10,8 @@
 #include "orange/desktop_entry.h"
 #include "orange/notifications.h"
 #include "orange/widget_data.h"
-#define ORANGE_DESKTOP_MAX 32
+#define ORANGE_DESKTOP_MAX 64
+#define ORANGE_DESKTOP_FILE_MAX 48
 #define ORANGE_DESKTOP_GRID_COLS 6
 #define ORANGE_MENU_ITEM_MAX 20
 #define ORANGE_WIDGET_MAX 16
@@ -120,6 +121,7 @@ enum orange_context_menu_kind {
 	ORANGE_CONTEXT_MENU_DESKTOP,
 	ORANGE_CONTEXT_MENU_DESKTOP_ICON,
 	ORANGE_CONTEXT_MENU_DESKTOP_VOLUME,
+	ORANGE_CONTEXT_MENU_DESKTOP_FILE,
 	ORANGE_CONTEXT_MENU_STATUS,
 	ORANGE_CONTEXT_MENU_STATUS_WIFI,
 	ORANGE_CONTEXT_MENU_STATUS_SOUND,
@@ -177,10 +179,18 @@ struct orange_app_menu_model {
 	struct orange_app_menu_item items[ORANGE_APP_MENU_TAB_COUNT][ORANGE_APP_MENU_ITEM_MAX];
 };
 
-/* Desktop item descriptor: either a .desktop entry index or a volume index. */
+/* Desktop item descriptor: either a .desktop entry index, a volume index, or a file index. */
 enum orange_desktop_item_kind {
 	ORANGE_DESKTOP_ITEM_ENTRY,
 	ORANGE_DESKTOP_ITEM_VOLUME,
+	ORANGE_DESKTOP_ITEM_FILE,
+};
+
+struct orange_file_info {
+	char name[256];
+	char path[1024];
+	char icon_name[128];
+	bool is_directory;
 };
 
 struct orange_desktop_item_info {
@@ -280,6 +290,8 @@ struct orange_shell_state {
 	const struct orange_volume_info *volumes;
 	int volume_count;
 	int desktop_volume_count;
+	const struct orange_file_info *desktop_files;
+	int desktop_file_count;
 	const struct orange_notification *notifications;
 	int notification_count;
 	const struct orange_widget_data *widget_data;
@@ -340,6 +352,8 @@ void orange_shell_layout_compute(
 	const struct orange_config *config,
 	int desktop_entry_count,
 	int desktop_volume_count,
+	const struct orange_file_info *desktop_files,
+	int desktop_file_count,
 	struct orange_shell_layout *layout);
 void orange_shell_layout_clean_up(
 	struct orange_shell_layout *layout,

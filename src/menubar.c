@@ -1104,6 +1104,7 @@ void orange_menubar_warm_assets(struct orange_assets *assets) {
 		ORANGE_CONTEXT_MENU_WIDGET,
 		ORANGE_CONTEXT_MENU_DESKTOP_ICON,
 		ORANGE_CONTEXT_MENU_DESKTOP_VOLUME,
+		ORANGE_CONTEXT_MENU_DESKTOP_FILE,
 		ORANGE_CONTEXT_MENU_STATUS,
 		ORANGE_CONTEXT_MENU_STATUS_WIFI,
 		ORANGE_CONTEXT_MENU_STATUS_SOUND,
@@ -1219,6 +1220,18 @@ void orange_menubar_warm_assets(struct orange_assets *assets) {
 		};
 		if (index >= 0 && index < 3) {
 			return vol_labels[index];
+		}
+		break;
+	}
+	case ORANGE_CONTEXT_MENU_DESKTOP_FILE: {
+		(void)index;
+		static const char *file_labels[] = {
+			"Open",
+			"Show in Files",
+			"Move to Trash",
+		};
+		if (index >= 0 && index < 3) {
+			return file_labels[index];
 		}
 		break;
 	}
@@ -1382,6 +1395,18 @@ void orange_menubar_warm_assets(struct orange_assets *assets) {
 		};
 		if (index >= 0 && index < 3) {
 			return vol_icons[index];
+		}
+		break;
+	}
+	case ORANGE_CONTEXT_MENU_DESKTOP_FILE: {
+		(void)index;
+		static const char *file_icons[] = {
+			"document-open",
+			"document-open",
+			"user-trash",
+		};
+		if (index >= 0 && index < 3) {
+			return file_icons[index];
 		}
 		break;
 	}

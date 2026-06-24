@@ -131,10 +131,10 @@ static void test_context_menu_glass_and_scaling(void) {
 
 	struct orange_shell_layout small;
 	struct orange_shell_layout large;
-	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &small);
+	orange_shell_layout_compute(1440,900,false,&config,0,0, NULL, 0, &small);
 	orange_shell_layout_set_context_menu(&small,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, 720, 450, NULL);
-	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0, 0, &large);
+	orange_shell_layout_compute(VISUAL_WIDTH,VISUAL_HEIGHT,false,&config,0,0, NULL, 0, &large);
 	orange_shell_layout_set_context_menu(&large,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900, NULL);
 	assert(large.context_menu_panel.width > small.context_menu_panel.width);
@@ -190,8 +190,7 @@ static void test_light_context_menu_text_uses_white_palette(void) {
 	config.appearance = ORANGE_APPEARANCE_LIGHT;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT,
-		false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(VISUAL_WIDTH,VISUAL_HEIGHT,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900, NULL);
 
@@ -237,7 +236,7 @@ static void test_dark_context_menu_uses_dark_material(void) {
 	config.appearance = ORANGE_APPEARANCE_DARK;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(VISUAL_WIDTH, VISUAL_HEIGHT, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(VISUAL_WIDTH,VISUAL_HEIGHT,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900, NULL);
 
@@ -287,7 +286,7 @@ static void test_base_shell_can_skip_transient_overlays(void) {
 	config.weather_widget_visible = false;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, width / 2, height / 2, NULL);
 	struct orange_rect panel = layout.context_menu_panel;
@@ -375,7 +374,7 @@ static void test_menu_overlay_bounds_are_tight(void) {
 		.config = &config,
 	};
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, true, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,true,&config,0,0, NULL, 0, &layout);
 
 	struct orange_rect bounds;
 	assert(orange_shell_overlay_bounds(width, height, &state, &bounds));
@@ -405,7 +404,7 @@ static void test_menu_overlay_bounds_are_tight(void) {
 	state.context_menu_index = -1;
 	state.context_menu_cursor_x = width / 2;
 	state.context_menu_cursor_y = height / 2;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, width / 2, height / 2, NULL);
 	assert(orange_shell_overlay_bounds(width, height, &state, &bounds));
@@ -454,7 +453,7 @@ static void assert_backdrop_overlay_matches_direct_launcher(
 	state.launcher_category_count = 1;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_launcher(&layout, false, mode, 0);
 	struct orange_rect sample_rect = mode == ORANGE_LAUNCHER_DISPLAY_FULL ?
 		layout.launcher_panel : layout.launcher_search_field;
@@ -523,7 +522,7 @@ static void test_notification_overlay_uses_backdrop_color(void) {
 		.config = &config,
 	};
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_notification_center(&layout, 0);
 	struct orange_rect card = layout.notification_center_cards[0];
 	int sample_x = card.x + card.width - 30;
@@ -569,7 +568,7 @@ static void test_context_menu_frosts_high_contrast_backdrop(void) {
 		.config = &config,
 	};
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_APP_EDIT, -1, 220, 50, NULL);
 	struct orange_rect panel = layout.context_menu_panel;
@@ -625,7 +624,7 @@ static void test_launcher_panel_frosts_high_contrast_backdrop(void) {
 	state.launcher_category_count = 1;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_launcher(&layout, false,
 		ORANGE_LAUNCHER_DISPLAY_FULL, 0);
 	struct orange_rect panel = layout.launcher_panel;
@@ -688,8 +687,7 @@ static void test_transient_glass_stays_subtle_on_light_backdrop(void) {
 		.config = &config,
 	};
 	struct orange_shell_layout menu_layout;
-	orange_shell_layout_compute(width, height, true, &config, 0, 0,
-		&menu_layout);
+	orange_shell_layout_compute(width,height,true,&config,0,0, NULL, 0, &menu_layout);
 	struct orange_rect system_panel = menu_layout.system_menu_panel;
 	int sample_x = system_panel.x + system_panel.width - 24;
 	int sample_y = system_panel.y + system_panel.height / 2;
@@ -712,8 +710,7 @@ static void test_transient_glass_stays_subtle_on_light_backdrop(void) {
 		.config = &config,
 	};
 	struct orange_shell_layout context_layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0,
-		&context_layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &context_layout);
 	orange_shell_layout_set_context_menu(&context_layout,
 		ORANGE_CONTEXT_MENU_APP_EDIT, -1, 220, 50, NULL);
 	struct orange_rect context_panel = context_layout.context_menu_panel;
@@ -741,7 +738,7 @@ static void test_transient_glass_stays_subtle_on_light_backdrop(void) {
 	launcher_state.launcher_category_count = 1;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_launcher(&layout, false,
 		ORANGE_LAUNCHER_DISPLAY_FULL, 0);
 	struct orange_rect panel = layout.launcher_panel;
@@ -771,7 +768,7 @@ static void test_notification_center_renders_panel_cards_and_button(void) {
 	config.weather_widget_visible = false;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_notification_center(&layout, 1);
 	assert(layout.notification_center_card_count >= 4);
 	assert(layout.notification_center_card_kinds[0] ==
@@ -845,7 +842,7 @@ static void test_desktop_volume_icon_draws(void) {
 		.is_internal = true,
 	};
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 1, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,1, NULL, 0, &layout);
 
 	struct orange_shell_state state = {
 		.system_menu_open = false,
@@ -918,7 +915,7 @@ static void test_dock_magnification_wave_paints_above_base_icons(void) {
 	}
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	int hot = 5;
 	assert(layout.dock_item_count > hot + 1);
 	struct orange_rect hot_base = layout.dock_items[hot];
@@ -1010,7 +1007,7 @@ static void test_default_dock_prefers_desktop_icons_before_role_icons(void) {
 	config.dock_magnification = false;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(width, height, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(width,height,false,&config,0,0, NULL, 0, &layout);
 	assert(layout.dock_item_count > 8);
 
 	cairo_surface_t *generic = colored_icon_surface(0.95, 0.12, 0.18);

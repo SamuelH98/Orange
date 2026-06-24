@@ -31,7 +31,7 @@ static void test_dock_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	assert(layout.dock_item_count >= 10);
 	struct orange_rect first = layout.dock_items[0];
 	struct orange_shell_hit hit = orange_shell_hit_test(
@@ -70,7 +70,7 @@ static void test_reordered_dock_hit_resolves_launcher(void) {
 	config.dock_order[1] = 0;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	assert(layout.dock_item_count >= 2);
 	struct orange_rect first = layout.dock_items[0];
 	struct orange_shell_hit hit = orange_shell_hit_test(
@@ -95,7 +95,7 @@ static void test_dock_position_layout(void) {
 	config.dock_position = ORANGE_DOCK_POSITION_LEFT;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	assert(layout.dock_position == ORANGE_DOCK_POSITION_LEFT);
 	assert(layout.dock.x < 80);
 	assert(layout.dock.height > layout.dock.width);
@@ -119,7 +119,7 @@ static void test_dock_position_layout(void) {
 		layout.dock.x + layout.dock.width);
 
 	config.dock_position = ORANGE_DOCK_POSITION_RIGHT;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	assert(layout.dock_position == ORANGE_DOCK_POSITION_RIGHT);
 	assert(layout.dock.x > layout.width / 2);
 	assert(layout.dock.height > layout.dock.width);
@@ -186,7 +186,7 @@ static void test_dock_trash_spacing_is_balanced(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	int first_leading = layout.dock_items[0].x - layout.dock.x;
 	int last = layout.dock_item_count - 1;
 	int trailing = layout.dock.x + layout.dock.width -
@@ -194,7 +194,7 @@ static void test_dock_trash_spacing_is_balanced(void) {
 	assert(abs(first_leading - trailing) <= 1);
 
 	snprintf(config.dock_apps[last], sizeof(config.dock_apps[last]), "%s", "");
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	first_leading = layout.dock_items[0].x - layout.dock.x;
 	last = layout.dock_item_count - 1;
 	trailing = layout.dock.x + layout.dock.width -
@@ -256,7 +256,7 @@ static void test_desktop_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 0, 2, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,0,2, NULL, 0, &layout);
 	struct orange_rect item = layout.desktop_items[1];
 	struct orange_shell_hit hit = orange_shell_hit_test(
 		&layout,
@@ -270,7 +270,7 @@ static void test_desktop_requires_volumes(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,0,0, NULL, 0, &layout);
 	assert(layout.desktop_item_count == 0);
 }
 
@@ -278,7 +278,7 @@ static void test_desktop_custom_position_snaps_to_grid(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 0, 2, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,0,2, NULL, 0, &layout);
 	assert(layout.desktop_item_count == 2);
 	/* Items are placed in grid from right side */
 	assert(layout.desktop_items[0].x >= 1700);
@@ -291,7 +291,7 @@ static void test_desktop_custom_position_clamps_to_visible_area(void) {
 	config.desktop_positions[0] =
 		(struct orange_desktop_icon_position){true, 50000, 50000};
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 0, 1, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,0,1, NULL, 0, &layout);
 	struct orange_rect item = layout.desktop_items[0];
 	assert(item.x >= 0);
 	assert(item.y >= layout.menu_bar.height);
@@ -303,7 +303,7 @@ static void test_system_menu_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout closed;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &closed);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &closed);
 	struct orange_shell_hit hit = orange_shell_hit_test(&closed, 36, 16);
 	assert(hit.kind == ORANGE_HIT_SYSTEM_MENU);
 	hit = orange_shell_hit_test(&closed,
@@ -312,7 +312,7 @@ static void test_system_menu_hit(void) {
 	assert(hit.kind == ORANGE_HIT_APP_MENU);
 
 	struct orange_shell_layout open;
-	orange_shell_layout_compute(1920, 1080, true, &config, 2, 0, &open);
+	orange_shell_layout_compute(1920,1080,true,&config,2,0, NULL, 0, &open);
 	assert(open.system_menu_item_count > 4);
 	struct orange_rect item = open.system_menu_items[3];
 	hit = orange_shell_hit_test(&open, item.x + 8, item.y + 10);
@@ -325,7 +325,7 @@ static void test_app_menu_layout_and_labels(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	orange_shell_layout_set_app_menu_tabs(&layout, "Photoshop", NULL);
 	assert_app_menu_tabs_do_not_overlap(&layout);
 
@@ -463,7 +463,7 @@ static void test_status_area_hit_and_menu(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	struct orange_rect clock =
 		layout.status_items[ORANGE_STATUS_ITEM_CLOCK];
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
@@ -518,7 +518,7 @@ static void test_notification_center_layout_and_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,0,0, NULL, 0, &layout);
 	orange_shell_layout_set_notification_center(&layout, 2);
 
 	assert(layout.notification_center_panel.width > 0);
@@ -550,7 +550,7 @@ static void test_notification_center_layout_and_hit(void) {
 	assert(hit.kind == ORANGE_HIT_NOTIFICATION_CENTER_EDIT);
 
 	struct orange_shell_layout empty;
-	orange_shell_layout_compute(1920, 1080, false, &config, 0, 0, &empty);
+	orange_shell_layout_compute(1920,1080,false,&config,0,0, NULL, 0, &empty);
 	orange_shell_layout_set_notification_center(&empty, 0);
 	assert(empty.notification_center_card_count >= 3);
 	assert(empty.notification_center_card_kinds[0] ==
@@ -568,7 +568,7 @@ static void test_launcher_full_layout_scrolls_all_apps(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(1440,900,false,&config,0,0, NULL, 0, &layout);
 	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
 	layout.launcher_category_count = 6;
 	layout.launcher_category_active = 2;
@@ -635,7 +635,7 @@ static void test_launcher_search_mode_transforms_to_overlay(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(1440,900,false,&config,0,0, NULL, 0, &layout);
 	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
 	layout.launcher_category_count = 6;
 	layout.launcher_category_active = 0;
@@ -670,7 +670,7 @@ static void test_launcher_search_mode_transforms_to_overlay(void) {
 	assert(hit.kind == ORANGE_HIT_LAUNCHER_MODE);
 	assert(hit.index == 0);
 
-	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(1440,900,false,&config,0,0, NULL, 0, &layout);
 	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
 	layout.launcher_category_count = 6;
 	layout.launcher_category_active = 0;
@@ -685,7 +685,7 @@ static void test_launcher_search_mode_transforms_to_overlay(void) {
 	assert(layout.launcher_mode_buttons[0].width > 0);
 	assert(layout.launcher_mode_buttons[1].width > 0);
 
-	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(1440,900,false,&config,0,0, NULL, 0, &layout);
 	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
 	layout.launcher_category_count = 6;
 	layout.launcher_category_active = 0;
@@ -717,7 +717,7 @@ static void test_launcher_search_mode_transforms_to_overlay(void) {
 	assert(hit.kind == ORANGE_HIT_LAUNCHER_APP);
 	assert(hit.index == 0);
 
-	orange_shell_layout_compute(1440, 900, false, &config, 0, 0, &layout);
+	orange_shell_layout_compute(1440,900,false,&config,0,0, NULL, 0, &layout);
 	layout.launcher_position_set = true;
 	layout.launcher_x = 320;
 	layout.launcher_y = 280;
@@ -793,7 +793,7 @@ static void test_small_width_dock_fits(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(900, 700, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(900,700,false,&config,2,0, NULL, 0, &layout);
 	assert(layout.dock.x >= 0);
 	assert(layout.dock.x + layout.dock.width <= layout.width);
 	for (int i = 0; i < layout.dock_item_count; i++) {
@@ -811,7 +811,7 @@ static void test_invalid_visible_dock_order_has_no_blank_slot(void) {
 	config.dock_order[dock_count - 1] = dock_count;
 
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1440, 900, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1440,900,false,&config,2,0, NULL, 0, &layout);
 	assert(layout.dock_item_count == dock_count);
 	for (int i = 0; i < layout.dock_item_count; i++) {
 		assert(layout.dock_items[i].width > 0);
@@ -826,8 +826,8 @@ static void test_resolution_scaling(void) {
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout base;
 	struct orange_shell_layout large;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &base);
-	orange_shell_layout_compute(3840, 2160, false, &config, 2, 0, &large);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &base);
+	orange_shell_layout_compute(3840,2160,false,&config,2,0, NULL, 0, &large);
 
 	assert(large.menu_bar.height > base.menu_bar.height);
 	assert(large.calendar_widget.width > base.calendar_widget.width);
@@ -842,8 +842,8 @@ static void test_major_surfaces_scale_by_resolution(void) {
 
 	struct orange_shell_layout small;
 	struct orange_shell_layout large;
-	orange_shell_layout_compute(1440, 900, true, &config, 0, 2, &small);
-	orange_shell_layout_compute(2880, 1800, true, &config, 0, 2, &large);
+	orange_shell_layout_compute(1440,900,true,&config,0,2, NULL, 0, &small);
+	orange_shell_layout_compute(2880,1800,true,&config,0,2, NULL, 0, &large);
 
 	assert_roughly_double(large.menu_bar.height, small.menu_bar.height);
 	assert_roughly_double(large.system_menu_button.width,
@@ -889,7 +889,7 @@ static void test_desktop_background_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(2048, 1153, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(2048,1153,false,&config,2,0, NULL, 0, &layout);
 	/* click on empty desktop area below menu bar */
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout, 500, 500);
 	assert(hit.kind == ORANGE_HIT_DESKTOP);
@@ -900,7 +900,7 @@ static void test_chrome_background_blocks_desktop_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
 		layout.status_area.x - 4,
@@ -915,14 +915,14 @@ static void test_chrome_background_blocks_desktop_hit(void) {
 	assert(hit.index == -1);
 
 	config.dock_position = ORANGE_DOCK_POSITION_LEFT;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	hit = orange_shell_hit_test(&layout,
 		layout.dock.x + layout.dock.width / 2,
 		layout.dock.y + 4);
 	assert(hit.kind == ORANGE_HIT_DOCK);
 
 	config.dock_position = ORANGE_DOCK_POSITION_RIGHT;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	hit = orange_shell_hit_test(&layout,
 		layout.dock.x + layout.dock.width / 2,
 		layout.dock.y + 4);
@@ -933,7 +933,7 @@ static void test_context_menu_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_DOCK, 0, 0, 0, NULL);
 	assert(layout.context_menu_item_count == 5);
@@ -994,7 +994,7 @@ static void test_widget_hit_and_context_menu(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	struct orange_rect widget = layout.widgets[0].rect;
 	struct orange_shell_hit hit = orange_shell_hit_test(
 		&layout,
@@ -1021,7 +1021,7 @@ static void test_hidden_widget_not_hit(void) {
 	orange_config_set_defaults(&config);
 	config.calendar_widget_visible = false;
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	struct orange_rect widget = layout.widgets[0].rect;
 	struct orange_shell_hit hit = orange_shell_hit_test(
 		&layout,
@@ -1097,7 +1097,7 @@ static void test_widget_layer_exists(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	struct orange_shell_layout layout;
-	orange_shell_layout_compute(1920, 1080, false, &config, 2, 0, &layout);
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	assert(layout.widget_count == 2);
 	assert(layout.widgets[0].type == ORANGE_WIDGET_CALENDAR);
 	assert(layout.widgets[1].type == ORANGE_WIDGET_WEATHER);

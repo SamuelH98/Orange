@@ -918,6 +918,11 @@ static const char *desktop_item_label(
 			idx < state->volume_count) {
 		return state->volumes[idx].label;
 	}
+	if (kind == ORANGE_DESKTOP_ITEM_FILE &&
+			state->desktop_files != NULL &&
+			idx < state->desktop_file_count) {
+		return state->desktop_files[idx].name;
+	}
 	return NULL;
 }
 
@@ -965,6 +970,23 @@ static void draw_desktop_icon_for_item(cairo_t *cr,
 			} else {
 				cairo_surface_t *fallback = orange_assets_icon(
 					state->assets, variant, "drive-harddisk");
+				if (fallback != NULL) {
+					draw_image_fit(cr, fallback, icon_rect, 1.0);
+				}
+			}
+		}
+	} else if (kind == ORANGE_DESKTOP_ITEM_FILE) {
+		const struct orange_file_info *files = state->desktop_files;
+		if (files != NULL && idx < state->desktop_file_count) {
+			const char *icon_name = files[idx].is_directory ?
+				"folder" : files[idx].icon_name;
+			cairo_surface_t *icon = state->assets != NULL ?
+				orange_assets_icon(state->assets, variant, icon_name) : NULL;
+			if (icon != NULL) {
+				draw_image_fit(cr, icon, icon_rect, 1.0);
+			} else {
+				cairo_surface_t *fallback = orange_assets_icon(
+					state->assets, variant, "text-x-generic");
 				if (fallback != NULL) {
 					draw_image_fit(cr, fallback, icon_rect, 1.0);
 				}
@@ -1471,8 +1493,11 @@ void orange_shell_layout_compute(
 		const struct orange_config *config,
 		int desktop_entry_count,
 		int desktop_volume_count,
+		const struct orange_file_info *desktop_files,
+		int desktop_file_count,
 		struct orange_shell_layout *layout) {
 	(void)desktop_entry_count;
+	(void)desktop_files;
 	memset(layout, 0, sizeof(*layout));
 	struct orange_config defaults;
 	if (config == NULL) {
@@ -1538,7 +1563,7 @@ void orange_shell_layout_compute(
 		.rect = layout->weather_widget,
 	};
 
-	int total_items = desktop_volume_count;
+	int total_items = desktop_file_count + desktop_volume_count;
 	layout->desktop_item_count = config->desktop_icons_visible ? total_items : 0;
 	if (layout->desktop_item_count > ORANGE_DESKTOP_MAX) {
 		layout->desktop_item_count = ORANGE_DESKTOP_MAX;
@@ -1579,8 +1604,13 @@ void orange_shell_layout_compute(
 	int grid_x = width - grid_width - scaled_i(48, s);
 
 	for (int i = 0; i < layout->desktop_item_count; i++) {
-		layout->desktop_item_info[i].kind = ORANGE_DESKTOP_ITEM_VOLUME;
-		layout->desktop_item_info[i].index = i;
+		if (i < desktop_file_count) {
+			layout->desktop_item_info[i].kind = ORANGE_DESKTOP_ITEM_FILE;
+			layout->desktop_item_info[i].index = i;
+		} else {
+			layout->desktop_item_info[i].kind = ORANGE_DESKTOP_ITEM_VOLUME;
+			layout->desktop_item_info[i].index = i - desktop_file_count;
+		}
 	}
 	for (int i = 0; i < layout->desktop_item_count; i++) {
 		int px, py;
@@ -2015,6 +2045,11 @@ void orange_shell_layout_set_context_menu(
 			sizeof(desktop_icon_context_labels[0]));
 		separator_before = desktop_icon_context_separator_before;
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_VOLUME &&
+			index >= 0 && index < layout->desktop_item_count) {
+		anchor = layout->desktop_items[index];
+		item_count = 3;
+		separator_before = NULL;
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE &&
 			index >= 0 && index < layout->desktop_item_count) {
 		anchor = layout->desktop_items[index];
 		item_count = 3;
@@ -2797,7 +2832,8 @@ void orange_shell_draw_with_options(
 	const struct orange_config *config = state_config(state, &fallback_config);
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(width, height, state->system_menu_open, config,
-		state->desktop_entry_count, state->desktop_volume_count, &layout);
+		state->desktop_entry_count, state->desktop_volume_count,
+		state->desktop_files, state->desktop_file_count, &layout);
 	orange_shell_layout_set_app_menu_tabs(&layout,
 		orange_menubar_active_app_label(state), &state->app_menu);
 	orange_shell_layout_set_context_menu(&layout,
@@ -2950,7 +2986,8 @@ static const struct orange_config *compute_overlay_layout(
 		struct orange_config *fallback_config) {
 	const struct orange_config *config = state_config(state, fallback_config);
 	orange_shell_layout_compute(width, height, state->system_menu_open, config,
-		state->desktop_entry_count, state->desktop_volume_count, layout);
+		state->desktop_entry_count, state->desktop_volume_count,
+		NULL, 0, layout);
 	orange_shell_layout_set_app_menu_tabs(layout,
 		orange_menubar_active_app_label(state), &state->app_menu);
 	orange_shell_layout_set_context_menu(layout,
