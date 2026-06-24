@@ -3880,9 +3880,21 @@ static void handle_app_tools_menu_action(
 }
 
 static void show_dock_app_in_files(struct orange_server *server, int launcher_idx) {
-	(void)server;
-	(void)launcher_idx;
-	launch_command("xdg-open \"/usr/share/applications\" || true");
+	if (server == NULL || launcher_idx < 0 || launcher_idx >= ORANGE_DOCK_MAX ||
+			server->config.dock_apps[launcher_idx][0] == '\0') {
+		return;
+	}
+	const char *app_id = server->config.dock_apps[launcher_idx];
+	const char *home = getenv("HOME");
+	if (home == NULL) {
+		home = "";
+	}
+	char cmd[2048];
+	snprintf(cmd, sizeof(cmd),
+		"if [ -d \"%s/.config/%s\" ]; then xdg-open \"%s/.config/%s\"; "
+		"else xdg-open \"%s/.config\"; fi || true",
+		home, app_id, home, app_id, home);
+	launch_command(cmd);
 }
 
 static void toggle_open_at_login(struct orange_server *server, int launcher_idx) {
@@ -4129,14 +4141,34 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 				launch_desktop_entry(&server->desktop_entries[target]);
 			}
 			break;
-		case 6:
+		case 1: {
 			if (target >= 0 && target < (int)server->desktop_entry_count) {
-				launch_command("xdg-open \"$HOME\" || true");
+				const char *app_id = server->desktop_entries[target].id;
+				const char *home = getenv("HOME");
+				if (home == NULL) home = "";
+				char cmd[1024];
+				snprintf(cmd, sizeof(cmd),
+					"if [ -d \"%s/.config/%s\" ]; then xdg-open \"%s/.config/%s\"; "
+					"else xdg-open \"%s/.config\"; fi || true",
+					home, app_id, home, app_id, home);
+				launch_command(cmd);
 			}
 			break;
-		case 8:
-			launch_command("gio trash \"$HOME/Desktop\" || true");
+		}
+		case 6: {
+			if (target >= 0 && target < (int)server->desktop_entry_count) {
+				const char *app_id = server->desktop_entries[target].id;
+				const char *home = getenv("HOME");
+				if (home == NULL) home = "";
+				char cmd[1024];
+				snprintf(cmd, sizeof(cmd),
+					"if [ -d \"%s/.config/%s\" ]; then xdg-open \"%s/.config/%s\"; "
+					"else xdg-open \"%s/.config\"; fi || true",
+					home, app_id, home, app_id, home);
+				launch_command(cmd);
+			}
 			break;
+		}
 		default:
 			break;
 		}
@@ -4152,7 +4184,11 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 				}
 				break;
 			case 1: /* Get Info */
-				launch_command("nautilus --properties \"$HOME\" || true");
+				if (vol->mount_path[0] != '\0') {
+					char cmd[1024];
+					snprintf(cmd, sizeof(cmd), "nautilus --properties \"%s\" || true", vol->mount_path);
+					launch_command(cmd);
+				}
 				break;
 			case 2: /* Eject */
 				if (vol->mount_path[0] != '\0') {
@@ -4167,8 +4203,24 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		}
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP) {
 		switch (item_index) {
-		case 0:
-			launch_command("xdg-open \"$HOME/Desktop\" || true");
+		case 0: {
+			const char *home = getenv("HOME");
+			if (home == NULL) home = "";
+			char cmd[1024];
+			snprintf(cmd, sizeof(cmd),
+				"for n in \"\" \" 2\" \" 3\" \" 4\" \" 5\" \" 6\" \" 7\" \" 8\" \" 9\" \" 10\"; "
+				"do d=\"%s/Desktop/New Folder$n\"; "
+				"if ! [ -e \"$d\" ]; then "
+				"mkdir -p \"$d\" && xdg-open \"%s/Desktop\" && break; fi; done || true",
+				home, home);
+			launch_command(cmd);
+			break;
+		}
+		case 2:
+			server->config.desktop_use_stacks =
+				!server->config.desktop_use_stacks;
+			orange_config_save(&server->config,
+				server->options->config_path);
 			break;
 		case 6:
 			launch_command(background_settings_command);

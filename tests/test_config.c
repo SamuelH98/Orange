@@ -16,6 +16,7 @@ int main(void) {
 	config.tint_window_background = true;
 	config.show_scroll_bars = ORANGE_SCROLL_BARS_ALWAYS;
 	config.desktop_icons_visible = false;
+	config.desktop_use_stacks = true;
 	config.desktop_grid_spacing = 40;
 	config.desktop_label_size = 18;
 	config.desktop_icon_scale = 1.25;
@@ -55,6 +56,7 @@ int main(void) {
 	assert(loaded.tint_window_background);
 	assert(loaded.show_scroll_bars == ORANGE_SCROLL_BARS_ALWAYS);
 	assert(!loaded.desktop_icons_visible);
+	assert(loaded.desktop_use_stacks);
 	assert(loaded.desktop_grid_spacing == 40);
 	assert(loaded.desktop_label_size == 18);
 	assert(loaded.desktop_icon_scale > 1.24 && loaded.desktop_icon_scale < 1.26);

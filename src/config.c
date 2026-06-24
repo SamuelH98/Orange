@@ -363,6 +363,8 @@ static void apply_pair(struct orange_config *config,
 		config->desktop_icon_scale = clamp_double(strtod(value, NULL), 0.60, 2.00);
 	} else if (strcmp(key, "desktop_sort_by") == 0) {
 		config->desktop_sort_by = parse_sort_by(value);
+	} else if (strcmp(key, "desktop_use_stacks") == 0) {
+		config->desktop_use_stacks = parse_bool(value);
 	} else if (strcmp(key, "desktop_label_position") == 0) {
 		config->desktop_label_position = parse_label_pos(value);
 	} else if (strcmp(key, "desktop_show_hard_disks") == 0) {
@@ -478,6 +480,7 @@ void orange_config_set_defaults(struct orange_config *config) {
 	config->tint_window_background = false;
 	config->show_scroll_bars = ORANGE_SCROLL_BARS_AUTOMATIC;
 	config->desktop_icons_visible = true;
+	config->desktop_use_stacks = false;
 	config->desktop_grid_spacing = 24;
 	config->desktop_label_size = 15;
 	config->desktop_icon_scale = 1.0;
@@ -602,6 +605,8 @@ bool orange_config_save(const struct orange_config *config, const char *path) {
 	fprintf(file, "desktop_icon_scale=%.2f\n", config->desktop_icon_scale);
 	fprintf(file, "desktop_sort_by=%s\n",
 		sort_by_name(config->desktop_sort_by));
+	fprintf(file, "desktop_use_stacks=%s\n",
+		config->desktop_use_stacks ? "true" : "false");
 	fprintf(file, "desktop_label_position=%s\n",
 		label_pos_name(config->desktop_label_position));
 	fprintf(file, "desktop_show_hard_disks=%s\n",

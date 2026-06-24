@@ -107,6 +107,7 @@ struct orange_config {
 	enum orange_scroll_bar_visibility show_scroll_bars;
 
 	bool desktop_icons_visible;
+	bool desktop_use_stacks;
 	int desktop_grid_spacing;
 	int desktop_label_size;
 	double desktop_icon_scale;
