@@ -3880,27 +3880,9 @@ static void handle_app_tools_menu_action(
 }
 
 static void show_dock_app_in_files(struct orange_server *server, int launcher_idx) {
-	if (server == NULL || launcher_idx < 0 || launcher_idx >= ORANGE_DOCK_MAX ||
-			server->config.dock_apps[launcher_idx][0] == '\0') {
-		return;
-	}
-	const char *app_id = server->config.dock_apps[launcher_idx];
-	const char *home = getenv("HOME");
-	if (home == NULL) {
-		home = "";
-	}
-	char cmd[2048];
-	snprintf(cmd, sizeof(cmd),
-		"d=\"%s/.local/share/applications\"; "
-		"f=\"$d/%s.desktop\"; "
-		"if [ -f \"$f\" ]; then xdg-open \"$d\"; "
-		"elif [ -f \"/usr/share/applications/%s.desktop\" ]; then "
-		"xdg-open \"/usr/share/applications\"; "
-		"elif [ -f \"/usr/local/share/applications/%s.desktop\" ]; then "
-		"xdg-open \"/usr/local/share/applications\"; "
-		"else xdg-open \"$HOME\"; fi || true",
-		home, app_id, app_id, app_id);
-	launch_command(cmd);
+	(void)server;
+	(void)launcher_idx;
+	launch_command("xdg-open \"/usr/share/applications\" || true");
 }
 
 static void toggle_open_at_login(struct orange_server *server, int launcher_idx) {
