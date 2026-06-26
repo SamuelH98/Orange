@@ -107,7 +107,9 @@ shell.
 - Dock item shortcut menus must be stateful. A non-running Dock item uses the
   normal launcher menu, while a running Dock item exposes window/app controls
   including Show All Windows, Hide, and Quit, with Quit closing mapped windows
-  that match that Dock launcher.
+  that match that Dock launcher. Built-in launcher and Trash Dock items must
+  have their own shortcut menus instead of normal app actions: launcher opens
+  Launchpad/settings, while Trash opens or empties Trash.
 - Dock opening bounce animation must move away from the Dock edge: upward for
   a bottom Dock, rightward for a left Dock, and leftward for a right Dock.
 - Notification Center must render real missed-notification cards received
@@ -131,15 +133,32 @@ shell.
   to Orange dark appearance.
 - Context menus and dropdown menus must render white text and white tinted
   icons in both light and dark appearance modes.
+- Menu bar dropdowns and regular context menus for Dock items, widgets,
+  desktop background, desktop files/volumes, and desktop app icons must follow
+  the modern macOS command-menu shape: text-first rows, separators for command
+  groups, right-aligned shortcut/detail text, checked rows for persistent
+  toggles or selected widget sizes, and no decorative leading icon column.
+  Status/Control Center-style menus remain icon-leading because macOS status
+  menus are status-control surfaces rather than plain command lists.
+- Desktop background shortcut-menu commands must be functional where Orange
+  exposes local state: Use Stacks toggles the saved setting, Sort By cycles
+  the implemented Name/Kind/None sort modes, and Clean Up By snaps saved
+  manual positions back to the grid.
 - Match macOS dark appearance behavior for menus: system menu and context menu
   panels must switch to a dark translucent material when global appearance is
   dark.
 - Disable server-side compositor decorations and prefer client-side window
   decorations for xdg-decoration and KDE server-decoration protocols.
 - Replace static desktop shortcut placeholders with XDG `.desktop` entries.
-- Allow desktop shortcuts to be dragged to custom persisted positions.
+- Allow desktop shortcuts, desktop files, and desktop volumes to be dragged to
+  custom persisted positions across the full desktop item capacity.
 - Provide right-click context menus for desktop shortcuts, widgets, Dock items,
   the Dock separator, and empty desktop background.
+- Desktop file shortcut menus must expose Finder-like file commands that
+  actually execute on the selected file where possible: Open, Show in Files,
+  Copy, Get Info, Rename/select, Duplicate, Quick Look/open, Share, and Move to
+  Trash. Desktop item shortcut menus should open at the cursor rather than over
+  the icon label.
 - Fix visible layout bugs:
   - menu bar item spacing,
   - tray glyph replacement with local battery/Wi-Fi/control icons,

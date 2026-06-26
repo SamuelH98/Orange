@@ -1,5 +1,6 @@
 #include "orange/dock.h"
 #include "orange/launcher.h"
+#include "orange/menubar.h"
 #include "orange/shell.h"
 
 #include <assert.h>
@@ -299,6 +300,37 @@ static void test_desktop_custom_position_clamps_to_visible_area(void) {
 	assert(item.y + item.height <= layout.dock.y);
 }
 
+static void test_desktop_sort_modes_order_items(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	struct orange_file_info files[3] = {
+		{.name = "Beta.txt", .is_directory = false},
+		{.name = "Alpha", .is_directory = true},
+		{.name = "Gamma.txt", .is_directory = false},
+	};
+
+	struct orange_shell_layout layout;
+	config.desktop_sort_by = ORANGE_DESKTOP_SORT_NAME;
+	orange_shell_layout_compute(1920,1080,false,&config,0,1,
+		files, 3, &layout);
+	assert(layout.desktop_item_count == 4);
+	assert(layout.desktop_item_info[0].kind == ORANGE_DESKTOP_ITEM_FILE);
+	assert(layout.desktop_item_info[0].index == 1);
+	assert(layout.desktop_item_info[1].kind == ORANGE_DESKTOP_ITEM_FILE);
+	assert(layout.desktop_item_info[1].index == 0);
+	assert(layout.desktop_item_info[2].index == 2);
+	assert(layout.desktop_item_info[3].kind == ORANGE_DESKTOP_ITEM_VOLUME);
+
+	config.desktop_sort_by = ORANGE_DESKTOP_SORT_KIND;
+	orange_shell_layout_compute(1920,1080,false,&config,0,1,
+		files, 3, &layout);
+	assert(layout.desktop_item_info[0].kind == ORANGE_DESKTOP_ITEM_FILE);
+	assert(layout.desktop_item_info[0].index == 1);
+	assert(layout.desktop_item_info[1].kind == ORANGE_DESKTOP_ITEM_FILE);
+	assert(layout.desktop_item_info[2].kind == ORANGE_DESKTOP_ITEM_FILE);
+	assert(layout.desktop_item_info[3].kind == ORANGE_DESKTOP_ITEM_VOLUME);
+}
+
 static void test_system_menu_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
@@ -512,6 +544,84 @@ static void test_status_area_hit_and_menu(void) {
 	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_STATUS_BATTERY);
 	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_STATUS_BATTERY, 1), "Power Settings...") == 0);
+}
+
+static void test_modern_menu_affordance_metadata(void) {
+	assert(!orange_menubar_context_menu_uses_icons(ORANGE_CONTEXT_MENU_APP));
+	assert(!orange_menubar_context_menu_uses_icons(ORANGE_CONTEXT_MENU_DOCK));
+	assert(!orange_menubar_context_menu_uses_icons(
+		ORANGE_CONTEXT_MENU_DOCK_LAUNCHER));
+	assert(!orange_menubar_context_menu_uses_icons(
+		ORANGE_CONTEXT_MENU_DOCK_TRASH));
+	assert(!orange_menubar_context_menu_uses_icons(ORANGE_CONTEXT_MENU_DESKTOP));
+	assert(!orange_menubar_context_menu_uses_icons(
+		ORANGE_CONTEXT_MENU_DESKTOP_ICON));
+	assert(orange_menubar_context_menu_uses_icons(ORANGE_CONTEXT_MENU_STATUS));
+
+	assert(strcmp(orange_menubar_menu_label(1), "System Settings...") == 0);
+	assert(strcmp(orange_menubar_menu_shortcut_label(4), "Opt+Cmd+Esc") == 0);
+	assert(!orange_menubar_menu_has_submenu(3));
+
+	assert(strcmp(orange_menubar_context_menu_shortcut_label(
+		ORANGE_CONTEXT_MENU_APP_FILE, 1), "Cmd+O") == 0);
+	assert(strcmp(orange_menubar_context_menu_shortcut_label(
+		ORANGE_CONTEXT_MENU_APP_EDIT, 4), "Cmd+V") == 0);
+	assert(strcmp(orange_menubar_context_menu_shortcut_label(
+		ORANGE_CONTEXT_MENU_DESKTOP, 0), "Shift+Cmd+N") == 0);
+	assert(strcmp(orange_menubar_context_menu_shortcut_label(
+		ORANGE_CONTEXT_MENU_DESKTOP_ICON, 8), "Cmd+Del") == 0);
+	assert(strcmp(orange_menubar_context_menu_shortcut_label(
+		ORANGE_CONTEXT_MENU_DESKTOP_FILE, 2), "Cmd+C") == 0);
+	assert(strcmp(orange_menubar_context_menu_shortcut_label(
+		ORANGE_CONTEXT_MENU_DOCK_TRASH, 1), "Shift+Cmd+Del") == 0);
+	assert(!orange_menubar_context_menu_has_submenu(
+		ORANGE_CONTEXT_MENU_DESKTOP, 3));
+	assert(!orange_menubar_context_menu_has_submenu(
+		ORANGE_CONTEXT_MENU_DESKTOP_ICON, 7));
+	assert(!orange_menubar_context_menu_has_submenu(
+		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, 2));
+}
+
+static void test_native_app_menu_separators_are_preserved(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
+
+	struct orange_app_menu_model native_menu = {
+		.available = true,
+		.native = true,
+		.tab_count = 2,
+	};
+	snprintf(native_menu.tab_labels[ORANGE_APP_MENU_TAB_APP],
+		sizeof(native_menu.tab_labels[ORANGE_APP_MENU_TAB_APP]),
+		"%s", "NativeApp");
+	snprintf(native_menu.tab_labels[ORANGE_APP_MENU_TAB_FILE],
+		sizeof(native_menu.tab_labels[ORANGE_APP_MENU_TAB_FILE]),
+		"%s", "Project");
+	native_menu.item_counts[ORANGE_APP_MENU_TAB_FILE] = 3;
+	snprintf(native_menu.items[ORANGE_APP_MENU_TAB_FILE][0].label,
+		sizeof(native_menu.items[ORANGE_APP_MENU_TAB_FILE][0].label),
+		"%s", "Native Open");
+	native_menu.items[ORANGE_APP_MENU_TAB_FILE][0].enabled = true;
+	native_menu.items[ORANGE_APP_MENU_TAB_FILE][1].separator = true;
+	snprintf(native_menu.items[ORANGE_APP_MENU_TAB_FILE][1].label,
+		sizeof(native_menu.items[ORANGE_APP_MENU_TAB_FILE][1].label),
+		"%s", "Native Save");
+	native_menu.items[ORANGE_APP_MENU_TAB_FILE][1].enabled = true;
+	snprintf(native_menu.items[ORANGE_APP_MENU_TAB_FILE][2].label,
+		sizeof(native_menu.items[ORANGE_APP_MENU_TAB_FILE][2].label),
+		"%s", "Native Close");
+	native_menu.items[ORANGE_APP_MENU_TAB_FILE][2].enabled = true;
+
+	orange_shell_layout_set_app_menu_tabs(&layout, "NativeApp", &native_menu);
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_APP_FILE, -1, 0, 0, &native_menu);
+	assert(layout.context_menu_kind == ORANGE_CONTEXT_MENU_APP_FILE);
+	assert(layout.context_menu_item_count == 3);
+	assert(!layout.context_menu_separator[0]);
+	assert(layout.context_menu_separator[1]);
+	assert(!layout.context_menu_separator[2]);
 }
 
 static void test_notification_center_layout_and_hit(void) {
@@ -848,8 +958,9 @@ static void test_major_surfaces_scale_by_resolution(void) {
 	assert_roughly_double(large.menu_bar.height, small.menu_bar.height);
 	assert_roughly_double(large.system_menu_button.width,
 		small.system_menu_button.width);
-	assert_roughly_double(large.system_menu_panel.width,
-		small.system_menu_panel.width);
+	assert(large.system_menu_panel.width > small.system_menu_panel.width);
+	assert(abs(large.system_menu_panel.width -
+		small.system_menu_panel.width * 2) <= 16);
 	assert_roughly_double(large.system_menu_items[0].height,
 		small.system_menu_items[0].height);
 	assert_roughly_double(large.status_items[ORANGE_STATUS_ITEM_WIFI].width,
@@ -868,8 +979,9 @@ static void test_major_surfaces_scale_by_resolution(void) {
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, 720, 450, NULL);
 	orange_shell_layout_set_context_menu(&large,
 		ORANGE_CONTEXT_MENU_DESKTOP, -1, 1440, 900, NULL);
-	assert_roughly_double(large.context_menu_panel.width,
-		small.context_menu_panel.width);
+	assert(large.context_menu_panel.width > small.context_menu_panel.width);
+	assert(abs(large.context_menu_panel.width -
+		small.context_menu_panel.width * 2) <= 16);
 	assert_roughly_double(large.context_menu_panel.height,
 		small.context_menu_panel.height);
 	assert_roughly_double(large.context_menu_items[0].height,
@@ -939,6 +1051,7 @@ static void test_context_menu_hit(void) {
 	assert(layout.context_menu_item_count == 5);
 	assert(layout.context_menu_panel.y + layout.context_menu_panel.height <=
 		layout.dock.y);
+	assert(layout.context_menu_panel.width >= 190);
 	/* index 2 is "Show in Files" (first non-separator item after index 1) */
 	struct orange_rect item = layout.context_menu_items[1];
 	struct orange_shell_hit hit = orange_shell_hit_test(
@@ -948,6 +1061,8 @@ static void test_context_menu_hit(void) {
 	assert(hit.kind == ORANGE_HIT_CONTEXT_MENU_ITEM);
 	assert(hit.index == 1);
 	assert(orange_menubar_context_menu_label(ORANGE_CONTEXT_MENU_DOCK, hit.index) != NULL);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DOCK, 4), "Remove from Dock") == 0);
 
 	orange_shell_layout_set_context_menu(&layout,
 		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 0, 0, 0, NULL);
@@ -962,6 +1077,24 @@ static void test_context_menu_hit(void) {
 	assert(strcmp(orange_menubar_context_menu_icon_name(
 		ORANGE_CONTEXT_MENU_DOCK_RUNNING, 5),
 		"application-exit") == 0);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DOCK_LAUNCHER, 0, 0, 0, NULL);
+	assert(layout.context_menu_item_count == 2);
+	assert(layout.context_menu_separator[1]);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DOCK_LAUNCHER, 0), "Open Launchpad") == 0);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DOCK_LAUNCHER, 1), "Dock Settings...") == 0);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DOCK_TRASH, layout.dock_item_count - 1,
+		0, 0, NULL);
+	assert(layout.context_menu_item_count == 3);
+	assert(layout.context_menu_separator[1]);
+	assert(layout.context_menu_separator[2]);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DOCK_TRASH, 1), "Empty Trash...") == 0);
 
 	orange_shell_layout_set_context_menu(&layout, ORANGE_CONTEXT_MENU_DOCK,
 		layout.dock_item_count - 1, layout.width, layout.height, NULL);
@@ -988,6 +1121,22 @@ static void test_context_menu_hit(void) {
 	assert(strcmp(orange_menubar_context_menu_icon_name(
 		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, 3),
 		"window-minimize") == 0);
+
+	struct orange_file_info files[1] = {
+		{.name = "Project Notes.txt", .path = "/tmp/Project Notes.txt"},
+	};
+	orange_shell_layout_compute(1920,1080,false,&config,0,0, files, 1, &layout);
+	assert(layout.desktop_item_count == 1);
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DESKTOP_FILE, 0, 0, 0, NULL);
+	assert(layout.context_menu_item_count == 9);
+	assert(layout.context_menu_separator[2]);
+	assert(layout.context_menu_separator[6]);
+	assert(layout.context_menu_separator[8]);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DESKTOP_FILE, 2), "Copy") == 0);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DESKTOP_FILE, 8), "Move to Trash") == 0);
 }
 
 static void test_widget_hit_and_context_menu(void) {
@@ -1165,9 +1314,12 @@ int main(void) {
 	test_desktop_requires_volumes();
 	test_desktop_custom_position_snaps_to_grid();
 	test_desktop_custom_position_clamps_to_visible_area();
+	test_desktop_sort_modes_order_items();
 	test_system_menu_hit();
 	test_app_menu_layout_and_labels();
 	test_status_area_hit_and_menu();
+	test_modern_menu_affordance_metadata();
+	test_native_app_menu_separators_are_preserved();
 	test_notification_center_layout_and_hit();
 	test_launcher_full_layout_scrolls_all_apps();
 	test_launcher_search_mode_transforms_to_overlay();

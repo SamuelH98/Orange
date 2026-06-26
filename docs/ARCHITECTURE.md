@@ -30,6 +30,10 @@ Responsibilities:
 - place desktop icons from persisted coordinates when the user drags them,
 - draw shell context menus for Dock items, the Dock separator, widgets,
   desktop items, and empty desktop background,
+- render regular command menus through shared text-first menu metadata:
+  labels, separators, right-aligned shortcut/detail text, checked-state
+  markers, enabled state for imported native app items, and a per-menu
+  decision about whether leading icons are appropriate,
 - draw the top-left active app menu tabs as shell chrome anchored under the
   active app title and File/Edit/View/Go/Window/Help tab rectangles, using
   focused-client state for the visible app label,
@@ -66,12 +70,13 @@ the pointer hit so right-click dispatch cannot fall through to the desktop
 background menu.
 
 Dock item menus are selected by compositor state after hit testing. The layout
-module exposes the static non-running and running Dock menu shapes, while the
-compositor chooses the running variant when `dock_open[launcher_idx]` is true.
-Running Dock menu actions reuse the same view-to-launcher matching as Dock
-indicators: Show All Windows unminimizes, raises, and focuses matching mapped
-toplevels; Hide minimizes matching mapped toplevels; Quit sends xdg-toplevel
-close requests to matching mapped toplevels.
+module exposes static non-running, running, launcher, Trash, and Dock separator
+menu shapes. The compositor chooses launcher/Trash variants for built-in
+permanent affordances, otherwise chooses the running variant when
+`dock_open[launcher_idx]` is true. Running Dock menu actions reuse the same
+view-to-launcher matching as Dock indicators: Show All Windows unminimizes,
+raises, and focuses matching mapped toplevels; Hide minimizes matching mapped
+toplevels; Quit sends xdg-toplevel close requests to matching mapped toplevels.
 
 Dock bounce remains a Dock renderer concern. The scalar bounce waveform is
 kept as a reusable helper, and a position-aware displacement helper maps it to
@@ -289,9 +294,11 @@ Responsibilities:
    same click-or-drag split: a click launches, while dropping a non-duplicate
    app on the Dock inserts a new alias before Trash.
 10. Desktop drag state updates the in-memory config while dragging and saves
-   `orange.conf` on release.
+   `orange.conf` on release. Desktop item click/open and context-menu actions
+   use the layout's file/volume metadata so sorting does not break file or
+   volume targeting.
 11. Right-click hit testing opens a shell context menu above a Dock item, near a
-   widget, near a desktop item, or at the empty desktop cursor location.
+   widget, at a desktop item cursor, or at the empty desktop cursor location.
    Empty Dock and menu-bar chrome hits clear/consume the shell interaction
    without opening the desktop menu.
 12. Left-clicking status items dispatches by item: Wi-Fi, Sound, Battery,

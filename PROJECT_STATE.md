@@ -15,8 +15,8 @@ wlroots.
 
 ### Current Status
 
-Functional macOS-like shell compositor with volume-based desktop icons (drives
-only, like macOS), grid layout with snap-to-grid positioning, translucent menu
+Functional macOS-like shell compositor with desktop files and volume icons,
+grid layout with snap-to-grid positioning, translucent menu
 bar with dock-style glass effect, launcher glass matching Dock/menu/context
 transparency, compact Dock with even glass transparency,
 wlroots compositor, scalable widgets, basic xdg-shell window management, Dock
@@ -587,9 +587,51 @@ build here. They remain conditional for systems without GTK4 development files.
 - **Side Dock bounce direction fixed**: Dock opening bounce now maps the same
   waveform to edge-aware displacement: up for bottom Dock, right for left Dock,
   and left for right Dock.
+- **Modern macOS-like menu pass completed**: System/app menu dropdowns and
+  regular context menus for Dock items, the Dock separator, widgets, desktop
+  background, desktop files/volumes, and desktop app icons are now text-first
+  command menus with separator grouping, trailing shortcut/detail text, and
+  drawn checkmarks for selected/toggled state. Status/Control Center menus
+  remain icon-leading. Native imported app-menu section separators are
+  preserved. Desktop background menu actions now update real local state:
+  Use Stacks toggles config, Sort By cycles the implemented None/Name/Kind
+  modes, and Clean Up By clears saved manual positions to snap icons back to
+  the grid.
+- **Desktop item and Dock built-in menus completed**: Desktop file context
+  menus now expose functional Open, Show in Files, Copy, Get Info,
+  Rename/select, Duplicate, Quick Look/open, Share, and Move to Trash actions.
+  Desktop files and volumes open from left-click using the sorted layout item
+  metadata, drag positions persist across the full 64-item desktop capacity,
+  and file/volume shortcut menus open at the cursor instead of over labels.
+  Dock built-ins now have distinct menus: Launchpad shows Open Launchpad and
+  Dock Settings, while Trash shows Open Trash, Empty Trash, and Dock Settings.
+  The normal Dock menu width and draw clipping were expanded so `Remove from
+  Dock` no longer clips.
 
 #### Latest Validation
 
+- `meson compile -C build` passed cleanly after the desktop/Dock context-menu
+  pass.
+- `./build/test-shell-layout` passed after adding coverage for text-first menu
+  metadata, native app-menu separators, desktop Name/Kind sorting, Dock
+  built-in menu variants, widened Dock menus, and desktop file menu rows.
+- `./build/test-shell-visual` passed after updating the light menu text palette
+  assertion to detect bright label pixels instead of dark translucent panel
+  pixels.
+- `meson test -C build --print-errorlogs` passed (8/8 tests).
+- `./build/orange-render-shell --foreground-only --context-menu dock --context-index 0 /tmp/orange-dock-menu.png`
+  passed and showed `Remove from Dock` fully visible.
+- `./build/orange-render-shell --foreground-only --context-menu dock-launcher --context-index 0 /tmp/orange-dock-launcher-menu.png`
+  passed and showed the Launchpad-specific menu.
+- `./build/orange-render-shell --foreground-only --context-menu dock-trash --context-index 6 /tmp/orange-dock-trash-menu.png`
+  passed and showed the Trash-specific menu.
+- `./build/orange-render-shell --foreground-only --context-menu desktop-file --context-index 0 --context-x 1960 --context-y 360 /tmp/orange-desktop-file-menu.png`
+  passed and showed the expanded desktop file menu away from the icon label.
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once --width 1440 --height 900 --config /tmp/orange-menu-validation.conf`
+  exited 0. The sandbox emitted dconf/GIO session-bus warnings because
+  `/run/user/1000/dconf` is read-only and session-bus access is restricted.
+- `build/orange-render-shell --foreground-only --context-menu desktop --context-x 1440 --context-y 900 /tmp/orange-menu-debug.png`
+  passed and was used to inspect the updated desktop context menu rendering.
 - `ninja -C build` passed after GNOME Control Center wrapper, Settings portal,
   and GNOME wallpaper bridge changes.
 - `meson test -C build --print-errorlogs` passed (8/8 tests).

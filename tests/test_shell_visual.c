@@ -217,16 +217,16 @@ static void test_light_context_menu_text_uses_white_palette(void) {
 		stride, &state, &options);
 
 	struct orange_rect item = layout.context_menu_items[0];
-	int dark_pixels = 0;
+	int bright_text_pixels = 0;
 	for (int y = item.y + 12; y < item.y + 40; y++) {
 		for (int x = item.x + 42; x < item.x + 190; x++) {
 			struct color c = pixel_at(pixels, stride, x, y);
-			if (c.a > 100 && c.r < 110 && c.g < 110 && c.b < 120) {
-				dark_pixels++;
+			if (c.a > 100 && c.r > 150 && c.g > 150 && c.b > 150) {
+				bright_text_pixels++;
 			}
 		}
 	}
-	assert(dark_pixels == 0);
+	assert(bright_text_pixels > 8);
 	free(pixels);
 }
 

@@ -332,7 +332,37 @@ actions such as Quit, Keep in Dock, and Remove from Dock, and Mission
 Control/App Expose references describe Show All Windows from an app's Dock
 icon. Orange maps that shape to Linux/wlroots by adding a running Dock menu
 variant with Show All Windows, Hide, and Quit, while preserving its existing
-Show in Files, Remove from Dock, Open at Login, and Dock Settings rows.
+Show in Files, Remove from Dock, Open at Login, and Dock Settings rows. Trash
+and Launchpad/Apps are not normal app aliases on macOS, so Orange treats its
+built-in launcher and Trash entries as permanent Dock affordances with special
+shortcut menus: launcher opens Launchpad or Dock settings, and Trash opens or
+empties Trash.
+
+Current Tahoe-era Apple references keep the menu bar and app command menus as
+text-first command surfaces: the menu bar groups the Apple/system menu and app
+menus on the left, status menus and the clock on the right, and app menus
+present command labels with keyboard-shortcut symbols or text on the trailing
+edge. Status menu items, Control Center, and related quick controls remain
+icon-led because they represent device/control state rather than plain command
+lists. Orange therefore now suppresses leading icons for regular system, app,
+Dock, widget, desktop background, desktop file/volume, and desktop app-icon
+menus, while keeping icons in status/control menus. Because common Linux Sans
+font stacks can render macOS shortcut symbols as missing-glyph boxes in Cairo,
+Orange presents legible ASCII shortcut labels such as `Cmd+O` and
+`Opt+Cmd+Esc` instead of relying on proprietary or unavailable symbol fonts.
+
+The same references and Mac desktop behavior indicate that desktop shortcut
+menus should expose useful local state rather than inert rows. Orange maps
+desktop Use Stacks to the saved `desktop_use_stacks` preference, cycles Sort By
+through the currently implemented sortable data (`Name`, `Kind`, and `None`),
+and maps Clean Up By to a snap-back-to-grid operation that clears saved manual
+positions. Finder desktop item behavior also implies that files on the desktop
+open when clicked, can be repositioned by dragging, and expose real file
+operations from the shortcut menu. Orange therefore maps desktop files to
+Open, Show in Files, Copy, Get Info, Rename/select, Duplicate, Quick Look/open,
+Share, and Move to Trash actions, and stores dragged desktop positions for the
+full visible desktop item capacity. Date/size desktop sorts remain out of
+scope until Orange threads filesystem metadata through shell layout.
 
 Because Dock and menu-bar surfaces are foreground shell chrome, right-clicks on
 their empty glass/background regions should be consumed by shell hit testing.
