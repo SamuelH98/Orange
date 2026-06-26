@@ -15,6 +15,7 @@
 #define ORANGE_GNOME_SETTINGS_DESKTOP "GNOME:Unity:ubuntu"
 #define ORANGE_GNOME_SETTINGS_ENV "env -u GTK_THEME -u GTK_ICON_THEME XDG_CURRENT_DESKTOP=" ORANGE_GNOME_SETTINGS_DESKTOP " XDG_SESSION_DESKTOP=gnome DESKTOP_SESSION=gnome GNOME_DESKTOP_SESSION_ID=this-is-deprecated "
 #define ORANGE_SETTINGS_COMMAND "if command -v gnome-control-center >/dev/null 2>&1; then " ORANGE_GNOME_SETTINGS_ENV "gnome-control-center; elif [ -x build/orange-settings ]; then GSK_RENDERER=cairo build/orange-settings orange.conf; elif command -v systemsettings >/dev/null 2>&1; then systemsettings; elif command -v xfce4-settings-manager >/dev/null 2>&1; then xfce4-settings-manager; fi; true"
+#define ORANGE_TRASH_COMMAND "if command -v nautilus >/dev/null 2>&1; then nautilus trash:///; elif command -v gio >/dev/null 2>&1; then gio open trash:///; else xdg-open trash:///; fi; true"
 
 /* Built-in dock entries (not from .desktop files) */
 static const char *builtin_label(const char *app_id) {
@@ -42,7 +43,7 @@ const char *orange_dock_builtin_command(const char *app_id) {
 		return "if [ -n \"$ORANGE_APP_PICKER\" ]; then $ORANGE_APP_PICKER; else wofi --show drun || rofi -show drun || true; fi";
 	}
 	if (strcmp(app_id, "__trash__") == 0) {
-		return "gio open trash:// || xdg-open trash:// || true";
+		return ORANGE_TRASH_COMMAND;
 	}
 	if (strcmp(app_id, "orange-settings") == 0 ||
 			strcmp(app_id, "dev.orange.Settings") == 0 ||

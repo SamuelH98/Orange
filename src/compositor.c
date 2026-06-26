@@ -238,6 +238,13 @@ struct orange_server {
 	int desktop_drag_offset_y;
 	int desktop_drag_start_x;
 	int desktop_drag_start_y;
+	bool desktop_select_active;
+	bool desktop_select_moved;
+	int desktop_select_start_x;
+	int desktop_select_start_y;
+	int desktop_select_x;
+	int desktop_select_y;
+	bool desktop_selected[ORANGE_DESKTOP_MAX];
 
 	struct orange_volume_info volumes[ORANGE_DESKTOP_VOLUME_MAX];
 	int volume_count;
@@ -278,6 +285,9 @@ static void server_mark_shell_dirty(struct orange_server *server);
 static void server_mark_overlay_dirty(struct orange_server *server);
 static void server_apply_cursor_config(struct orange_server *server);
 static void process_desktop_drag(struct orange_server *server);
+static void process_desktop_selection(struct orange_server *server);
+static struct orange_rect normalized_rect_from_points(
+	int x1, int y1, int x2, int y2);
 static void start_dock_drag(struct orange_server *server,
 	const struct orange_shell_layout *layout, int index);
 static void process_dock_drag(struct orange_server *server);
@@ -307,6 +317,15 @@ static const char *orange_settings_command =
 	"xfce4-settings-manager; "
 	"elif command -v mate-control-center >/dev/null 2>&1; then "
 	"mate-control-center; "
+	"fi; true";
+
+static const char *orange_trash_command =
+	"if command -v nautilus >/dev/null 2>&1; then "
+	"nautilus trash:///; "
+	"elif command -v gio >/dev/null 2>&1; then "
+	"gio open trash:///; "
+	"else "
+	"xdg-open trash:///; "
 	"fi; true";
 
 static const char *orange_about_command =
@@ -606,6 +625,63 @@ static void add_volume(struct orange_volume_info *volumes, int *count, int *desk
 	(*desktop_count)++;
 }
 
+static void unescape_mount_token(
+		const char *src,
+		char *dst,
+		size_t dst_size) {
+	size_t out = 0;
+	for (size_t i = 0; src != NULL && src[i] != '\0' && out + 1 < dst_size; i++) {
+		if (src[i] == '\\' &&
+				src[i + 1] >= '0' && src[i + 1] <= '7' &&
+				src[i + 2] >= '0' && src[i + 2] <= '7' &&
+				src[i + 3] >= '0' && src[i + 3] <= '7') {
+			int value = (src[i + 1] - '0') * 64 +
+				(src[i + 2] - '0') * 8 +
+				(src[i + 3] - '0');
+			dst[out++] = (char)value;
+			i += 3;
+		} else {
+			dst[out++] = src[i];
+		}
+	}
+	dst[out] = '\0';
+}
+
+static void volume_label_for_mount(
+		const char *device,
+		const char *mount_point,
+		char *label,
+		size_t label_size) {
+	if (label_size == 0) {
+		return;
+	}
+	label[0] = '\0';
+	GFile *file = g_file_new_for_path(mount_point);
+	if (file != NULL) {
+		GMount *mount = g_file_find_enclosing_mount(file, NULL, NULL);
+		if (mount != NULL) {
+			const char *name = g_mount_get_name(mount);
+			if (name != NULL && name[0] != '\0') {
+				snprintf(label, label_size, "%s", name);
+			}
+			g_object_unref(mount);
+		}
+		g_object_unref(file);
+	}
+	if (label[0] != '\0') {
+		return;
+	}
+	const char *base = strrchr(device, '/');
+	base = base != NULL ? base + 1 : device;
+	if (base != NULL && base[0] != '\0') {
+		snprintf(label, label_size, "%s", base);
+	} else if (mount_point != NULL && mount_point[0] != '\0') {
+		snprintf(label, label_size, "%s", mount_point);
+	} else {
+		snprintf(label, label_size, "%s", "Volume");
+	}
+}
+
 static void update_volumes(struct orange_server *server) {
 	const struct orange_config *config = &server->config;
 	struct orange_volume_info volumes[ORANGE_DESKTOP_VOLUME_MAX];
@@ -619,20 +695,32 @@ static void update_volumes(struct orange_server *server) {
 			char buf[4096];
 			while (fgets(buf, sizeof(buf), mounts_file) != NULL &&
 					count < ORANGE_DESKTOP_VOLUME_MAX) {
-				char device[256], mount_point[256], fstype[64];
-				if (sscanf(buf, "%255s %255s %63s", device, mount_point, fstype) != 3) {
+				char device_token[256], mount_token[256], fstype[64];
+				if (sscanf(buf, "%255s %255s %63s",
+						device_token, mount_token, fstype) != 3) {
 					continue;
 				}
+				char device[256];
+				char mount_point[256];
+				unescape_mount_token(device_token, device, sizeof(device));
+				unescape_mount_token(mount_token, mount_point,
+					sizeof(mount_point));
 				if (strncmp(device, "/dev/", 5) != 0) {
 					continue;
 				}
 				if (strcmp(mount_point, "/") == 0) {
+					char label[256];
+					volume_label_for_mount(device, mount_point,
+						label, sizeof(label));
 					add_volume(volumes, &count, &desktop_count,
-						"Macintosh HD", "/", "drive-harddisk",
+						label, "/", "drive-harddisk",
 						false, true);
 				} else if (strcmp(mount_point, "/home") == 0) {
+					char label[256];
+					volume_label_for_mount(device, mount_point,
+						label, sizeof(label));
 					add_volume(volumes, &count, &desktop_count,
-						"Home", "/home", "drive-harddisk",
+						label, "/home", "drive-harddisk",
 						false, true);
 				}
 			}
@@ -698,6 +786,24 @@ static void update_volumes(struct orange_server *server) {
 	memcpy(server->volumes, volumes, sizeof(volumes[0]) * count);
 }
 
+static bool file_is_image_by_extension(const char *name) {
+	if (name == NULL) {
+		return false;
+	}
+	const char *dot = strrchr(name, '.');
+	if (dot == NULL || dot == name) {
+		return false;
+	}
+	dot++;
+	if (strcasecmp(dot, "png") == 0 || strcasecmp(dot, "jpg") == 0 ||
+			strcasecmp(dot, "jpeg") == 0 || strcasecmp(dot, "gif") == 0 ||
+			strcasecmp(dot, "bmp") == 0 || strcasecmp(dot, "svg") == 0 ||
+			strcasecmp(dot, "webp") == 0) {
+		return true;
+	}
+	return false;
+}
+
 static const char *file_icon_by_extension(const char *name) {
 	if (name == NULL) return "text-x-generic";
 	const char *dot = strrchr(name, '.');
@@ -705,10 +811,7 @@ static const char *file_icon_by_extension(const char *name) {
 		return "text-x-generic";
 	}
 	dot++;
-	if (strcasecmp(dot, "png") == 0 || strcasecmp(dot, "jpg") == 0 ||
-			strcasecmp(dot, "jpeg") == 0 || strcasecmp(dot, "gif") == 0 ||
-			strcasecmp(dot, "bmp") == 0 || strcasecmp(dot, "svg") == 0 ||
-			strcasecmp(dot, "webp") == 0) {
+	if (file_is_image_by_extension(name)) {
 		return "image-x-generic";
 	}
 	if (strcasecmp(dot, "pdf") == 0) {
@@ -796,9 +899,12 @@ static void update_desktop_files(struct orange_server *server) {
 		}
 
 		if (server->desktop_files[idx].is_directory) {
+			server->desktop_files[idx].is_image = false;
 			snprintf(server->desktop_files[idx].icon_name,
 				sizeof(server->desktop_files[idx].icon_name), "%s", "folder");
 		} else {
+			server->desktop_files[idx].is_image =
+				file_is_image_by_extension(entry->d_name);
 			const char *icon = file_icon_by_extension(entry->d_name);
 			snprintf(server->desktop_files[idx].icon_name,
 				sizeof(server->desktop_files[idx].icon_name), "%s", icon);
@@ -1179,11 +1285,17 @@ static bool portal_namespace_requested(char **namespaces, const char *needle) {
 
 static void portal_settings_return_color_scheme(
 		GDBusMethodInvocation *invocation,
-		enum orange_appearance appearance) {
+		enum orange_appearance appearance,
+		bool deprecated_frontend_read) {
 	uint32_t cs = portal_appearance_to_color_scheme(appearance);
-	GVariant *value = g_variant_new_variant(g_variant_new_uint32(cs));
-	g_dbus_method_invocation_return_value(invocation,
-		g_variant_new_tuple(&value, 1));
+	if (deprecated_frontend_read) {
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(v)",
+				g_variant_new_variant(g_variant_new_uint32(cs))));
+	} else {
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(v)", g_variant_new_uint32(cs)));
+	}
 }
 
 static void portal_settings_return_read_all(
@@ -1197,7 +1309,7 @@ static void portal_settings_return_read_all(
 		g_variant_builder_init(&inner, G_VARIANT_TYPE("a{sv}"));
 		uint32_t cs = portal_appearance_to_color_scheme(appearance);
 		g_variant_builder_add(&inner, "{sv}", "color-scheme",
-			g_variant_new_variant(g_variant_new_uint32(cs)));
+			g_variant_new_uint32(cs));
 		g_variant_builder_add(&outer, "{sa{sv}}",
 			"org.freedesktop.appearance", &inner);
 	}
@@ -1223,8 +1335,12 @@ static void handle_portal_settings_method_call(GDBusConnection *connection,
 		g_variant_get(parameters, "(&s&s)", &ns, &key);
 		if (strcmp(ns, "org.freedesktop.appearance") == 0 &&
 				strcmp(key, "color-scheme") == 0) {
+			bool deprecated_frontend_read =
+				strcmp(interface_name, "org.freedesktop.portal.Settings") == 0 &&
+				strcmp(method_name, "Read") == 0;
 			portal_settings_return_color_scheme(invocation,
-				server->config.appearance);
+				server->config.appearance,
+				deprecated_frontend_read);
 		} else {
 			g_dbus_method_invocation_return_dbus_error(invocation,
 				"org.freedesktop.impl.portal.Settings.Error.NotFound",
@@ -1348,23 +1464,23 @@ static void portal_backend_emit_setting_changed(struct orange_server *server) {
 		return;
 	}
 	uint32_t cs = portal_appearance_to_color_scheme(server->config.appearance);
-	GVariant *value = g_variant_new_variant(g_variant_new_uint32(cs));
 	g_dbus_connection_emit_signal(
 		connection,
 		NULL,
 		"/org/freedesktop/portal/desktop",
 		"org.freedesktop.impl.portal.Settings",
 		"SettingChanged",
-		g_variant_new("(ssv)", "org.freedesktop.appearance", "color-scheme", value),
+		g_variant_new("(ssv)", "org.freedesktop.appearance", "color-scheme",
+			g_variant_new_uint32(cs)),
 		NULL);
-	value = g_variant_new_variant(g_variant_new_uint32(cs));
 	g_dbus_connection_emit_signal(
 		connection,
 		NULL,
 		"/org/freedesktop/portal/desktop",
 		"org.freedesktop.portal.Settings",
 		"SettingChanged",
-		g_variant_new("(ssv)", "org.freedesktop.appearance", "color-scheme", value),
+		g_variant_new("(ssv)", "org.freedesktop.appearance", "color-scheme",
+			g_variant_new_uint32(cs)),
 		NULL);
 }
 
@@ -2496,6 +2612,43 @@ static int desktop_volume_index_for_context_target(
 		fallback : -1;
 }
 
+struct desktop_selection_summary {
+	int count;
+	int file_count;
+	int volume_count;
+	bool includes_target;
+};
+
+static struct desktop_selection_summary desktop_selection_summary_for_layout(
+		const struct orange_server *server,
+		const struct orange_shell_layout *layout,
+		int target) {
+	struct desktop_selection_summary summary = {0};
+	if (server == NULL || layout == NULL) {
+		return summary;
+	}
+	for (int i = 0; i < layout->desktop_item_count && i < ORANGE_DESKTOP_MAX; i++) {
+		if (!server->desktop_selected[i]) {
+			continue;
+		}
+		summary.count++;
+		if (i == target) {
+			summary.includes_target = true;
+		}
+		switch (layout->desktop_item_info[i].kind) {
+		case ORANGE_DESKTOP_ITEM_FILE:
+			summary.file_count++;
+			break;
+		case ORANGE_DESKTOP_ITEM_VOLUME:
+			summary.volume_count++;
+			break;
+		default:
+			break;
+		}
+	}
+	return summary;
+}
+
 static int dock_hover_index_for_pointer(
 		const struct orange_shell_layout *layout,
 		const struct orange_config *config,
@@ -2722,6 +2875,13 @@ static void output_redraw_shell(struct orange_output *output) {
 		.context_menu_index = output->server->context_menu_index,
 		.context_menu_cursor_x = output->server->context_menu_cursor_x,
 		.context_menu_cursor_y = output->server->context_menu_cursor_y,
+		.desktop_selection_active = output->server->desktop_select_active &&
+			output->server->desktop_select_moved,
+		.desktop_selection_rect = normalized_rect_from_points(
+			output->server->desktop_select_start_x,
+			output->server->desktop_select_start_y,
+			output->server->desktop_select_x,
+			output->server->desktop_select_y),
 		.launcher_open = output->server->launcher_open,
 		.launcher_display_mode = output->server->launcher_display_mode,
 		.launcher_position_set = output->server->launcher_position_set,
@@ -2744,6 +2904,8 @@ static void output_redraw_shell(struct orange_output *output) {
 		.dock_bounce_start_time = output->server->dock_bounce_start,
 	};
 	memcpy(state.dock_open, output->server->dock_open, sizeof(state.dock_open));
+	memcpy(state.desktop_selected, output->server->desktop_selected,
+		sizeof(state.desktop_selected));
 	memcpy(state.launcher_query, output->server->launcher_query,
 		sizeof(state.launcher_query));
 	memcpy(state.launcher_app_indices, output->server->launcher_app_indices,
@@ -3065,6 +3227,13 @@ static void output_redraw_overlay(struct orange_output *output) {
 		.context_menu_index = output->server->context_menu_index,
 		.context_menu_cursor_x = output->server->context_menu_cursor_x,
 		.context_menu_cursor_y = output->server->context_menu_cursor_y,
+		.desktop_selection_active = output->server->desktop_select_active &&
+			output->server->desktop_select_moved,
+		.desktop_selection_rect = normalized_rect_from_points(
+			output->server->desktop_select_start_x,
+			output->server->desktop_select_start_y,
+			output->server->desktop_select_x,
+			output->server->desktop_select_y),
 		.launcher_open = output->server->launcher_open,
 		.launcher_display_mode = output->server->launcher_display_mode,
 		.launcher_position_set = output->server->launcher_position_set,
@@ -3088,6 +3257,8 @@ static void output_redraw_overlay(struct orange_output *output) {
 		.launcher_category_active = output->server->launcher_category_active,
 	};
 	memcpy(state.dock_open, output->server->dock_open, sizeof(state.dock_open));
+	memcpy(state.desktop_selected, output->server->desktop_selected,
+		sizeof(state.desktop_selected));
 	memcpy(state.launcher_query, output->server->launcher_query,
 		sizeof(state.launcher_query));
 	memcpy(state.launcher_app_indices, output->server->launcher_app_indices,
@@ -3325,6 +3496,11 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 
 	if (server->desktop_drag_active) {
 		process_desktop_drag(server);
+		return;
+	}
+
+	if (server->desktop_select_active) {
+		process_desktop_selection(server);
 		return;
 	}
 
@@ -4382,6 +4558,158 @@ static void launch_desktop_file_trash(const char *path) {
 	launch_command(cmd);
 }
 
+static void launch_volume_open_path(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[8400];
+	snprintf(cmd, sizeof(cmd), "gio open %s || xdg-open %s || true",
+		quoted, quoted);
+	launch_command(cmd);
+}
+
+static void launch_volume_get_info_path(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[8400];
+	snprintf(cmd, sizeof(cmd),
+		"nautilus --properties %s 2>/dev/null || gio info %s || true",
+		quoted, quoted);
+	launch_command(cmd);
+}
+
+static const char *desktop_item_path_for_info(
+		struct orange_server *server,
+		struct orange_desktop_item_info info) {
+	if (info.kind == ORANGE_DESKTOP_ITEM_FILE &&
+			info.index >= 0 && info.index < server->desktop_file_count) {
+		return server->desktop_files[info.index].path;
+	}
+	if (info.kind == ORANGE_DESKTOP_ITEM_VOLUME &&
+			info.index >= 0 && info.index < server->desktop_volume_count) {
+		return server->volumes[info.index].mount_path;
+	}
+	return NULL;
+}
+
+static bool current_desktop_layout(
+		struct orange_server *server,
+		struct orange_shell_layout *layout) {
+	int local_x = 0;
+	int local_y = 0;
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+	(void)local_x;
+	(void)local_y;
+	if (output == NULL) {
+		return false;
+	}
+	compute_shell_layout_for_output(server, output, layout);
+	return true;
+}
+
+static void launch_selected_desktop_copy(struct orange_server *server,
+		const struct orange_shell_layout *layout) {
+	GString *cmd = g_string_new("tmp=$(mktemp) || exit 0; ");
+	for (int i = 0; i < layout->desktop_item_count && i < ORANGE_DESKTOP_MAX; i++) {
+		if (!server->desktop_selected[i]) {
+			continue;
+		}
+		const char *path = desktop_item_path_for_info(server,
+			layout->desktop_item_info[i]);
+		char quoted[4096];
+		if (path == NULL || path[0] == '\0' ||
+				!shell_quote_arg(path, quoted, sizeof(quoted))) {
+			continue;
+		}
+		g_string_append_printf(cmd,
+			"p=%s; printf 'file://%%s\\n' \"$p\" >> \"$tmp\"; ",
+			quoted);
+	}
+	g_string_append(cmd,
+		"if command -v wl-copy >/dev/null 2>&1; then "
+		"wl-copy --type text/uri-list < \"$tmp\" || wl-copy < \"$tmp\"; "
+		"elif command -v xclip >/dev/null 2>&1; then "
+		"sed 's#^file://##' \"$tmp\" | xclip -selection clipboard; "
+		"fi; rm -f \"$tmp\"; true");
+	launch_command(cmd->str);
+	g_string_free(cmd, TRUE);
+}
+
+static void handle_desktop_selection_action(
+		struct orange_server *server,
+		enum orange_context_menu_kind kind,
+		int item_index) {
+	struct orange_shell_layout layout;
+	if (!current_desktop_layout(server, &layout)) {
+		return;
+	}
+	for (int i = 0; i < layout.desktop_item_count && i < ORANGE_DESKTOP_MAX; i++) {
+		if (!server->desktop_selected[i]) {
+			continue;
+		}
+		struct orange_desktop_item_info info = layout.desktop_item_info[i];
+		const char *path = desktop_item_path_for_info(server, info);
+		if (path == NULL || path[0] == '\0') {
+			continue;
+		}
+		if (kind == ORANGE_CONTEXT_MENU_DESKTOP_SELECTION) {
+			switch (item_index) {
+			case 0:
+				if (info.kind == ORANGE_DESKTOP_ITEM_VOLUME) {
+					launch_volume_open_path(path);
+				} else {
+					launch_desktop_file_open(path);
+				}
+				break;
+			case 2:
+				if (info.kind == ORANGE_DESKTOP_ITEM_VOLUME) {
+					launch_volume_get_info_path(path);
+				} else {
+					launch_desktop_file_get_info(path);
+				}
+				break;
+			case 3:
+				launch_desktop_file_share(path);
+				break;
+			default:
+				break;
+			}
+		} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION &&
+				info.kind == ORANGE_DESKTOP_ITEM_FILE) {
+			switch (item_index) {
+			case 0:
+				launch_desktop_file_open(path);
+				break;
+			case 1:
+				launch_desktop_file_show_in_files(path);
+				break;
+			case 3:
+				launch_desktop_file_get_info(path);
+				break;
+			case 4:
+				launch_desktop_file_quick_look(path);
+				break;
+			case 5:
+				launch_desktop_file_share(path);
+				break;
+			case 6:
+				launch_desktop_file_trash(path);
+				break;
+			default:
+				break;
+			}
+		}
+	}
+	if ((kind == ORANGE_CONTEXT_MENU_DESKTOP_SELECTION && item_index == 1) ||
+			(kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION &&
+			 item_index == 2)) {
+		launch_selected_desktop_copy(server, &layout);
+	}
+}
+
 static void handle_context_menu_action(struct orange_server *server, int item_index) {
 	enum orange_context_menu_kind kind = server->context_menu_kind;
 	int target = server->context_menu_index;
@@ -4554,7 +4882,7 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_TRASH) {
 		switch (item_index) {
 		case 0:
-			launch_command("gio open trash:// || xdg-open trash:// || true");
+			launch_command(orange_trash_command);
 			break;
 		case 1:
 			launch_command("gio trash --empty || trash-empty || true");
@@ -4682,6 +5010,9 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 				break;
 			}
 		}
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_SELECTION ||
+			kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION) {
+		handle_desktop_selection_action(server, kind, item_index);
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_VOLUME) {
 		int vol_idx = desktop_volume_index_for_context_target(server, target);
 		if (vol_idx >= 0 && vol_idx < server->desktop_volume_count) {
@@ -4689,25 +5020,13 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			char quoted[4096];
 			switch (item_index) {
 			case 0: /* Open */
-				if (vol->mount_path[0] != '\0' &&
-						shell_quote_arg(vol->mount_path, quoted,
-							sizeof(quoted))) {
-					char cmd[8400];
-					snprintf(cmd, sizeof(cmd),
-						"gio open %s || xdg-open %s || true",
-						quoted, quoted);
-					launch_command(cmd);
+				if (vol->mount_path[0] != '\0') {
+					launch_volume_open_path(vol->mount_path);
 				}
 				break;
 			case 1: /* Get Info */
-				if (vol->mount_path[0] != '\0' &&
-						shell_quote_arg(vol->mount_path, quoted,
-							sizeof(quoted))) {
-					char cmd[8400];
-					snprintf(cmd, sizeof(cmd),
-						"nautilus --properties %s 2>/dev/null || gio info %s || true",
-						quoted, quoted);
-					launch_command(cmd);
+				if (vol->mount_path[0] != '\0') {
+					launch_volume_get_info_path(vol->mount_path);
 				}
 				break;
 			case 2: /* Eject */
@@ -4854,6 +5173,96 @@ static void start_desktop_drag(struct orange_server *server,
 	server->desktop_drag_offset_y = local_y - item.y;
 	server->desktop_drag_start_x = local_x;
 	server->desktop_drag_start_y = local_y;
+}
+
+static struct orange_rect normalized_rect_from_points(
+		int x1,
+		int y1,
+		int x2,
+		int y2) {
+	int x = x1 < x2 ? x1 : x2;
+	int y = y1 < y2 ? y1 : y2;
+	int right = x1 > x2 ? x1 : x2;
+	int bottom = y1 > y2 ? y1 : y2;
+	return (struct orange_rect){x, y, right - x, bottom - y};
+}
+
+static bool rects_intersect(struct orange_rect a, struct orange_rect b) {
+	return a.x < b.x + b.width &&
+		a.x + a.width > b.x &&
+		a.y < b.y + b.height &&
+		a.y + a.height > b.y;
+}
+
+static void update_desktop_selection_from_rect(
+		struct orange_server *server,
+		const struct orange_shell_layout *layout,
+		struct orange_rect selection) {
+	for (int i = 0; i < ORANGE_DESKTOP_MAX; i++) {
+		server->desktop_selected[i] = false;
+	}
+	for (int i = 0; i < layout->desktop_item_count && i < ORANGE_DESKTOP_MAX; i++) {
+		if (rects_intersect(selection, layout->desktop_items[i])) {
+			server->desktop_selected[i] = true;
+		}
+	}
+}
+
+static void start_desktop_selection(struct orange_server *server,
+		int local_x,
+		int local_y) {
+	server->desktop_select_active = true;
+	server->desktop_select_moved = false;
+	server->desktop_select_start_x = local_x;
+	server->desktop_select_start_y = local_y;
+	server->desktop_select_x = local_x;
+	server->desktop_select_y = local_y;
+	for (int i = 0; i < ORANGE_DESKTOP_MAX; i++) {
+		server->desktop_selected[i] = false;
+	}
+}
+
+static void process_desktop_selection(struct orange_server *server) {
+	if (!server->desktop_select_active) {
+		return;
+	}
+	int local_x = 0;
+	int local_y = 0;
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+	if (output == NULL) {
+		return;
+	}
+	int dx = local_x - server->desktop_select_start_x;
+	int dy = local_y - server->desktop_select_start_y;
+	if (abs(dx) > 4 || abs(dy) > 4) {
+		server->desktop_select_moved = true;
+	}
+	server->desktop_select_x = local_x;
+	server->desktop_select_y = local_y;
+	struct orange_shell_layout layout;
+	compute_shell_layout_for_output(server, output, &layout);
+	struct orange_rect selection = normalized_rect_from_points(
+		server->desktop_select_start_x,
+		server->desktop_select_start_y,
+		server->desktop_select_x,
+		server->desktop_select_y);
+	update_desktop_selection_from_rect(server, &layout, selection);
+	server_mark_shell_dirty(server);
+}
+
+static void finish_desktop_selection(struct orange_server *server) {
+	if (!server->desktop_select_active) {
+		return;
+	}
+	bool moved = server->desktop_select_moved;
+	server->desktop_select_active = false;
+	server->desktop_select_moved = false;
+	if (!moved) {
+		for (int i = 0; i < ORANGE_DESKTOP_MAX; i++) {
+			server->desktop_selected[i] = false;
+		}
+	}
+	server_mark_shell_dirty(server);
 }
 
 static void process_desktop_drag(struct orange_server *server) {
@@ -5687,6 +6096,17 @@ static void handle_shell_click(struct orange_server *server, int x, int y) {
 		launcher_close_overlay(server);
 		break;
 	case ORANGE_HIT_DESKTOP:
+		clear_context_menu(server);
+		if (server->notification_center_open) {
+			server->notification_center_open = false;
+		}
+		if (server->system_menu_open) {
+			server->system_menu_open = false;
+		}
+		start_desktop_selection(server, local_x, local_y);
+		server_mark_shell_dirty(server);
+		server_mark_overlay_dirty(server);
+		break;
 	case ORANGE_HIT_NONE:
 		clear_context_menu(server);
 		if (server->notification_center_open) {
@@ -5787,12 +6207,29 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 		if (hit.index >= 0 && hit.index < layout.desktop_item_count) {
 			info = layout.desktop_item_info[hit.index];
 		}
-		if (info.kind == ORANGE_DESKTOP_ITEM_FILE) {
-			server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_FILE;
-		} else if (info.kind == ORANGE_DESKTOP_ITEM_VOLUME) {
-			server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_VOLUME;
+		struct desktop_selection_summary selection =
+			desktop_selection_summary_for_layout(server, &layout, hit.index);
+		if (selection.count > 1 && selection.includes_target) {
+			server->context_menu_kind =
+				selection.volume_count == 0 ?
+				ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION :
+				ORANGE_CONTEXT_MENU_DESKTOP_SELECTION;
 		} else {
-			server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
+			if (hit.index >= 0 && hit.index < ORANGE_DESKTOP_MAX &&
+					!selection.includes_target) {
+				for (int i = 0; i < ORANGE_DESKTOP_MAX; i++) {
+					server->desktop_selected[i] = false;
+				}
+				server->desktop_selected[hit.index] = true;
+				server_mark_shell_dirty(server);
+			}
+			if (info.kind == ORANGE_DESKTOP_ITEM_FILE) {
+				server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_FILE;
+			} else if (info.kind == ORANGE_DESKTOP_ITEM_VOLUME) {
+				server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_VOLUME;
+			} else {
+				server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
+			}
 		}
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_DESKTOP) {
@@ -5853,6 +6290,12 @@ static void handle_cursor_button(struct wl_listener *listener, void *data) {
 			event->button == BTN_LEFT &&
 			server->desktop_drag_active) {
 		finish_desktop_drag(server);
+		return;
+	}
+	if (event->state == WLR_BUTTON_RELEASED &&
+			event->button == BTN_LEFT &&
+			server->desktop_select_active) {
+		finish_desktop_selection(server);
 		return;
 	}
 	if (event->state == WLR_BUTTON_RELEASED &&

@@ -28,8 +28,14 @@ Responsibilities:
 - apply persistent appearance, desktop, and Dock configuration,
 - load wallpapers from `./assets/` and ask the asset layer for themed icons,
 - place desktop icons from persisted coordinates when the user drags them,
+  using a Dock-aware grid that spans the usable desktop work area, snaps both
+  axes, reserves scaled edge/Dock clearance, and resolves duplicate saved cells
+  to the nearest free slot,
+- render locally decoded image previews for image desktop files, with themed
+  icon fallback when decoding fails, and draw Finder-like selection marquees
+  plus selected-item highlighting independently from the icon-move gesture,
 - draw shell context menus for Dock items, the Dock separator, widgets,
-  desktop items, and empty desktop background,
+  desktop items, multi-selected desktop groups, and empty desktop background,
 - render regular command menus through shared text-first menu metadata:
   labels, separators, right-aligned shortcut/detail text, checked-state
   markers, enabled state for imported native app items, and a per-menu
@@ -172,6 +178,11 @@ Responsibilities:
   and dark,
 - expose `org.freedesktop.appearance.color-scheme` through the Settings portal
   backend and local frontend interfaces,
+- keep Settings portal variant shapes compatible with both the backend API and
+  the frontend API: `ReadOne`, backend `Read`, `ReadAll`, and
+  `SettingChanged` use the normal value variant, while deprecated frontend
+  `Read` returns the historical extra variant layer expected by older
+  GTK/libadwaita callers,
 - read `org.gnome.desktop.background` at startup and poll it periodically so
   GNOME Control Center wallpaper changes redraw the shell,
 - keep GNOME-specific failures non-fatal when GSettings schemas, dconf, or the
@@ -294,9 +305,11 @@ Responsibilities:
    same click-or-drag split: a click launches, while dropping a non-duplicate
    app on the Dock inserts a new alias before Trash.
 10. Desktop drag state updates the in-memory config while dragging and saves
-   `orange.conf` on release. Desktop item click/open and context-menu actions
-   use the layout's file/volume metadata so sorting does not break file or
-   volume targeting.
+   `orange.conf` on release. The shell layout recomputes desktop grid metrics
+   after Dock geometry is known so dragged icons cannot be placed under or too
+   close to the Dock. Desktop item click/open and context-menu actions use the
+   layout's file/volume metadata so sorting does not break file or volume
+   targeting.
 11. Right-click hit testing opens a shell context menu above a Dock item, near a
    widget, at a desktop item cursor, or at the empty desktop cursor location.
    Empty Dock and menu-bar chrome hits clear/consume the shell interaction

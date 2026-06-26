@@ -16,7 +16,8 @@ wlroots.
 ### Current Status
 
 Functional macOS-like shell compositor with desktop files and volume icons,
-grid layout with snap-to-grid positioning, translucent menu
+Dock-aware two-axis desktop grid layout with snap-to-grid positioning,
+Finder-like image-file desktop previews, desktop marquee selection, translucent menu
 bar with dock-style glass effect, launcher glass matching Dock/menu/context
 transparency, compact Dock with even glass transparency,
 wlroots compositor, scalable widgets, basic xdg-shell window management, Dock
@@ -357,8 +358,11 @@ Meson startup smoke test for custom headless compositor arguments.
 
 ## Current Work
 
-- Wire up individual status-icon features (Wi-Fi, Sound, Battery, Spotlight,
-  Control Center) for interactive status menus.
+- Desktop icon placement, image previews, marquee selection, multi-selection
+  context menus, real drive labels, GNOME Files Trash opening, and the Nautilus
+  Settings-portal crash fix are complete.
+  Continue with interactive WSLg/nested-Wayland verification and then resume
+  status-icon feature work as needed.
 
 ### Dark/Light Appearance Advertising
 
@@ -607,9 +611,48 @@ build here. They remain conditional for systems without GTK4 development files.
   Dock Settings, while Trash shows Open Trash, Empty Trash, and Dock Settings.
   The normal Dock menu width and draw clipping were expanded so `Remove from
   Dock` no longer clips.
+- **Desktop icon placement and previews fixed**: Desktop item layout now
+  computes after Dock geometry, snaps dragged positions in both axes across the
+  usable work-area grid, reserves scaled clearance from bottom/left/right Docks,
+  enforces a wider minimum cell gap, and resolves duplicate saved cells to the
+  nearest free slot. Image desktop files render decoded Finder-like previews
+  with themed icon fallback. Empty desktop dragging draws a marquee selection
+  rectangle and selected icons receive a wider blue selection treatment; moving
+  an icon no longer adds its own blue drag highlight. Root/home disk entries
+  now use real GIO mount names or device-backed labels instead of the old
+  `Macintosh HD` placeholder.
+- **Desktop multi-selection menus added**: Right-clicking inside a highlighted
+  multi-selection now opens a selection-aware command menu. File-only
+  selections keep file actions such as Show in Files, Quick Look, and Move to
+  Trash. Mixed selections that include volumes use a smaller Open, Copy, Get
+  Info, and Share menu so mounted volumes are not offered file-only actions.
+  Right-clicking an unselected desktop item switches the selection to that
+  single target before opening its normal item menu.
+- **Trash and Nautilus portal crash fixed**: The built-in Trash Dock item and
+  Trash context-menu Open action now prefer `nautilus trash:///`, with
+  `gio open trash:///` and `xdg-open trash:///` fallbacks. Orange's Settings
+  portal now returns the extra variant layer required by the deprecated
+  frontend `Read` method while keeping `ReadOne`, backend `Read`, `ReadAll`,
+  and `SettingChanged` on the normal single-variant shape. This fixes Nautilus
+  crashes that logged `GVariant format string 'v'` against a raw `u` value.
 
 #### Latest Validation
 
+- `meson compile -C build` passed after the desktop icon placement/preview
+  pass, again after the Trash/portal fix, and again after the multi-selection
+  context-menu pass.
+- `./build/test-shell-layout` passed with coverage for horizontal desktop
+  placement, duplicate saved-position separation, side-Dock clearance,
+  selection-aware desktop context-menu metadata, and the GNOME Files Trash
+  command fallback.
+- `./build/test-shell-visual` passed with coverage for decoded image previews,
+  marquee drawing, and selected-icon highlighting.
+- `meson test -C build --print-errorlogs` passed (8/8 tests).
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once --width 1440 --height 900 --assets assets --config orange.conf`
+  exited 0. The sandbox emitted the known dconf/GIO session-bus warnings
+  because `/run/user/1000/dconf` is read-only and session-bus access is
+  restricted.
+- `git diff --check` passed.
 - `meson compile -C build` passed cleanly after the desktop/Dock context-menu
   pass.
 - `./build/test-shell-layout` passed after adding coverage for text-first menu

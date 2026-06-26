@@ -1,6 +1,7 @@
 #include "orange/shell.h"
 
 #include <cairo/cairo.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -289,6 +290,27 @@ static const char *desktop_file_context_labels[] = {
 
 static const int desktop_file_context_separator_before[] = {2, 6, 8, -1};
 
+static const char *desktop_selection_context_labels[] = {
+	"Open",
+	"Copy",
+	"Get Info",
+	"Share",
+};
+
+static const int desktop_selection_context_separator_before[] = {1, -1};
+
+static const char *desktop_file_selection_context_labels[] = {
+	"Open",
+	"Show in Files",
+	"Copy",
+	"Get Info",
+	"Quick Look",
+	"Share",
+	"Move to Trash",
+};
+
+static const int desktop_file_selection_context_separator_before[] = {2, 4, 6, -1};
+
 static const char *status_context_labels[] = {
 	"Wi-Fi",
 	"Bluetooth",
@@ -332,8 +354,6 @@ static bool rect_contains(const struct orange_rect *rect, int x, int y) {
 	return x >= rect->x && y >= rect->y &&
 		x < rect->x + rect->width && y < rect->y + rect->height;
 }
-
-
 
 static struct orange_rect widget_rect_for_size(
 		enum orange_widget_type type,
@@ -950,6 +970,118 @@ static void draw_desktop_placeholder_icon(cairo_t *cr,
 		0.92, true);
 }
 
+static void draw_desktop_item_selection(cairo_t *cr,
+		struct orange_rect r,
+		double s,
+		bool dark) {
+	int pad_x = scaled_i(10, s);
+	int pad_y = scaled_i(8, s);
+	if (pad_x < scaled_i(16, s)) {
+		pad_x = scaled_i(16, s);
+	}
+	struct orange_rect highlight = {
+		r.x - pad_x,
+		r.y - pad_y,
+		r.width + pad_x * 2,
+		r.height + pad_y * 2,
+	};
+	double radius = scaled_i(15, s);
+	rounded_rect(cr, highlight.x, highlight.y,
+		highlight.width, highlight.height, radius);
+	set_source_rgba255(cr, 0, 122, 255, dark ? 0.34 : 0.28);
+	cairo_fill(cr);
+	rounded_rect(cr, highlight.x + 0.5, highlight.y + 0.5,
+		highlight.width - 1.0, highlight.height - 1.0, radius);
+	set_source_rgba255(cr, 255, 255, 255, dark ? 0.26 : 0.32);
+	cairo_set_line_width(cr, fmax(1.0, 1.3 * s));
+	cairo_stroke(cr);
+}
+
+static struct orange_rect desktop_icon_slot_rect(struct orange_rect r) {
+	int icon_size = (int)lrint(r.width * 0.82);
+	if (icon_size > r.height - 20) {
+		icon_size = r.height - 20;
+	}
+	return (struct orange_rect){
+		r.x + (r.width - icon_size) / 2,
+		r.y,
+		icon_size,
+		icon_size,
+	};
+}
+
+static bool draw_desktop_image_preview(cairo_t *cr,
+		const char *path,
+		struct orange_rect icon_rect,
+		struct orange_assets *assets,
+		bool dark,
+		double s) {
+	cairo_surface_t *preview = assets != NULL ?
+		orange_assets_image_preview(assets, path) :
+		orange_assets_load_image_file(path);
+	if (preview == NULL) {
+		return false;
+	}
+
+	int sw = cairo_image_surface_get_width(preview);
+	int sh = cairo_image_surface_get_height(preview);
+	if (sw <= 0 || sh <= 0) {
+		if (assets == NULL) {
+			cairo_surface_destroy(preview);
+		}
+		return false;
+	}
+	int max_w = icon_rect.width - scaled_i(8, s);
+	int max_h = icon_rect.height - scaled_i(8, s);
+	if (max_w < 1) {
+		max_w = icon_rect.width;
+	}
+	if (max_h < 1) {
+		max_h = icon_rect.height;
+	}
+	double fit = fmin((double)max_w / (double)sw,
+		(double)max_h / (double)sh);
+	int draw_w = (int)lrint(sw * fit);
+	int draw_h = (int)lrint(sh * fit);
+	if (draw_w < 1 || draw_h < 1) {
+		if (assets == NULL) {
+			cairo_surface_destroy(preview);
+		}
+		return false;
+	}
+	struct orange_rect image_rect = {
+		icon_rect.x + (icon_rect.width - draw_w) / 2,
+		icon_rect.y + (icon_rect.height - draw_h) / 2,
+		draw_w,
+		draw_h,
+	};
+
+	double radius = scaled_i(4, s);
+	rounded_rect(cr, image_rect.x + scaled_i(2, s),
+		image_rect.y + scaled_i(3, s),
+		image_rect.width, image_rect.height, radius);
+	set_source_rgba255(cr, 0, 0, 0, dark ? 0.24 : 0.18);
+	cairo_fill(cr);
+
+	cairo_save(cr);
+	rounded_rect(cr, image_rect.x, image_rect.y,
+		image_rect.width, image_rect.height, radius);
+	cairo_clip(cr);
+	draw_image_fit(cr, preview, image_rect, 1.0);
+	cairo_restore(cr);
+
+	rounded_rect(cr, image_rect.x + 0.5, image_rect.y + 0.5,
+		image_rect.width - 1.0, image_rect.height - 1.0, radius);
+	set_source_rgba255(cr, 255, 255, 255, dark ? 0.18 : 0.62);
+	cairo_set_line_width(cr, fmax(1.0, 1.0 * s));
+	cairo_stroke(cr);
+
+	if (assets == NULL) {
+		cairo_surface_destroy(preview);
+	}
+	return true;
+}
+
 static const char *desktop_item_label(
 		const struct orange_shell_layout *layout,
 		const struct orange_shell_state *state,
@@ -984,17 +1116,9 @@ static void draw_desktop_icon_for_item(cairo_t *cr,
 	struct orange_rect r = layout->desktop_items[i];
 	enum orange_desktop_item_kind kind = layout->desktop_item_info[i].kind;
 	int idx = layout->desktop_item_info[i].index;
+	double s = layout_scale(layout);
 
-	int icon_size = (int)lrint(r.width * 0.82);
-	if (icon_size > r.height - 20) {
-		icon_size = r.height - 20;
-	}
-	struct orange_rect icon_rect = {
-		r.x + (r.width - icon_size) / 2,
-		r.y,
-		icon_size,
-		icon_size,
-	};
+	struct orange_rect icon_rect = desktop_icon_slot_rect(r);
 
 	if (kind == ORANGE_DESKTOP_ITEM_ENTRY) {
 		const struct orange_desktop_entry *entry =
@@ -1029,6 +1153,11 @@ static void draw_desktop_icon_for_item(cairo_t *cr,
 	} else if (kind == ORANGE_DESKTOP_ITEM_FILE) {
 		const struct orange_file_info *files = state->desktop_files;
 		if (files != NULL && idx < state->desktop_file_count) {
+			if (files[idx].is_image && !files[idx].is_directory &&
+					draw_desktop_image_preview(cr, files[idx].path,
+						icon_rect, state->assets, dark, s)) {
+				return;
+			}
 			const char *icon_name = files[idx].is_directory ?
 				"folder" : files[idx].icon_name;
 			cairo_surface_t *icon = state->assets != NULL ?
@@ -1102,9 +1231,27 @@ static void draw_desktop_items(cairo_t *cr,
 	}
 	bool dark = is_dark_config(config);
 	int variant = dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT;
+	double s = layout_scale(layout);
 	for (int i = 0; i < layout->desktop_item_count; i++) {
+		if (state != NULL && state->desktop_selected[i]) {
+			draw_desktop_item_selection(cr, layout->desktop_items[i],
+				s, dark);
+		}
 		draw_desktop_icon_for_item(cr, layout, state, i, dark, variant);
 		draw_desktop_label_for_item(cr, layout, state, i, config);
+	}
+	if (state != NULL && state->desktop_selection_active &&
+			state->desktop_selection_rect.width > 0 &&
+			state->desktop_selection_rect.height > 0) {
+		struct orange_rect r = state->desktop_selection_rect;
+		rounded_rect(cr, r.x, r.y, r.width, r.height, scaled_i(5, s));
+		set_source_rgba255(cr, 0, 122, 255, dark ? 0.18 : 0.14);
+		cairo_fill(cr);
+		rounded_rect(cr, r.x + 0.5, r.y + 0.5,
+			r.width - 1.0, r.height - 1.0, scaled_i(5, s));
+		set_source_rgba255(cr, 0, 122, 255, dark ? 0.62 : 0.56);
+		cairo_set_line_width(cr, fmax(1.0, 1.2 * s));
+		cairo_stroke(cr);
 	}
 }
 
@@ -1439,26 +1586,6 @@ static void draw_notification_center(cairo_t *cr,
 		primary, primary, primary, 0.92, true);
 }
 
-static void desktop_grid_position(
-		int index,
-		int cols,
-		int rows_per_col,
-		int cell_w,
-		int cell_h,
-		int grid_left,
-		int grid_top,
-		int *out_x,
-		int *out_y) {
-	int col = index / rows_per_col;
-	int row = index % rows_per_col;
-	if (col >= cols) {
-		col = cols - 1;
-		row = rows_per_col - 1;
-	}
-	*out_x = grid_left + col * cell_w;
-	*out_y = grid_top + row * cell_h;
-}
-
 static int desktop_grid_col_from_x(int x, int grid_left, int cell_w) {
 	int col = (x - grid_left + cell_w / 2) / cell_w;
 	return col < 0 ? 0 : col;
@@ -1467,6 +1594,233 @@ static int desktop_grid_col_from_x(int x, int grid_left, int cell_w) {
 static int desktop_grid_row_from_y(int y, int grid_top, int cell_h) {
 	int row = (y - grid_top + cell_h / 2) / cell_h;
 	return row < 0 ? 0 : row;
+}
+
+struct desktop_grid_metrics {
+	int icon_w;
+	int icon_h;
+	int label_h;
+	int cell_w;
+	int cell_h;
+	int x;
+	int y;
+	int cols;
+	int rows;
+};
+
+static void desktop_grid_metrics_for_layout(
+		const struct orange_shell_layout *layout,
+		const struct orange_config *config,
+		struct desktop_grid_metrics *grid) {
+	memset(grid, 0, sizeof(*grid));
+	if (layout == NULL || layout->width <= 0 || layout->height <= 0) {
+		grid->cols = 1;
+		grid->rows = 1;
+		return;
+	}
+
+	struct orange_config defaults;
+	if (config == NULL) {
+		orange_config_set_defaults(&defaults);
+		config = &defaults;
+	}
+
+	double s = ui_scale_for_size(layout->width, layout->height);
+	grid->icon_w = scaled_i(100 * config->desktop_icon_scale, s);
+	grid->icon_h = scaled_i(100 * config->desktop_icon_scale, s);
+	grid->label_h = scaled_i(24 * config->desktop_icon_scale, s);
+	if (config->desktop_label_position == ORANGE_DESKTOP_LABEL_BOTTOM) {
+		grid->label_h = scaled_i(40 * config->desktop_icon_scale, s);
+	}
+	int grid_gap = scaled_i(config->desktop_grid_spacing, s);
+	int min_grid_gap = scaled_i(64, s);
+	if (grid_gap < min_grid_gap) {
+		grid_gap = min_grid_gap;
+	}
+	grid->cell_w = grid->icon_w + grid_gap;
+	grid->cell_h = grid->icon_h + grid->label_h + grid_gap;
+	if (grid->cell_w < 1) {
+		grid->cell_w = 1;
+	}
+	if (grid->cell_h < 1) {
+		grid->cell_h = 1;
+	}
+
+	struct orange_rect work = orange_shell_layout_work_area(layout);
+	int side_margin = scaled_i(32, s);
+	int top_margin = scaled_i(32, s);
+	int left = work.x + side_margin;
+	int top = work.y + top_margin;
+	int right = work.x + work.width - side_margin;
+	int bottom = work.y + work.height - side_margin;
+	if (right < left + grid->icon_w) {
+		right = left + grid->icon_w;
+	}
+	if (bottom < top + grid->icon_h + grid->label_h) {
+		bottom = top + grid->icon_h + grid->label_h;
+	}
+
+	int avail_w = right - left;
+	int avail_h = bottom - top;
+	grid->cols = avail_w / grid->cell_w;
+	grid->rows = avail_h / grid->cell_h;
+	if (grid->cols < 1) {
+		grid->cols = 1;
+	}
+	if (grid->rows < 1) {
+		grid->rows = 1;
+	}
+
+	int grid_w = grid->cols * grid->cell_w;
+	grid->x = right - grid_w;
+	if (grid->x < left) {
+		grid->x = left;
+	}
+	grid->y = top;
+}
+
+static void desktop_grid_default_cell(
+		const struct desktop_grid_metrics *grid,
+		int index,
+		int *out_col,
+		int *out_row) {
+	int col_from_right = index / grid->rows;
+	int row = index % grid->rows;
+	if (col_from_right >= grid->cols) {
+		col_from_right = grid->cols - 1;
+		row = grid->rows - 1;
+	}
+	*out_col = grid->cols - 1 - col_from_right;
+	*out_row = row;
+}
+
+static void desktop_grid_cell_from_position(
+		const struct desktop_grid_metrics *grid,
+		int x,
+		int y,
+		int *out_col,
+		int *out_row) {
+	int col = desktop_grid_col_from_x(x, grid->x, grid->cell_w);
+	int row = desktop_grid_row_from_y(y, grid->y, grid->cell_h);
+	if (col >= grid->cols) {
+		col = grid->cols - 1;
+	}
+	if (row >= grid->rows) {
+		row = grid->rows - 1;
+	}
+	*out_col = col;
+	*out_row = row;
+}
+
+static bool desktop_grid_cell_used(
+		int col,
+		int row,
+		const int *used_cols,
+		const int *used_rows,
+		int used_count) {
+	for (int i = 0; i < used_count; i++) {
+		if (used_cols[i] == col && used_rows[i] == row) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void desktop_grid_find_free_cell(
+		const struct desktop_grid_metrics *grid,
+		const int *used_cols,
+		const int *used_rows,
+		int used_count,
+		int *col,
+		int *row) {
+	if (!desktop_grid_cell_used(*col, *row, used_cols, used_rows,
+			used_count)) {
+		return;
+	}
+
+	int best_col = *col;
+	int best_row = *row;
+	int best_score = INT_MAX;
+	for (int c = 0; c < grid->cols; c++) {
+		for (int r = 0; r < grid->rows; r++) {
+			if (desktop_grid_cell_used(c, r, used_cols, used_rows,
+					used_count)) {
+				continue;
+			}
+			int col_delta = abs(c - *col);
+			int row_delta = abs(r - *row);
+			int score = col_delta * grid->rows * 4 + row_delta * 4;
+			if (r < *row) {
+				score++;
+			}
+			if (c > *col) {
+				score += 2;
+			}
+			if (score < best_score) {
+				best_score = score;
+				best_col = c;
+				best_row = r;
+			}
+		}
+	}
+	*col = best_col;
+	*row = best_row;
+}
+
+static struct orange_rect desktop_grid_rect_for_cell(
+		const struct desktop_grid_metrics *grid,
+		int col,
+		int row) {
+	return (struct orange_rect){
+		grid->x + col * grid->cell_w +
+			(grid->cell_w - grid->icon_w) / 2,
+		grid->y + row * grid->cell_h,
+		grid->icon_w,
+		grid->icon_h + grid->label_h,
+	};
+}
+
+static void layout_desktop_items_on_grid(
+		struct orange_shell_layout *layout,
+		const struct orange_config *config) {
+	struct desktop_grid_metrics grid;
+	desktop_grid_metrics_for_layout(layout, config, &grid);
+	int capacity = grid.cols * grid.rows;
+	if (capacity < 1) {
+		capacity = 1;
+	}
+	if (layout->desktop_item_count > capacity) {
+		layout->desktop_item_count = capacity;
+	}
+
+	int used_cols[ORANGE_DESKTOP_MAX] = {0};
+	int used_rows[ORANGE_DESKTOP_MAX] = {0};
+	int used_count = 0;
+	bool use_saved_positions =
+		config != NULL &&
+		(config->desktop_sort_by == ORANGE_DESKTOP_SORT_NONE ||
+		 config->desktop_sort_by == ORANGE_DESKTOP_SORT_SNAP_TO_GRID);
+
+	for (int i = 0; i < layout->desktop_item_count; i++) {
+		int col = 0;
+		int row = 0;
+		if (use_saved_positions && i < ORANGE_DESKTOP_POSITION_MAX &&
+				config->desktop_positions[i].valid) {
+			desktop_grid_cell_from_position(&grid,
+				config->desktop_positions[i].x,
+				config->desktop_positions[i].y,
+				&col, &row);
+		} else {
+			desktop_grid_default_cell(&grid, i, &col, &row);
+		}
+		desktop_grid_find_free_cell(&grid, used_cols, used_rows,
+			used_count, &col, &row);
+		used_cols[used_count] = col;
+		used_rows[used_count] = row;
+		used_count++;
+		layout->desktop_items[i] = desktop_grid_rect_for_cell(&grid,
+			col, row);
+	}
 }
 
 static const char *desktop_item_sort_label(
@@ -1728,40 +2082,6 @@ void orange_shell_layout_compute(
 		layout->desktop_item_count = ORANGE_DESKTOP_MAX;
 	}
 
-	int icon_w = scaled_i(100 * config->desktop_icon_scale, s);
-	int icon_h = scaled_i(100 * config->desktop_icon_scale, s);
-	int label_h = scaled_i(24 * config->desktop_icon_scale, s);
-	if (config->desktop_label_position == ORANGE_DESKTOP_LABEL_BOTTOM) {
-		label_h = scaled_i(40 * config->desktop_icon_scale, s);
-	}
-	int cell_w = icon_w + scaled_i(config->desktop_grid_spacing, s);
-	int cell_h = icon_h + label_h + scaled_i(config->desktop_grid_spacing, s);
-	int cell_w_total = cell_w;
-	int cell_h_total = cell_h;
-
-	int grid_top = layout->menu_bar.height + scaled_i(32, s);
-	int grid_bottom = height - scaled_i(120, s);
-	int grid_left = width - scaled_i(180, s) -
-		ORANGE_DESKTOP_GRID_COLS * cell_w_total;
-	if (grid_left < scaled_i(40, s)) {
-		grid_left = scaled_i(40, s);
-	}
-	int grid_avail_h = grid_bottom - grid_top;
-	int rows_per_col = grid_avail_h / cell_h_total;
-	if (rows_per_col < 1) {
-		rows_per_col = 1;
-	}
-	int cols = (layout->desktop_item_count + rows_per_col - 1) / rows_per_col;
-	if (cols > ORANGE_DESKTOP_GRID_COLS) {
-		cols = ORANGE_DESKTOP_GRID_COLS;
-		int max_items = cols * rows_per_col;
-		if (layout->desktop_item_count > max_items) {
-			layout->desktop_item_count = max_items;
-		}
-	}
-	int grid_width = cols * cell_w_total;
-	int grid_x = width - grid_width - scaled_i(48, s);
-
 	for (int i = 0; i < layout->desktop_item_count; i++) {
 		if (i < desktop_file_count) {
 			layout->desktop_item_info[i].kind = ORANGE_DESKTOP_ITEM_FILE;
@@ -1773,35 +2093,6 @@ void orange_shell_layout_compute(
 	}
 	sort_desktop_item_info(layout, config->desktop_sort_by, desktop_files,
 		desktop_file_count);
-	for (int i = 0; i < layout->desktop_item_count; i++) {
-		int px, py;
-		desktop_grid_position(i, cols, rows_per_col,
-			cell_w_total, cell_h_total,
-			grid_x, grid_top, &px, &py);
-		if ((config->desktop_sort_by == ORANGE_DESKTOP_SORT_NONE ||
-				config->desktop_sort_by == ORANGE_DESKTOP_SORT_SNAP_TO_GRID) &&
-				i < ORANGE_DESKTOP_POSITION_MAX &&
-				config->desktop_positions[i].valid) {
-			int col = desktop_grid_col_from_x(
-				config->desktop_positions[i].x, grid_x, cell_w_total);
-			int row = desktop_grid_row_from_y(
-				config->desktop_positions[i].y, grid_top, cell_h_total);
-			if (col >= cols) {
-				col = cols - 1;
-			}
-			if (row >= rows_per_col) {
-				row = rows_per_col - 1;
-			}
-			px = grid_x + col * cell_w_total;
-			py = grid_top + row * cell_h_total;
-		}
-		layout->desktop_items[i] = (struct orange_rect){
-			px + (cell_w_total - icon_w) / 2,
-			py,
-			icon_w,
-			icon_h + label_h,
-		};
-	}
 
 	double dock_s = s * config->dock_scale;
 	int dock_icon = scaled_i(106, s * config->dock_icon_scale * config->dock_scale);
@@ -1940,6 +2231,7 @@ void orange_shell_layout_compute(
 			dx += dock_icon + dock_gap;
 		}
 	}
+	layout_desktop_items_on_grid(layout, config);
 	clamp_desktop_items_to_visible_area(layout, s);
 
 	if (system_menu_open) {
@@ -2007,45 +2299,41 @@ void orange_shell_layout_snap_to_grid(
 		int *x,
 		int *y,
 		const struct orange_config *config) {
-	(void)layout;
-	(void)index;
-	double s = ui_scale_for_size(layout->width, layout->height);
-	int icon_w = scaled_i(100 * config->desktop_icon_scale, s);
-	int icon_h = scaled_i(100 * config->desktop_icon_scale, s);
-	int label_h = scaled_i(40 * config->desktop_icon_scale, s);
-	int cell_w = icon_w + scaled_i(config->desktop_grid_spacing, s);
-	int cell_h = icon_h + label_h + scaled_i(config->desktop_grid_spacing, s);
-	int cell_w_total = cell_w;
-	int cell_h_total = cell_h;
-
-	int grid_top = layout->menu_bar.height + scaled_i(32, s);
-	int grid_left = layout->width - scaled_i(180, s) -
-		ORANGE_DESKTOP_GRID_COLS * cell_w_total;
-	if (grid_left < scaled_i(40, s)) {
-		grid_left = scaled_i(40, s);
+	if (layout == NULL || x == NULL || y == NULL) {
+		return;
 	}
 
-	int col = desktop_grid_col_from_x(*x, grid_left, cell_w_total);
-	int row = desktop_grid_row_from_y(*y, grid_top, cell_h_total);
+	struct desktop_grid_metrics grid;
+	desktop_grid_metrics_for_layout(layout, config, &grid);
+	int col = 0;
+	int row = 0;
+	desktop_grid_cell_from_position(&grid, *x, *y, &col, &row);
 
-	int cols = ORANGE_DESKTOP_GRID_COLS;
-	int grid_avail_h = layout->height - scaled_i(120, s) - grid_top;
-	int rows_per_col = grid_avail_h / cell_h_total;
-	if (rows_per_col < 1) {
-		rows_per_col = 1;
-	}
-	if (row >= rows_per_col) {
-		row = rows_per_col - 1;
-	}
-	if (col >= cols) {
-		col = cols - 1;
+	int used_cols[ORANGE_DESKTOP_MAX] = {0};
+	int used_rows[ORANGE_DESKTOP_MAX] = {0};
+	int used_count = 0;
+	for (int i = 0; i < layout->desktop_item_count &&
+			used_count < ORANGE_DESKTOP_MAX; i++) {
+		if (i == index || layout->desktop_items[i].width <= 0 ||
+				layout->desktop_items[i].height <= 0) {
+			continue;
+		}
+		int used_col = 0;
+		int used_row = 0;
+		desktop_grid_cell_from_position(&grid,
+			layout->desktop_items[i].x,
+			layout->desktop_items[i].y,
+			&used_col, &used_row);
+		used_cols[used_count] = used_col;
+		used_rows[used_count] = used_row;
+		used_count++;
 	}
 
-	int grid_width = cols * cell_w_total;
-	int grid_x = layout->width - grid_width - scaled_i(48, s);
-
-	*x = grid_x + col * cell_w_total + (cell_w_total - icon_w) / 2;
-	*y = grid_top + row * cell_h_total;
+	desktop_grid_find_free_cell(&grid, used_cols, used_rows, used_count,
+		&col, &row);
+	struct orange_rect rect = desktop_grid_rect_for_cell(&grid, col, row);
+	*x = rect.x;
+	*y = rect.y;
 }
 
 void orange_shell_layout_set_app_menu_tabs(
@@ -2305,6 +2593,14 @@ void orange_shell_layout_set_context_menu(
 		item_count = (int)(sizeof(desktop_file_context_labels) /
 			sizeof(desktop_file_context_labels[0]));
 		separator_before = desktop_file_context_separator_before;
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_SELECTION) {
+		item_count = (int)(sizeof(desktop_selection_context_labels) /
+			sizeof(desktop_selection_context_labels[0]));
+		separator_before = desktop_selection_context_separator_before;
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION) {
+		item_count = (int)(sizeof(desktop_file_selection_context_labels) /
+			sizeof(desktop_file_selection_context_labels[0]));
+		separator_before = desktop_file_selection_context_separator_before;
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP) {
 		item_count = (int)(sizeof(desktop_context_labels) /
 			sizeof(desktop_context_labels[0]));
@@ -2365,6 +2661,10 @@ void orange_shell_layout_set_context_menu(
 		panel_width_base = 256;
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP) {
 		panel_width_base = 390;
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_SELECTION) {
+		panel_width_base = 270;
+	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION) {
+		panel_width_base = 330;
 	} else if (kind == ORANGE_CONTEXT_MENU_STATUS) {
 		panel_width_base = 400;
 	} else if (kind == ORANGE_CONTEXT_MENU_STATUS_WIFI ||
@@ -2387,7 +2687,9 @@ void orange_shell_layout_set_context_menu(
 	if (kind == ORANGE_CONTEXT_MENU_DESKTOP ||
 			kind == ORANGE_CONTEXT_MENU_DESKTOP_ICON ||
 			kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE ||
-			kind == ORANGE_CONTEXT_MENU_DESKTOP_VOLUME) {
+			kind == ORANGE_CONTEXT_MENU_DESKTOP_VOLUME ||
+			kind == ORANGE_CONTEXT_MENU_DESKTOP_SELECTION ||
+			kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION) {
 		x = cursor_x;
 		y = cursor_y;
 	} else if (app_menu_tab_for_context_kind(kind) >= 0) {

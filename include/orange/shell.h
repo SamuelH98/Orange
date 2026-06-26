@@ -124,6 +124,8 @@ enum orange_context_menu_kind {
 	ORANGE_CONTEXT_MENU_DESKTOP_ICON,
 	ORANGE_CONTEXT_MENU_DESKTOP_VOLUME,
 	ORANGE_CONTEXT_MENU_DESKTOP_FILE,
+	ORANGE_CONTEXT_MENU_DESKTOP_SELECTION,
+	ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION,
 	ORANGE_CONTEXT_MENU_STATUS,
 	ORANGE_CONTEXT_MENU_STATUS_WIFI,
 	ORANGE_CONTEXT_MENU_STATUS_SOUND,
@@ -193,6 +195,7 @@ struct orange_file_info {
 	char path[1024];
 	char icon_name[128];
 	bool is_directory;
+	bool is_image;
 };
 
 struct orange_desktop_item_info {
@@ -309,8 +312,9 @@ struct orange_shell_state {
 	int context_menu_index;
 	int context_menu_cursor_x;
 	int context_menu_cursor_y;
-	int desktop_drag_target_index;
-	bool desktop_drag_swap;
+	bool desktop_selected[ORANGE_DESKTOP_MAX];
+	bool desktop_selection_active;
+	struct orange_rect desktop_selection_rect;
 
 	bool launcher_open;
 	enum orange_launcher_mode launcher_display_mode;

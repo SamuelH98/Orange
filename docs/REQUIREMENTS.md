@@ -151,7 +151,15 @@ shell.
   decorations for xdg-decoration and KDE server-decoration protocols.
 - Replace static desktop shortcut placeholders with XDG `.desktop` entries.
 - Allow desktop shortcuts, desktop files, and desktop volumes to be dragged to
-  custom persisted positions across the full desktop item capacity.
+  custom persisted positions across the full desktop item capacity. Dragged
+  items must snap in both horizontal and vertical directions, avoid occupied
+  grid cells, and reserve scaled space from the menu bar, screen edge, and
+  bottom/left/right Dock.
+- Render Finder-like image previews for image files on the desktop when the
+  file can be decoded locally, falling back to the themed image icon when it
+  cannot. Empty-desktop dragging must draw a Finder-like selection marquee for
+  selecting multiple icons, and selected icons may be highlighted; moving an
+  icon must not add a separate blue drag highlight.
 - Provide right-click context menus for desktop shortcuts, widgets, Dock items,
   the Dock separator, and empty desktop background.
 - Desktop file shortcut menus must expose Finder-like file commands that
@@ -159,6 +167,11 @@ shell.
   Copy, Get Info, Rename/select, Duplicate, Quick Look/open, Share, and Move to
   Trash. Desktop item shortcut menus should open at the cursor rather than over
   the icon label.
+- When multiple desktop items are selected, right-clicking a selected item must
+  open a selection-aware menu. File-only selections may expose file commands
+  such as Show in Files, Quick Look, and Move to Trash; mixed selections that
+  include volumes must stay to commands that safely apply to both files and
+  mounted volumes.
 - Fix visible layout bugs:
   - menu bar item spacing,
   - tray glyph replacement with local battery/Wi-Fi/control icons,
@@ -245,6 +258,9 @@ shell.
 - Shell render tests cover light/dark rendering and foreground context-menu
   glass/scaling without requiring a checked-in visual reference image.
 - Shell render tests cover missing desktop shortcut icon fallback drawing.
+- Shell layout tests cover two-axis desktop icon placement, duplicate-cell
+  avoidance, and Dock-aware grid clearance; shell visual tests cover desktop
+  image previews and marquee/selected-icon rendering.
 - Shell render tests cover live-compositor overlay separation so launcher and
   menu dismissal cannot leave stale scene-buffer pixels behind.
 - Dock add/remove/reorder tests cover alias compaction, duplicate prevention,

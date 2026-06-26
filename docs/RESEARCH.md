@@ -231,6 +231,11 @@ The xdg-desktop-portal Settings documentation standardizes
 `Read`, `ReadOne`, `ReadAll`, and `SettingChanged` on the frontend portal and
 similar backend methods/signals for desktop implementations. Orange implements
 the color-scheme subset for GTK/libadwaita and portal-aware clients.
+The frontend `Read` method is deprecated and keeps a historical double-variant
+return shape; newer `ReadOne`, backend `Read`, `ReadAll`, and
+`SettingChanged` use the normal single value variant. Returning the single
+variant from frontend `Read` can make Nautilus/GTK callers attempt to unpack a
+raw unsigned integer as a variant and crash.
 
 Apple's current appearance documentation says light/dark appearance applies to
 the menu bar, Dock, windows, and built-in apps. For Orange this means context
@@ -364,6 +369,23 @@ Share, and Move to Trash actions, and stores dragged desktop positions for the
 full visible desktop item capacity. Date/size desktop sorts remain out of
 scope until Orange threads filesystem metadata through shell layout.
 
+Apple's desktop organization guide describes desktop item layout as an icon
+view surface with configurable icon size, grid spacing, text size, label
+position, stacking, and sorting/cleanup commands. The current implementation
+therefore keeps unsaved desktop items arranged from the right edge, but lets
+manual dragged positions snap across the full usable desktop grid. That grid
+must be computed after Dock layout so bottom/left/right Dock positions reserve
+real clearance before cells are chosen. Apple's file preview guidance and
+Finder/desktop behavior also support image thumbnails, drag-selection marquees,
+and selected-item highlighting. Orange limits previews to image files that
+decode locally, uses the marquee to select multiple desktop icons, and does not
+add blue highlighting to the icon-move gesture itself.
+For multiple highlighted desktop items, the menu should describe the active
+selection rather than a single icon. Orange uses the full file command set for
+file-only selections, but switches to a smaller mixed-selection command set when
+volumes are included so volume rows are not offered file-only actions such as
+Move to Trash.
+
 Because Dock and menu-bar surfaces are foreground shell chrome, right-clicks on
 their empty glass/background regions should be consumed by shell hit testing.
 They should not be treated as empty desktop background hits merely because the
@@ -441,6 +463,10 @@ pointer is not over a child icon or text item.
   https://support.apple.com/guide/mac-help/change-desktop-dock-settings-mchlp1119/mac
 - Apple Support, "Use the Dock on Mac":
   https://support.apple.com/guide/mac-help/open-apps-from-the-dock-mh35859/mac
+- Apple Support, "Organize files on your desktop":
+  https://support.apple.com/guide/mac-help/organize-files-on-your-desktop-mh35846/mac
+- Apple Support, "Preview a file":
+  https://support.apple.com/guide/mac-help/preview-a-file-mh14119/mac
 - Apple Support, "System Settings on your Mac":
   https://support.apple.com/guide/imac/system-settings-apda966cb8af/mac
 - GNOME Settings source mirror:

@@ -356,6 +356,40 @@ static const char *desktop_file_context_icon_names[] = {
 	"user-trash",
 };
 
+static const char *desktop_selection_context_labels[] = {
+	"Open",
+	"Copy",
+	"Get Info",
+	"Share",
+};
+
+static const char *desktop_selection_context_icon_names[] = {
+	"document-open",
+	"edit-copy",
+	"document-properties",
+	"document-send",
+};
+
+static const char *desktop_file_selection_context_labels[] = {
+	"Open",
+	"Show in Files",
+	"Copy",
+	"Get Info",
+	"Quick Look",
+	"Share",
+	"Move to Trash",
+};
+
+static const char *desktop_file_selection_context_icon_names[] = {
+	"document-open",
+	"system-file-manager",
+	"edit-copy",
+	"document-properties",
+	"zoom-fit-best",
+	"document-send",
+	"user-trash",
+};
+
 
 static const char *status_context_labels[] = {
 	"Wi-Fi",
@@ -808,6 +842,28 @@ const char *orange_menubar_context_menu_shortcut_label(
 		case 6:
 			return "Space";
 		case 8:
+			return "Cmd+Del";
+		default:
+			return NULL;
+		}
+	case ORANGE_CONTEXT_MENU_DESKTOP_SELECTION:
+		switch (index) {
+		case 1:
+			return "Cmd+C";
+		case 2:
+			return "Cmd+I";
+		default:
+			return NULL;
+		}
+	case ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION:
+		switch (index) {
+		case 2:
+			return "Cmd+C";
+		case 3:
+			return "Cmd+I";
+		case 4:
+			return "Space";
+		case 6:
 			return "Cmd+Del";
 		default:
 			return NULL;
@@ -1684,6 +1740,20 @@ void orange_menubar_warm_assets(struct orange_assets *assets) {
 		}
 		break;
 	}
+	case ORANGE_CONTEXT_MENU_DESKTOP_SELECTION:
+		if (index >= 0 &&
+				index < (int)(sizeof(desktop_selection_context_labels) /
+					sizeof(desktop_selection_context_labels[0]))) {
+			return desktop_selection_context_labels[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION:
+		if (index >= 0 &&
+				index < (int)(sizeof(desktop_file_selection_context_labels) /
+					sizeof(desktop_file_selection_context_labels[0]))) {
+			return desktop_file_selection_context_labels[index];
+		}
+		break;
 	case ORANGE_CONTEXT_MENU_DOCK:
 		if (index >= 0 &&
 				index < (int)(sizeof(dock_context_labels) /
@@ -1869,6 +1939,20 @@ void orange_menubar_warm_assets(struct orange_assets *assets) {
 		}
 		break;
 	}
+	case ORANGE_CONTEXT_MENU_DESKTOP_SELECTION:
+		if (index >= 0 &&
+				index < (int)(sizeof(desktop_selection_context_icon_names) /
+					sizeof(desktop_selection_context_icon_names[0]))) {
+			return desktop_selection_context_icon_names[index];
+		}
+		break;
+	case ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION:
+		if (index >= 0 &&
+				index < (int)(sizeof(desktop_file_selection_context_icon_names) /
+					sizeof(desktop_file_selection_context_icon_names[0]))) {
+			return desktop_file_selection_context_icon_names[index];
+		}
+		break;
 	case ORANGE_CONTEXT_MENU_DOCK:
 		if (index >= 0 &&
 				index < (int)(sizeof(dock_context_icon_names) /

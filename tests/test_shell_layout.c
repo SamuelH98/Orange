@@ -28,6 +28,13 @@ static void assert_app_menu_tabs_do_not_overlap(
 	}
 }
 
+static bool rects_overlap(struct orange_rect a, struct orange_rect b) {
+	return a.x < b.x + b.width &&
+		a.x + a.width > b.x &&
+		a.y < b.y + b.height &&
+		a.y + a.height > b.y;
+}
+
 static void test_dock_hit(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
@@ -151,6 +158,10 @@ static void test_default_dock_apps_have_fallback_commands(void) {
 				"XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu") != NULL);
 			assert(strstr(command,
 				"env -u GTK_THEME -u GTK_ICON_THEME") != NULL);
+		}
+		if (strcmp(config.dock_apps[i], "__trash__") == 0) {
+			assert(strstr(command, "nautilus trash:///") != NULL);
+			assert(strstr(command, "gio open trash:///") != NULL);
 		}
 	}
 	const char *settings_command =
@@ -284,6 +295,67 @@ static void test_desktop_custom_position_snaps_to_grid(void) {
 	/* Items are placed in grid from right side */
 	assert(layout.desktop_items[0].x >= 1700);
 	assert(layout.desktop_items[0].y >= layout.menu_bar.height);
+}
+
+static void test_desktop_custom_position_uses_horizontal_grid(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.desktop_positions[0] =
+		(struct orange_desktop_icon_position){true, 420, 260};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920,1080,false,&config,0,1, NULL, 0, &layout);
+	struct orange_rect item = layout.desktop_items[0];
+	assert(item.x < 700);
+	assert(item.y >= layout.menu_bar.height);
+	assert(item.y + item.height < layout.dock.y - 4);
+}
+
+static void test_desktop_duplicate_saved_positions_do_not_overlap(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.desktop_positions[0] =
+		(struct orange_desktop_icon_position){true, 420, 260};
+	config.desktop_positions[1] =
+		(struct orange_desktop_icon_position){true, 420, 260};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920,1080,false,&config,0,2, NULL, 0, &layout);
+	assert(layout.desktop_item_count == 2);
+	assert(!rects_overlap(layout.desktop_items[0], layout.desktop_items[1]));
+}
+
+static void test_desktop_grid_keeps_visible_spacing(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.desktop_positions[0] =
+		(struct orange_desktop_icon_position){true, 420, 260};
+	config.desktop_positions[1] =
+		(struct orange_desktop_icon_position){true, 520, 260};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920,1080,false,&config,0,2, NULL, 0, &layout);
+	assert(layout.desktop_item_count == 2);
+	int dx = abs(layout.desktop_items[0].x - layout.desktop_items[1].x);
+	int dy = abs(layout.desktop_items[0].y - layout.desktop_items[1].y);
+	assert(dx >= layout.desktop_items[0].width / 2 ||
+		dy >= layout.desktop_items[0].height / 2);
+}
+
+static void test_desktop_grid_reserves_side_dock_space(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.dock_position = ORANGE_DOCK_POSITION_RIGHT;
+	config.desktop_positions[0] =
+		(struct orange_desktop_icon_position){true, 1900, 360};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(1920,1080,false,&config,0,1, NULL, 0, &layout);
+	struct orange_rect item = layout.desktop_items[0];
+	assert(item.x + item.width < layout.dock.x - 4);
+
+	config.dock_position = ORANGE_DOCK_POSITION_LEFT;
+	config.desktop_positions[0] =
+		(struct orange_desktop_icon_position){true, 0, 360};
+	orange_shell_layout_compute(1920,1080,false,&config,0,1, NULL, 0, &layout);
+	item = layout.desktop_items[0];
+	assert(item.x > layout.dock.x + layout.dock.width + 4);
 }
 
 static void test_desktop_custom_position_clamps_to_visible_area(void) {
@@ -1137,6 +1209,25 @@ static void test_context_menu_hit(void) {
 		ORANGE_CONTEXT_MENU_DESKTOP_FILE, 2), "Copy") == 0);
 	assert(strcmp(orange_menubar_context_menu_label(
 		ORANGE_CONTEXT_MENU_DESKTOP_FILE, 8), "Move to Trash") == 0);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION, 0, 360, 320, NULL);
+	assert(layout.context_menu_item_count == 7);
+	assert(layout.context_menu_separator[2]);
+	assert(layout.context_menu_separator[4]);
+	assert(layout.context_menu_separator[6]);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION, 6),
+		"Move to Trash") == 0);
+
+	orange_shell_layout_set_context_menu(&layout,
+		ORANGE_CONTEXT_MENU_DESKTOP_SELECTION, 0, 360, 320, NULL);
+	assert(layout.context_menu_item_count == 4);
+	assert(layout.context_menu_separator[1]);
+	assert(strcmp(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DESKTOP_SELECTION, 3), "Share") == 0);
+	assert(orange_menubar_context_menu_label(
+		ORANGE_CONTEXT_MENU_DESKTOP_SELECTION, 4) == NULL);
 }
 
 static void test_widget_hit_and_context_menu(void) {
@@ -1313,6 +1404,10 @@ int main(void) {
 	test_desktop_hit();
 	test_desktop_requires_volumes();
 	test_desktop_custom_position_snaps_to_grid();
+	test_desktop_custom_position_uses_horizontal_grid();
+	test_desktop_duplicate_saved_positions_do_not_overlap();
+	test_desktop_grid_keeps_visible_spacing();
+	test_desktop_grid_reserves_side_dock_space();
 	test_desktop_custom_position_clamps_to_visible_area();
 	test_desktop_sort_modes_order_items();
 	test_system_menu_hit();
