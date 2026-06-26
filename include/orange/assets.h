@@ -3,8 +3,10 @@
 
 #include <cairo/cairo.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #define ORANGE_ASSET_ICON_MAX 1024
+#define ORANGE_ASSET_PREVIEW_MAX 64
 #define ORANGE_ASSET_ICON_NAME_MAX 128
 #define ORANGE_THEME_NAME_MAX 128
 
@@ -19,6 +21,14 @@ struct orange_named_icon {
 	cairo_surface_t *surface[ORANGE_ASSET_ICON_VARIANTS];
 	bool resolved[ORANGE_ASSET_ICON_VARIANTS];
 	char *cached_path; /* strdup'd path of the resolved icon file */
+};
+
+struct orange_image_preview {
+	char path[4096];
+	int64_t mtime_sec;
+	int64_t size;
+	bool resolved;
+	cairo_surface_t *surface;
 };
 
 struct orange_assets {
@@ -45,6 +55,9 @@ struct orange_assets {
 	struct orange_named_icon icons[ORANGE_ASSET_ICON_MAX];
 	int icon_count;
 	int icon_lookup[ORANGE_ASSET_ICON_MAX]; /* hash table for O(1) icon lookup */
+	struct orange_image_preview previews[ORANGE_ASSET_PREVIEW_MAX];
+	int preview_count;
+	int preview_next_evict;
 	char asset_root[4096];
 	char icon_theme[ORANGE_THEME_NAME_MAX];
 	bool wallpaper_configured;
@@ -81,6 +94,10 @@ cairo_surface_t *orange_assets_icon(
 	struct orange_assets *assets,
 	enum orange_asset_icon_variant variant,
 	const char *name);
+cairo_surface_t *orange_assets_load_image_file(const char *path);
+cairo_surface_t *orange_assets_image_preview(
+	struct orange_assets *assets,
+	const char *path);
 void orange_assets_preload_icon(
 	struct orange_assets *assets,
 	const char *name);

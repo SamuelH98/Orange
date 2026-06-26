@@ -57,6 +57,8 @@ static bool has_svg_suffix(const char *name) {
 	return has_suffix(name, ".svg", 4) || has_suffix(name, ".svgz", 5);
 }
 
+static cairo_surface_t *load_svg(const char *path, int size);
+
 static cairo_surface_t *load_png(const char *path) {
 	cairo_surface_t *surface = cairo_image_surface_create_from_png(path);
 	if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
@@ -119,6 +121,64 @@ static cairo_surface_t *load_raster_image(const char *path) {
 	cairo_surface_mark_dirty(surface);
 	g_object_unref(pixbuf);
 	return surface;
+}
+
+cairo_surface_t *orange_assets_load_image_file(const char *path) {
+	if (path == NULL || path[0] == '\0') {
+		return NULL;
+	}
+	if (has_svg_suffix(path)) {
+		return load_svg(path, ICON_LOOKUP_SIZE * 2);
+	}
+	return load_raster_image(path);
+}
+
+cairo_surface_t *orange_assets_image_preview(
+		struct orange_assets *assets,
+		const char *path) {
+	if (assets == NULL) {
+		return orange_assets_load_image_file(path);
+	}
+	if (path == NULL || path[0] == '\0') {
+		return NULL;
+	}
+	struct stat st;
+	if (stat(path, &st) != 0) {
+		return NULL;
+	}
+	int64_t mtime_sec = (int64_t)st.st_mtime;
+	int64_t size = (int64_t)st.st_size;
+
+	for (int i = 0; i < assets->preview_count; i++) {
+		struct orange_image_preview *preview = &assets->previews[i];
+		if (strcmp(preview->path, path) == 0 &&
+				preview->mtime_sec == mtime_sec &&
+				preview->size == size) {
+			return preview->resolved ? preview->surface : NULL;
+		}
+	}
+
+	int slot = assets->preview_count;
+	if (slot < ORANGE_ASSET_PREVIEW_MAX) {
+		assets->preview_count++;
+	} else {
+		slot = assets->preview_next_evict;
+		assets->preview_next_evict =
+			(assets->preview_next_evict + 1) % ORANGE_ASSET_PREVIEW_MAX;
+		if (assets->previews[slot].surface != NULL) {
+			cairo_surface_destroy(assets->previews[slot].surface);
+			assets->previews[slot].surface = NULL;
+		}
+	}
+
+	struct orange_image_preview *preview = &assets->previews[slot];
+	memset(preview, 0, sizeof(*preview));
+	snprintf(preview->path, sizeof(preview->path), "%s", path);
+	preview->mtime_sec = mtime_sec;
+	preview->size = size;
+	preview->surface = orange_assets_load_image_file(path);
+	preview->resolved = preview->surface != NULL;
+	return preview->surface;
 }
 
 static cairo_surface_t *load_root_png(const char *root, const char *relative) {
@@ -1697,6 +1757,12 @@ void orange_assets_finish(struct orange_assets *assets) {
 	for (int i = 0; i < ORANGE_ASSET_ICON_MAX; i++) {
 		assets->icon_lookup[i] = -1;
 	}
+	for (int i = 0; i < assets->preview_count; i++) {
+		destroy_surface(&assets->previews[i].surface);
+		assets->previews[i] = (struct orange_image_preview){0};
+	}
+	assets->preview_count = 0;
+	assets->preview_next_evict = 0;
 	assets->asset_root[0] = '\0';
 	assets->icon_theme[0] = '\0';
 	assets->wallpaper_checked = false;

@@ -873,6 +873,88 @@ static void test_desktop_volume_icon_draws(void) {
 	free(pixels);
 }
 
+static void test_desktop_image_preview_and_selection_draw(void) {
+	const char *preview_path = "/tmp/orange-shell-preview-test.png";
+	cairo_surface_t *preview = cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, 16, 16);
+	cairo_t *preview_cr = cairo_create(preview);
+	cairo_set_source_rgb(preview_cr, 0.08, 0.82, 0.18);
+	cairo_paint(preview_cr);
+	cairo_destroy(preview_cr);
+	cairo_surface_write_to_png(preview, preview_path);
+	cairo_surface_destroy(preview);
+
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *pixels = calloc((size_t)height, (size_t)stride);
+	assert(pixels != NULL);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+	struct orange_file_info files[1] = {
+		{
+			.name = "Preview.png",
+			.path = "/tmp/orange-shell-preview-test.png",
+			.icon_name = "image-x-generic",
+			.is_image = true,
+		},
+	};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width,height,false,&config,0,0, files, 1, &layout);
+	struct orange_shell_state state = {
+		.system_menu_open = false,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1757638380,
+		.assets = NULL,
+		.config = &config,
+		.desktop_files = files,
+		.desktop_file_count = 1,
+		.desktop_selection_active = true,
+		.desktop_selection_rect = {
+			.x = layout.desktop_items[0].x - 12,
+			.y = layout.desktop_items[0].y - 12,
+			.width = layout.desktop_items[0].width + 24,
+			.height = layout.desktop_items[0].height + 24,
+		},
+	};
+	state.desktop_selected[0] = true;
+	const struct orange_shell_draw_options options = {
+		.draw_wallpaper = false,
+	};
+	orange_shell_draw_with_options(pixels, width, height, stride,
+		&state, &options);
+
+	struct orange_rect item = layout.desktop_items[0];
+	struct color preview_pixel = pixel_at(pixels, stride,
+		item.x + item.width / 2,
+		item.y + item.width / 2);
+	assert(preview_pixel.g > 160);
+	assert(preview_pixel.r < 80);
+	assert(preview_pixel.b < 90);
+
+	struct color highlight_pixel = pixel_at(pixels, stride,
+		item.x - 3,
+		item.y + item.height - 6);
+	assert(highlight_pixel.b > highlight_pixel.r);
+	assert(highlight_pixel.b > highlight_pixel.g);
+	assert(highlight_pixel.b > 40);
+	assert(highlight_pixel.a > 40);
+
+	struct color marquee_pixel = pixel_at(pixels, stride,
+		state.desktop_selection_rect.x + 2,
+		state.desktop_selection_rect.y + 2);
+	assert(marquee_pixel.b > marquee_pixel.r);
+	assert(marquee_pixel.a > 10);
+
+	remove(preview_path);
+	free(pixels);
+}
+
 static void test_dock_magnification_wave_paints_above_base_icons(void) {
 	const int width = 1440;
 	const int height = 900;
@@ -1101,6 +1183,7 @@ int main(void) {
 	test_notification_overlay_uses_backdrop_color();
 	test_notification_center_renders_panel_cards_and_button();
 	test_desktop_volume_icon_draws();
+	test_desktop_image_preview_and_selection_draw();
 	test_dock_magnification_wave_paints_above_base_icons();
 	test_default_dock_prefers_desktop_icons_before_role_icons();
 	puts("shell visual tests passed");
