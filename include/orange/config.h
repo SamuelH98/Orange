@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 #define ORANGE_CURSOR_THEME_MAX 128
-#define ORANGE_DESKTOP_POSITION_MAX 8
+#define ORANGE_DESKTOP_POSITION_MAX 64
 #define ORANGE_DOCK_MAX 24
 
 enum orange_widget_size {

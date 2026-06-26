@@ -44,12 +44,24 @@ static bool parse_context_menu_kind(
 		*kind = ORANGE_CONTEXT_MENU_APP_TOOLS;
 	} else if (strcmp(value, "dock") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_DOCK;
+	} else if (strcmp(value, "dock-running") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_DOCK_RUNNING;
+	} else if (strcmp(value, "dock-separator") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_DOCK_SEPARATOR;
+	} else if (strcmp(value, "dock-launcher") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_DOCK_LAUNCHER;
+	} else if (strcmp(value, "dock-trash") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_DOCK_TRASH;
 	} else if (strcmp(value, "widget") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_WIDGET;
 	} else if (strcmp(value, "desktop") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_DESKTOP;
 	} else if (strcmp(value, "desktop-icon") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_DESKTOP_ICON;
+	} else if (strcmp(value, "desktop-file") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_DESKTOP_FILE;
+	} else if (strcmp(value, "desktop-volume") == 0) {
+		*kind = ORANGE_CONTEXT_MENU_DESKTOP_VOLUME;
 	} else if (strcmp(value, "status") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_STATUS;
 	} else if (strcmp(value, "status-wifi") == 0) {
@@ -163,6 +175,23 @@ int main(int argc, char **argv) {
 	struct orange_desktop_entry desktop_entries[ORANGE_DESKTOP_MAX];
 	size_t desktop_entry_count = orange_desktop_entry_load_all_xdg(
 		desktop_entries, ORANGE_DESKTOP_MAX);
+	struct orange_file_info render_files[1] = {{
+		.name = "Project Notes.txt",
+		.path = "/tmp/Project Notes.txt",
+		.icon_name = "text-x-generic",
+		.is_directory = false,
+	}};
+	struct orange_volume_info render_volumes[1] = {{
+		.label = "Orange Disk",
+		.mount_path = "/media/orange/Orange Disk",
+		.icon_name = "drive-removable-media",
+		.is_removable = true,
+		.is_internal = false,
+	}};
+	int render_file_count =
+		context_kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE ? 1 : 0;
+	int render_volume_count =
+		context_kind == ORANGE_CONTEXT_MENU_DESKTOP_VOLUME ? 1 : 0;
 
 	struct orange_shell_state state = {
 		.system_menu_open = false,
@@ -175,6 +204,11 @@ int main(int argc, char **argv) {
 		.config = &config,
 		.desktop_entries = desktop_entries,
 		.desktop_entry_count = (int)desktop_entry_count,
+		.volumes = render_volumes,
+		.volume_count = render_volume_count,
+		.desktop_volume_count = render_volume_count,
+		.desktop_files = render_files,
+		.desktop_file_count = render_file_count,
 		.launcher_open = launcher,
 		.launcher_display_mode = launcher_search ?
 			ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY :

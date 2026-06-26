@@ -309,6 +309,19 @@ static const char *orange_settings_command =
 	"mate-control-center; "
 	"fi; true";
 
+static const char *orange_about_command =
+	"if command -v gnome-control-center >/dev/null 2>&1; then "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center system about || "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center system || "
+	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center -s About; "
+	"elif [ -x build/orange-settings ]; then "
+	"GSK_RENDERER=cairo build/orange-settings orange.conf; "
+	"elif command -v systemsettings >/dev/null 2>&1; then "
+	"systemsettings kcm_about-distro || systemsettings kcm_info; "
+	"else "
+	"printf 'Orange\\n'; "
+	"fi; true";
+
 static const char *background_settings_command =
 	"if command -v gnome-control-center >/dev/null 2>&1; then "
 	ORANGE_GNOME_SETTINGS_ENV "gnome-control-center background; "
@@ -739,6 +752,9 @@ static void update_desktop_files(struct orange_server *server) {
 		return;
 	}
 	char desktop_path[1024];
+	if (strlen(home) + strlen("/Desktop") >= sizeof(desktop_path)) {
+		return;
+	}
 	snprintf(desktop_path, sizeof(desktop_path), "%s/Desktop", home);
 
 	DIR *dir = opendir(desktop_path);
@@ -762,9 +778,15 @@ static void update_desktop_files(struct orange_server *server) {
 		int idx = server->desktop_file_count;
 		snprintf(server->desktop_files[idx].name,
 			sizeof(server->desktop_files[idx].name), "%s", entry->d_name);
-		snprintf(server->desktop_files[idx].path,
-			sizeof(server->desktop_files[idx].path),
-			"%s/%s", desktop_path, entry->d_name);
+		size_t desktop_len = strlen(desktop_path);
+		if (desktop_len + 1 + len >=
+				sizeof(server->desktop_files[idx].path)) {
+			continue;
+		}
+		memcpy(server->desktop_files[idx].path, desktop_path, desktop_len);
+		server->desktop_files[idx].path[desktop_len] = '/';
+		memcpy(server->desktop_files[idx].path + desktop_len + 1,
+			entry->d_name, len + 1);
 
 		struct stat st;
 		if (stat(server->desktop_files[idx].path, &st) == 0) {
@@ -1483,6 +1505,48 @@ static void launch_command(const char *command) {
 		execl("/bin/sh", "sh", "-c", command, (char *)NULL);
 		_exit(127);
 	}
+}
+
+static bool append_shell_quoted_arg(
+		char *out,
+		size_t out_size,
+		size_t *len,
+		const char *text) {
+	if (out == NULL || len == NULL || *len + 1 >= out_size) {
+		return false;
+	}
+	out[(*len)++] = '\'';
+	for (const char *p = text != NULL ? text : ""; *p != '\0'; p++) {
+		if (*p == '\'') {
+			const char *quote = "'\\''";
+			for (const char *q = quote; *q != '\0'; q++) {
+				if (*len + 1 >= out_size) {
+					return false;
+				}
+				out[(*len)++] = *q;
+			}
+		} else {
+			if (*len + 1 >= out_size) {
+				return false;
+			}
+			out[(*len)++] = *p;
+		}
+	}
+	if (*len + 1 >= out_size) {
+		return false;
+	}
+	out[(*len)++] = '\'';
+	out[*len] = '\0';
+	return true;
+}
+
+static bool shell_quote_arg(const char *text, char *out, size_t out_size) {
+	if (out == NULL || out_size == 0) {
+		return false;
+	}
+	size_t len = 0;
+	out[0] = '\0';
+	return append_shell_quoted_arg(out, out_size, &len, text);
 }
 
 static void launch_terminal(void) {
@@ -2382,6 +2446,54 @@ static void compute_shell_layout_for_output(
 		orange_shell_layout_set_launcher(layout, searching,
 			server->launcher_display_mode, server->launcher_app_count);
 	}
+}
+
+static bool desktop_item_info_for_context_target(
+		struct orange_server *server,
+		int target,
+		struct orange_desktop_item_info *info) {
+	if (server == NULL || info == NULL || target < 0) {
+		return false;
+	}
+	int local_x = 0;
+	int local_y = 0;
+	struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+	(void)local_x;
+	(void)local_y;
+	if (output == NULL) {
+		return false;
+	}
+	struct orange_shell_layout layout;
+	compute_shell_layout_for_output(server, output, &layout);
+	if (target >= layout.desktop_item_count) {
+		return false;
+	}
+	*info = layout.desktop_item_info[target];
+	return true;
+}
+
+static int desktop_file_index_for_context_target(
+		struct orange_server *server,
+		int target) {
+	struct orange_desktop_item_info info;
+	if (desktop_item_info_for_context_target(server, target, &info) &&
+			info.kind == ORANGE_DESKTOP_ITEM_FILE) {
+		return info.index;
+	}
+	return target >= 0 && target < server->desktop_file_count ? target : -1;
+}
+
+static int desktop_volume_index_for_context_target(
+		struct orange_server *server,
+		int target) {
+	struct orange_desktop_item_info info;
+	if (desktop_item_info_for_context_target(server, target, &info) &&
+			info.kind == ORANGE_DESKTOP_ITEM_VOLUME) {
+		return info.index;
+	}
+	int fallback = target - server->desktop_file_count;
+	return fallback >= 0 && fallback < server->desktop_volume_count ?
+		fallback : -1;
 }
 
 static int dock_hover_index_for_pointer(
@@ -3540,7 +3652,10 @@ static void apply_fullscreen(struct orange_view *view, bool fullscreen) {
 static void handle_shell_menu_action(struct orange_server *server, int index) {
 	switch (index) {
 	case 0:
-		focus_view_for_app_id(server, ".About");
+		if (!focus_view_for_app_id(server, ".About") &&
+				!focus_view_for_app_id(server, "orange-about")) {
+			launch_command(orange_about_command);
+		}
 		break;
 	case 1:
 		if (!focus_view_for_app_id(server, "orange-settings") &&
@@ -3550,6 +3665,9 @@ static void handle_shell_menu_action(struct orange_server *server, int index) {
 		break;
 	case 2:
 		launch_command("gnome-software || plasma-discover || true");
+		break;
+	case 3:
+		launch_command("gio open recent:/// || xdg-open \"$HOME/.local/share/recently-used.xbel\" || true");
 		break;
 	case 4:
 		close_focused_view(server);
@@ -3642,6 +3760,89 @@ static void cycle_minimize_effect(struct orange_server *server) {
 		server->config.minimize_effect == ORANGE_MINIMIZE_EFFECT_SCALE ?
 		ORANGE_MINIMIZE_EFFECT_GENIE : ORANGE_MINIMIZE_EFFECT_SCALE;
 	orange_config_save(&server->config, server->options->config_path);
+}
+
+static void cycle_desktop_sort_mode(struct orange_server *server) {
+	switch (server->config.desktop_sort_by) {
+	case ORANGE_DESKTOP_SORT_NONE:
+	case ORANGE_DESKTOP_SORT_SNAP_TO_GRID:
+		server->config.desktop_sort_by = ORANGE_DESKTOP_SORT_NAME;
+		break;
+	case ORANGE_DESKTOP_SORT_NAME:
+		server->config.desktop_sort_by = ORANGE_DESKTOP_SORT_KIND;
+		break;
+	case ORANGE_DESKTOP_SORT_KIND:
+	case ORANGE_DESKTOP_SORT_DATE_ADDED:
+	case ORANGE_DESKTOP_SORT_DATE_MODIFIED:
+	case ORANGE_DESKTOP_SORT_SIZE:
+	default:
+		server->config.desktop_sort_by = ORANGE_DESKTOP_SORT_NONE;
+		break;
+	}
+	orange_config_save(&server->config, server->options->config_path);
+}
+
+static void clean_up_desktop_grid(struct orange_server *server) {
+	server->config.desktop_sort_by = ORANGE_DESKTOP_SORT_SNAP_TO_GRID;
+	for (int i = 0; i < ORANGE_DESKTOP_POSITION_MAX; i++) {
+		server->config.desktop_positions[i] =
+			(struct orange_desktop_icon_position){0};
+	}
+	orange_config_save(&server->config, server->options->config_path);
+}
+
+static void open_launcher_mode(
+		struct orange_server *server,
+		int mode,
+		enum orange_launcher_mode display_mode) {
+	launcher_open_overlay(server, true, display_mode);
+	if (mode >= 0 && mode < ORANGE_LAUNCHER_MODE_COUNT) {
+		server->launcher_current_mode = mode;
+		server->launcher_scroll_row = 0;
+		server->launcher_hot_app = -1;
+		launcher_refresh_filter(server);
+	}
+}
+
+static void hide_focused_app(struct orange_server *server) {
+	if (server != NULL && server->focused_view != NULL) {
+		set_view_minimized(server->focused_view, true);
+	}
+}
+
+static void hide_other_apps(struct orange_server *server) {
+	if (server == NULL) {
+		return;
+	}
+	struct orange_view *view;
+	wl_list_for_each(view, &server->views, link) {
+		if (view->mapped && view != server->focused_view) {
+			set_view_minimized(view, true);
+		}
+	}
+}
+
+static void show_all_apps(struct orange_server *server) {
+	if (server == NULL) {
+		return;
+	}
+	struct orange_view *view;
+	struct orange_view *focus_target = server->focused_view;
+	wl_list_for_each(view, &server->views, link) {
+		if (!view->mapped) {
+			continue;
+		}
+		if (view->minimized) {
+			set_view_minimized(view, false);
+		}
+		wlr_scene_node_raise_to_top(&view->scene_tree->node);
+		if (focus_target == NULL) {
+			focus_target = view;
+		}
+	}
+	if (focus_target != NULL) {
+		focus_view(focus_target, focus_target->xdg_surface->surface);
+	}
 }
 
 static bool try_focused_app_dbus_action(
@@ -3811,6 +4012,9 @@ static void handle_app_file_menu_action(
 	case 1:
 		send_focused_shortcut(server, KEY_O, true, false, false);
 		break;
+	case 2:
+		launch_command("gio open recent:/// || xdg-open \"$HOME/.local/share/recently-used.xbel\" || true");
+		break;
 	case 3:
 		send_focused_shortcut(server, KEY_W, true, false, false);
 		break;
@@ -3870,6 +4074,11 @@ static void handle_app_view_menu_action(
 		break;
 	case 2:
 		send_focused_shortcut(server, KEY_0, true, false, false);
+		break;
+	case 3:
+		if (server->focused_view != NULL) {
+			apply_maximize(server->focused_view, true);
+		}
 		break;
 	case 4:
 		send_focused_shortcut(server, KEY_F11, false, false, false);
@@ -3985,6 +4194,10 @@ static void handle_app_tools_menu_action(
 	case 1:
 		send_focused_shortcut(server, KEY_A, true, true, false);
 		break;
+	case 2:
+		open_launcher_mode(server, ORANGE_LAUNCHER_MODE_ACTIONS,
+			ORANGE_LAUNCHER_DISPLAY_FULL);
+		break;
 	case 3:
 		send_focused_shortcut(server, KEY_COMMA, true, false, false);
 		break;
@@ -4061,6 +4274,114 @@ static void toggle_open_at_login(struct orange_server *server, int launcher_idx)
 	launch_command(cmd);
 }
 
+static void launch_desktop_file_open(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[8400];
+	snprintf(cmd, sizeof(cmd), "gio open %s || xdg-open %s || true",
+		quoted, quoted);
+	launch_command(cmd);
+}
+
+static void launch_desktop_file_show_in_files(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[8400];
+	snprintf(cmd, sizeof(cmd),
+		"p=%s; nautilus --select \"$p\" 2>/dev/null || "
+		"gio open \"$(dirname -- \"$p\")\" || "
+		"xdg-open \"$(dirname -- \"$p\")\" || true",
+		quoted);
+	launch_command(cmd);
+}
+
+static void launch_desktop_file_copy(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[8400];
+	snprintf(cmd, sizeof(cmd),
+		"p=%s; if command -v wl-copy >/dev/null 2>&1; then "
+		"printf 'file://%%s\\n' \"$p\" | wl-copy --type text/uri-list || "
+		"printf '%%s' \"$p\" | wl-copy; "
+		"elif command -v xclip >/dev/null 2>&1; then "
+		"printf '%%s' \"$p\" | xclip -selection clipboard; "
+		"fi; true",
+		quoted);
+	launch_command(cmd);
+}
+
+static void launch_desktop_file_get_info(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[8400];
+	snprintf(cmd, sizeof(cmd),
+		"p=%s; nautilus --properties \"$p\" 2>/dev/null || "
+		"gio info \"$p\" || true",
+		quoted);
+	launch_command(cmd);
+}
+
+static void launch_desktop_file_duplicate(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[9000];
+	snprintf(cmd, sizeof(cmd),
+		"p=%s; dir=$(dirname -- \"$p\"); base=$(basename -- \"$p\"); "
+		"n=0; while [ $n -lt 100 ]; do "
+		"if [ $n -eq 0 ]; then target=\"$dir/$base copy\"; "
+		"else target=\"$dir/$base copy $n\"; fi; "
+		"if ! [ -e \"$target\" ]; then cp -a -- \"$p\" \"$target\"; break; fi; "
+		"n=$((n + 1)); done; true",
+		quoted);
+	launch_command(cmd);
+}
+
+static void launch_desktop_file_quick_look(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[8400];
+	snprintf(cmd, sizeof(cmd),
+		"p=%s; sushi \"$p\" 2>/dev/null || "
+		"gio open \"$p\" || xdg-open \"$p\" || true",
+		quoted);
+	launch_command(cmd);
+}
+
+static void launch_desktop_file_share(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[8400];
+	snprintf(cmd, sizeof(cmd),
+		"p=%s; xdg-email --attach \"$p\" 2>/dev/null || "
+		"gio open \"$(dirname -- \"$p\")\" || true",
+		quoted);
+	launch_command(cmd);
+}
+
+static void launch_desktop_file_trash(const char *path) {
+	char quoted[4096];
+	if (!shell_quote_arg(path, quoted, sizeof(quoted))) {
+		return;
+	}
+	char cmd[4300];
+	snprintf(cmd, sizeof(cmd), "gio trash %s || true", quoted);
+	launch_command(cmd);
+}
+
 static void handle_context_menu_action(struct orange_server *server, int item_index) {
 	enum orange_context_menu_kind kind = server->context_menu_kind;
 	int target = server->context_menu_index;
@@ -4119,6 +4440,19 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 					!focus_view_for_app_id(server, "settings")) {
 				launch_command(orange_settings_command);
 			}
+			break;
+		case 2:
+			open_launcher_mode(server, ORANGE_LAUNCHER_MODE_ACTIONS,
+				ORANGE_LAUNCHER_DISPLAY_FULL);
+			break;
+		case 3:
+			hide_focused_app(server);
+			break;
+		case 4:
+			hide_other_apps(server);
+			break;
+		case 5:
+			show_all_apps(server);
 			break;
 		case 6:
 			if (!try_focused_app_dbus_action(server, "quit") &&
@@ -4205,6 +4539,32 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 		default:
 			break;
 		}
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_LAUNCHER) {
+		int launcher_idx = dock_launcher_for_visible_index(server, target);
+		switch (item_index) {
+		case 0:
+			launch_dock_launcher(server, launcher_idx);
+			break;
+		case 1:
+			launch_command(orange_settings_command);
+			break;
+		default:
+			break;
+		}
+	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_TRASH) {
+		switch (item_index) {
+		case 0:
+			launch_command("gio open trash:// || xdg-open trash:// || true");
+			break;
+		case 1:
+			launch_command("gio trash --empty || trash-empty || true");
+			break;
+		case 2:
+			launch_command(orange_settings_command);
+			break;
+		default:
+			break;
+		}
 	} else if (kind == ORANGE_CONTEXT_MENU_DOCK_SEPARATOR) {
 		switch (item_index) {
 		case 0:
@@ -4287,51 +4647,76 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			break;
 		}
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_FILE) {
-		int file_idx = target;
+		int file_idx = desktop_file_index_for_context_target(server, target);
 		if (file_idx >= 0 && file_idx < server->desktop_file_count) {
 			const struct orange_file_info *info = &server->desktop_files[file_idx];
 			switch (item_index) {
-			case 0: /* Open */
-				launch_command("xdg-open \"$HOME/Desktop\" || true");
+			case 0:
+				launch_desktop_file_open(info->path);
 				break;
-			case 1: /* Show in Files */
-				launch_command("xdg-open \"$HOME/Desktop\" || true");
+			case 1:
+				launch_desktop_file_show_in_files(info->path);
 				break;
-			case 2: /* Move to Trash */
-			{
-				char cmd[2048];
-				snprintf(cmd, sizeof(cmd),
-					"gio trash \"%s\" || true", info->path);
-				launch_command(cmd);
+			case 2:
+				launch_desktop_file_copy(info->path);
 				break;
-			}
+			case 3:
+				launch_desktop_file_get_info(info->path);
+				break;
+			case 4:
+				launch_desktop_file_show_in_files(info->path);
+				break;
+			case 5:
+				launch_desktop_file_duplicate(info->path);
+				break;
+			case 6:
+				launch_desktop_file_quick_look(info->path);
+				break;
+			case 7:
+				launch_desktop_file_share(info->path);
+				break;
+			case 8:
+				launch_desktop_file_trash(info->path);
+				break;
 			default:
 				break;
 			}
 		}
 	} else if (kind == ORANGE_CONTEXT_MENU_DESKTOP_VOLUME) {
-		int vol_idx = target - server->desktop_file_count;
+		int vol_idx = desktop_volume_index_for_context_target(server, target);
 		if (vol_idx >= 0 && vol_idx < server->desktop_volume_count) {
 			const struct orange_volume_info *vol = &server->volumes[vol_idx];
+			char quoted[4096];
 			switch (item_index) {
 			case 0: /* Open */
-				if (vol->mount_path[0] != '\0') {
-					char cmd[1024];
-					snprintf(cmd, sizeof(cmd), "xdg-open \"%s\" || true", vol->mount_path);
+				if (vol->mount_path[0] != '\0' &&
+						shell_quote_arg(vol->mount_path, quoted,
+							sizeof(quoted))) {
+					char cmd[8400];
+					snprintf(cmd, sizeof(cmd),
+						"gio open %s || xdg-open %s || true",
+						quoted, quoted);
 					launch_command(cmd);
 				}
 				break;
 			case 1: /* Get Info */
-				if (vol->mount_path[0] != '\0') {
-					char cmd[1024];
-					snprintf(cmd, sizeof(cmd), "nautilus --properties \"%s\" || true", vol->mount_path);
+				if (vol->mount_path[0] != '\0' &&
+						shell_quote_arg(vol->mount_path, quoted,
+							sizeof(quoted))) {
+					char cmd[8400];
+					snprintf(cmd, sizeof(cmd),
+						"nautilus --properties %s 2>/dev/null || gio info %s || true",
+						quoted, quoted);
 					launch_command(cmd);
 				}
 				break;
 			case 2: /* Eject */
-				if (vol->mount_path[0] != '\0') {
-					char cmd[1024];
-					snprintf(cmd, sizeof(cmd), "gio mount -u \"%s\" || true", vol->mount_path);
+				if (vol->mount_path[0] != '\0' &&
+						shell_quote_arg(vol->mount_path, quoted,
+							sizeof(quoted))) {
+					char cmd[4300];
+					snprintf(cmd, sizeof(cmd), "gio mount -u %s || true",
+						quoted);
 					launch_command(cmd);
 				}
 				break;
@@ -4354,11 +4739,23 @@ static void handle_context_menu_action(struct orange_server *server, int item_in
 			launch_command(cmd);
 			break;
 		}
+		case 1:
+			launch_command("nautilus --properties \"$HOME/Desktop\" 2>/dev/null || xdg-open \"$HOME/Desktop\" || true");
+			break;
 		case 2:
 			server->config.desktop_use_stacks =
 				!server->config.desktop_use_stacks;
 			orange_config_save(&server->config,
 				server->options->config_path);
+			break;
+		case 3:
+			cycle_desktop_sort_mode(server);
+			break;
+		case 4:
+			clean_up_desktop_grid(server);
+			break;
+		case 5:
+			launch_command(orange_settings_command);
 			break;
 		case 6:
 			launch_command(background_settings_command);
@@ -4533,12 +4930,28 @@ static void finish_desktop_drag(struct orange_server *server) {
 	if (moved) {
 		orange_config_save(&server->config, server->options->config_path);
 		server_mark_shell_dirty(server);
-	} else if (index >= 0 && index < server->desktop_volume_count) {
-		const struct orange_volume_info *vol = &server->volumes[index];
-		if (vol->mount_path[0] != '\0') {
-			char cmd[1024];
-			snprintf(cmd, sizeof(cmd), "xdg-open \"%s\" || true", vol->mount_path);
-			launch_command(cmd);
+	} else {
+		struct orange_desktop_item_info info;
+		if (!desktop_item_info_for_context_target(server, index, &info)) {
+			return;
+		}
+		if (info.kind == ORANGE_DESKTOP_ITEM_FILE &&
+				info.index >= 0 && info.index < server->desktop_file_count) {
+			launch_desktop_file_open(server->desktop_files[info.index].path);
+		} else if (info.kind == ORANGE_DESKTOP_ITEM_VOLUME &&
+				info.index >= 0 && info.index < server->desktop_volume_count) {
+			const struct orange_volume_info *vol = &server->volumes[info.index];
+			if (vol->mount_path[0] != '\0') {
+				char quoted[4096];
+				if (!shell_quote_arg(vol->mount_path, quoted, sizeof(quoted))) {
+					return;
+				}
+				char cmd[8400];
+				snprintf(cmd, sizeof(cmd),
+					"gio open %s || xdg-open %s || true",
+					quoted, quoted);
+				launch_command(cmd);
+			}
 		}
 	}
 }
@@ -5316,10 +5729,19 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 		server->context_menu_index = -1;
 	} else if (hit.kind == ORANGE_HIT_DOCK_ITEM) {
 		int launcher_idx = dock_launcher_for_visible_index(server, hit.index);
-		server->context_menu_kind =
-			launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
-				server->dock_open[launcher_idx] ?
-			ORANGE_CONTEXT_MENU_DOCK_RUNNING : ORANGE_CONTEXT_MENU_DOCK;
+		const char *app_id =
+			launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX ?
+			server->config.dock_apps[launcher_idx] : "";
+		if (strcmp(app_id, "__launcher__") == 0) {
+			server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK_LAUNCHER;
+		} else if (strcmp(app_id, "__trash__") == 0) {
+			server->context_menu_kind = ORANGE_CONTEXT_MENU_DOCK_TRASH;
+		} else {
+			server->context_menu_kind =
+				launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
+					server->dock_open[launcher_idx] ?
+				ORANGE_CONTEXT_MENU_DOCK_RUNNING : ORANGE_CONTEXT_MENU_DOCK;
+		}
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_STATUS_ITEM) {
 		switch (hit.index) {
@@ -5361,11 +5783,16 @@ static void handle_shell_right_click(struct orange_server *server, int x, int y)
 		server->context_menu_kind = ORANGE_CONTEXT_MENU_WIDGET;
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_DESKTOP_ITEM) {
-		/* Desktop items are files or volumes (macOS behavior) */
-		if (hit.index >= 0 && hit.index < server->desktop_file_count) {
+		struct orange_desktop_item_info info = {0};
+		if (hit.index >= 0 && hit.index < layout.desktop_item_count) {
+			info = layout.desktop_item_info[hit.index];
+		}
+		if (info.kind == ORANGE_DESKTOP_ITEM_FILE) {
 			server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_FILE;
-		} else {
+		} else if (info.kind == ORANGE_DESKTOP_ITEM_VOLUME) {
 			server->context_menu_kind = ORANGE_CONTEXT_MENU_DESKTOP_VOLUME;
+		} else {
+			server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
 		}
 		server->context_menu_index = hit.index;
 	} else if (hit.kind == ORANGE_HIT_DESKTOP) {

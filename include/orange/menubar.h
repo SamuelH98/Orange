@@ -31,6 +31,16 @@ const char *orange_menubar_context_menu_label(
 const char *orange_menubar_context_menu_icon_name(
 	enum orange_context_menu_kind kind,
 	int index);
+bool orange_menubar_context_menu_uses_icons(
+	enum orange_context_menu_kind kind);
+const char *orange_menubar_context_menu_shortcut_label(
+	enum orange_context_menu_kind kind,
+	int index);
+bool orange_menubar_context_menu_has_submenu(
+	enum orange_context_menu_kind kind,
+	int index);
+const char *orange_menubar_menu_shortcut_label(int index);
+bool orange_menubar_menu_has_submenu(int index);
 const char *orange_menubar_app_menu_tab_label(
 	const struct orange_app_menu_model *app_menu,
 	int tab,
