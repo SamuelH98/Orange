@@ -9,6 +9,7 @@
 #include "orange/assets.h"
 #include "orange/config.h"
 #include "orange/desktop_entry.h"
+#include "orange/dock.h"
 #include "orange/glass.h"
 #include "orange/shell.h"
 #include "orange/util.h"
@@ -89,29 +90,6 @@ static void draw_tinted_image_fit(cairo_t *cr, cairo_surface_t *surface,
 		blue / 255.0,
 		opacity);
 	cairo_mask_surface(cr, surface, 0, 0);
-	cairo_restore(cr);
-}
-
-static void draw_more_icon(cairo_t *cr, cairo_surface_t *icon,
-		struct orange_rect r, double s, bool dark) {
-	if (icon != NULL) {
-		draw_image_fit(cr, icon, r, dark ? 0.78 : 0.72);
-		return;
-	}
-	cairo_save(cr);
-	double dot_r = fmax(1.5, 2.0 * s);
-	double cx = r.x + r.width / 2.0;
-	double cy = r.y + r.height / 2.0;
-	double gap = fmax(5.0, 7.0 * s);
-	set_source_rgba255(cr,
-		dark ? 208 : 82,
-		dark ? 216 : 92,
-		dark ? 236 : 116,
-		dark ? 0.82 : 0.72);
-	for (int i = -1; i <= 1; i++) {
-		cairo_arc(cr, cx + i * gap, cy, dot_r, 0, 2.0 * M_PI);
-		cairo_fill(cr);
-	}
 	cairo_restore(cr);
 }
 
@@ -263,20 +241,6 @@ static const char *launcher_mode_title(int mode) {
 	}
 }
 
-static const char *launcher_mode_icon_name(int mode) {
-	switch (mode) {
-	case ORANGE_LAUNCHER_MODE_FILES:
-		return "system-file-manager";
-	case ORANGE_LAUNCHER_MODE_ACTIONS:
-		return "preferences-system";
-	case ORANGE_LAUNCHER_MODE_CLIPBOARD:
-		return "edit-paste";
-	case ORANGE_LAUNCHER_MODE_APPS:
-	default:
-		return "view-app-grid";
-	}
-}
-
 static const char *launcher_compact_mode_icon_name(int mode) {
 	switch (mode) {
 	case ORANGE_LAUNCHER_MODE_FILES:
@@ -305,91 +269,73 @@ void orange_launcher_draw(cairo_t *cr,
 
 	if (is_panel) {
 		struct orange_rect panel = layout->launcher_panel;
-		double radius = fmax(16.0, 30.0 * s);
+		struct orange_rect field = layout->launcher_search_field;
+		bool focused = state->launcher_search_focus;
+		draw_search_glass(cr, field.x, field.y, field.width, field.height,
+			focused, s, dark);
+
+		cairo_surface_t *search_icon = state->assets != NULL ?
+			orange_assets_icon(state->assets,
+				dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT,
+				"edit-find") : NULL;
+		if (search_icon != NULL) {
+			int search_icon_size = (int)clamp(34.0 * s, 20.0,
+				(double)field.height - 12.0);
+			int search_icon_left = (int)fmax(12.0, 18.0 * s);
+			struct orange_rect search_icon_rect = {
+				field.x + search_icon_left,
+				field.y + (field.height - search_icon_size) / 2,
+				search_icon_size,
+				search_icon_size,
+			};
+			draw_tinted_image_fit(cr, search_icon, search_icon_rect,
+				0.90, 255, 255, 255);
+		}
+
+		double font_size = clamp(30.0 * s, 17.0,
+			(double)field.height * 0.50);
+		cairo_select_font_face(cr, "Sans",
+			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+		cairo_set_font_size(cr, font_size);
+		double text_x = field.x + fmax(42.0, 58.0 * s);
+		double text_baseline = field.y +
+			(field.height - font_size) * 0.5 + font_size * 0.78;
+		const char *query = state->launcher_query;
+		const char *placeholder = state->launcher_current_mode ==
+			ORANGE_LAUNCHER_MODE_APPS ?
+			"Search apps and actions" :
+			launcher_mode_title(state->launcher_current_mode);
+		const char *text = query != NULL && query[0] != '\0' ?
+			query : placeholder;
+		double text_max_w = (double)(field.x + field.width) - text_x -
+			fmax(54.0, 72.0 * s);
+		if (text_max_w < 24.0) {
+			text_max_w = 24.0;
+		}
+		char fitted_text[128];
+		ellipsize_to_width(cr, text, text_max_w,
+			fitted_text, sizeof(fitted_text));
+		draw_text(cr, fitted_text, text_x, text_baseline,
+			font_size, 255, 255, 255,
+			query != NULL && query[0] != '\0' ? 0.98 : 0.82, false);
+		if (focused && query != NULL && query[0] != '\0') {
+			cairo_text_extents_t qext;
+			cairo_text_extents(cr, fitted_text, &qext);
+			double caret_x = text_x + qext.width + scaled_i(2, s);
+			set_source_rgba255(cr, 255, 255, 255, 0.9);
+			cairo_rectangle(cr, caret_x,
+				text_baseline - font_size * 0.78,
+				fmax(1.0, scaled_i(1.5, s)), font_size * 0.78);
+			cairo_fill(cr);
+		}
+
+		double radius = fmax(18.0, 34.0 * s);
 		orange_glass_draw(cr, &panel, radius, dark);
 		rounded_rect(cr, panel.x + 0.5, panel.y + 0.5,
 			panel.width - 1.0, panel.height - 1.0, radius);
 		cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, dark ? 0.15 : 0.18);
 		cairo_set_line_width(cr, 1.0);
 		cairo_stroke(cr);
-
-		struct orange_rect field = layout->launcher_search_field;
-		int header_icon_size = (int)clamp(36.0 * s, 26.0,
-			(double)field.height - 10.0);
-		struct orange_rect icon_rect = {
-			field.x,
-			field.y + (field.height - header_icon_size) / 2,
-			header_icon_size,
-			header_icon_size,
-		};
-		cairo_surface_t *title_icon = state->assets != NULL ?
-			orange_assets_icon(state->assets,
-				dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT,
-				launcher_mode_icon_name(state->launcher_current_mode)) : NULL;
-		if (title_icon != NULL) {
-			draw_image_fit(cr, title_icon, icon_rect, dark ? 0.88 : 0.82);
-		}
-		double divider_x = icon_rect.x + icon_rect.width +
-			fmax(10.0, 18.0 * s);
-		cairo_save(cr);
-		set_source_rgba255(cr, 255, 255, 255, dark ? 0.18 : 0.44);
-		cairo_set_line_width(cr, fmax(0.6, 1.0 * s));
-		cairo_move_to(cr, divider_x, field.y + scaled_i(10, s));
-		cairo_line_to(cr, divider_x, field.y + field.height - scaled_i(10, s));
-		cairo_stroke(cr);
-		cairo_restore(cr);
-
-		const char *query = state->launcher_query;
-		const char *title = query != NULL && query[0] != '\0' ?
-			query : launcher_mode_title(state->launcher_current_mode);
-		double title_size = clamp(36.0 * s, 20.0,
-			(double)field.height * 0.56);
-		cairo_select_font_face(cr, "Sans",
-			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-		cairo_set_font_size(cr, title_size);
-		double title_x = divider_x + fmax(12.0, 22.0 * s);
-		double title_y = field.y + (field.height - title_size) * 0.5 +
-			title_size * 0.76;
-		int title_rgb = 255;
-		draw_text(cr, title, title_x, title_y, title_size,
-			title_rgb, title_rgb, title_rgb,
-			query != NULL && query[0] != '\0' ? 0.96 : 0.78, false);
-		if (state->launcher_search_focus) {
-			cairo_text_extents_t ext;
-			cairo_text_extents(cr, title, &ext);
-			set_source_rgba255(cr, dark ? 200 : 30,
-				dark ? 218 : 80, dark ? 255 : 180, 0.85);
-			cairo_rectangle(cr,
-				title_x + ext.width + scaled_i(3, s),
-				title_y - title_size * 0.82,
-				fmax(1.0, 2.0 * s),
-				title_size * 0.88);
-			cairo_fill(cr);
-		}
-
-		struct orange_rect option = layout->launcher_mode_buttons[0];
-		if (option.width > 0) {
-			cairo_surface_t *more_icon = state->assets != NULL ?
-				orange_assets_icon(state->assets,
-					dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT,
-					"view-more-horizontal-symbolic") : NULL;
-			if (more_icon == NULL && state->assets != NULL) {
-				more_icon = orange_assets_icon(state->assets,
-					dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT,
-					"open-menu-symbolic");
-			}
-			draw_more_icon(cr, more_icon, option, s, dark);
-		}
-
-		int header_divider_y = field.y + field.height + scaled_i(2, s);
-		cairo_save(cr);
-		set_source_rgba255(cr, 255, 255, 255, dark ? 0.13 : 0.34);
-		cairo_set_line_width(cr, fmax(0.7, 1.1 * s));
-		cairo_move_to(cr, panel.x + scaled_i(8, s), header_divider_y);
-		cairo_line_to(cr, panel.x + panel.width - scaled_i(8, s),
-			header_divider_y);
-		cairo_stroke(cr);
-		cairo_restore(cr);
 
 		int mode = state->launcher_current_mode;
 		if (mode != ORANGE_LAUNCHER_MODE_APPS) {
@@ -445,9 +391,13 @@ void orange_launcher_draw(cairo_t *cr,
 				CAIRO_FONT_SLANT_NORMAL,
 				active ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 			cairo_set_font_size(cr, tab_font);
+			char fitted_label[128];
+			ellipsize_to_width(cr, label,
+				(double)tab.width - fmax(12.0, 20.0 * s),
+				fitted_label, sizeof(fitted_label));
 			cairo_text_extents_t te;
-			cairo_text_extents(cr, label, &te);
-			draw_text(cr, label,
+			cairo_text_extents(cr, fitted_label, &te);
+			draw_text(cr, fitted_label,
 				tab.x + (tab.width - te.width) / 2.0 - te.x_bearing,
 				tab.y + (tab.height - te.height) / 2.0 - te.y_bearing,
 				tab_font, 255, 255, 255, active ? 0.98 : 0.78, active);
@@ -595,7 +545,7 @@ void orange_launcher_draw(cairo_t *cr,
 	if (search_icon != NULL) {
 		int search_icon_size = (int)clamp(34.0 * s, 20.0,
 			(double)field.height - 12.0);
-		int search_icon_left = (int)fmax(10.0, 14.0 * s);
+		int search_icon_left = (int)fmax(12.0, 18.0 * s);
 		struct orange_rect search_icon_rect = {
 			field.x + search_icon_left,
 			field.y + (field.height - search_icon_size) / 2,
@@ -603,50 +553,44 @@ void orange_launcher_draw(cairo_t *cr,
 			search_icon_size,
 		};
 		draw_tinted_image_fit(cr, search_icon, search_icon_rect,
-			0.90,
-			255,
-			255,
-			255);
+			0.90, 255, 255, 255);
 	}
 
-	/* Query text or placeholder */
 	double font_size = clamp(30.0 * s, 17.0,
-		(double)field.height * 0.52);
+		(double)field.height * 0.50);
 	cairo_select_font_face(cr, "Sans",
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, font_size);
-	double text_x = field.x + fmax(38.0, 52.0 * s);
+	double text_x = field.x + fmax(42.0, 58.0 * s);
 	double text_baseline = field.y +
 		(field.height - font_size) * 0.5 + font_size * 0.78;
 	const char *query = state->launcher_query;
-	if (query != NULL && query[0] != '\0') {
-		draw_text(cr, query, text_x, text_baseline,
-			font_size,
-			255,
-			255,
-			255,
-			0.98, false);
-		if (focused) {
-			cairo_text_extents_t qext;
-			cairo_text_extents(cr, query, &qext);
-			double caret_x = text_x + qext.width + scaled_i(2, s);
-			set_source_rgba255(cr,
-				255,
-				255,
-				255,
-				0.9);
-			cairo_rectangle(cr, caret_x,
-				text_baseline - font_size * 0.78,
-				fmax(1.0, scaled_i(1.5, s)), font_size * 0.78);
-			cairo_fill(cr);
-		}
-	} else {
-		draw_text(cr, "Spotlight Search", text_x, text_baseline,
-			font_size,
-			255,
-			255,
-			255,
-			0.82, false);
+	const char *placeholder = state->launcher_current_mode ==
+		ORANGE_LAUNCHER_MODE_APPS ?
+		"Search apps and actions" :
+		launcher_mode_title(state->launcher_current_mode);
+	const char *text = query != NULL && query[0] != '\0' ?
+		query : placeholder;
+	double text_max_w = (double)(field.x + field.width) - text_x -
+		fmax(54.0, 72.0 * s);
+	if (text_max_w < 24.0) {
+		text_max_w = 24.0;
+	}
+	char fitted_text[128];
+	ellipsize_to_width(cr, text, text_max_w,
+		fitted_text, sizeof(fitted_text));
+	draw_text(cr, fitted_text, text_x, text_baseline,
+		font_size, 255, 255, 255,
+		query != NULL && query[0] != '\0' ? 0.98 : 0.82, false);
+	if (focused && query != NULL && query[0] != '\0') {
+		cairo_text_extents_t qext;
+		cairo_text_extents(cr, fitted_text, &qext);
+		double caret_x = text_x + qext.width + scaled_i(2, s);
+		set_source_rgba255(cr, 255, 255, 255, 0.9);
+		cairo_rectangle(cr, caret_x,
+			text_baseline - font_size * 0.78,
+			fmax(1.0, scaled_i(1.5, s)), font_size * 0.78);
+		cairo_fill(cr);
 	}
 
 	static const char *const fallback_labels[] = {"A", "F", "S", "C"};
@@ -785,6 +729,13 @@ static bool entry_matches_category_filter(
 		};
 		return category_matches_any(categories, tokens, 4);
 	}
+	if (strcasecmp(filter, "Creativity") == 0) {
+		static const char *const tokens[] = {
+			"Graphics", "2DGraphics", "VectorGraphics",
+			"RasterGraphics", "Art", "Design", "Development",
+		};
+		return category_matches_any(categories, tokens, 7);
+	}
 	if (strcasecmp(filter, "Social") == 0) {
 		static const char *const tokens[] = {
 			"Network", "Chat", "Email", "InstantMessaging",
@@ -794,24 +745,26 @@ static bool entry_matches_category_filter(
 	if (strcasecmp(filter, "Entertainment") == 0 ||
 			strcasecmp(filter, "Media") == 0) {
 		static const char *const tokens[] = {
-			"AudioVideo", "Audio", "Video", "Game", "Player",
-			"Graphics", "Photography",
+			"AudioVideo", "Audio", "Video", "Game", "Player", "Music",
 		};
-		return category_matches_any(categories, tokens, 7);
+		return category_matches_any(categories, tokens, 6);
 	}
 	if (strcasecmp(filter, "Photo & Video") == 0 ||
 			strcasecmp(filter, "Photos") == 0) {
 		static const char *const tokens[] = {
-			"Graphics", "Photography", "Video", "AudioVideo", "Viewer",
+			"Photography", "Video", "AudioVideo", "Viewer",
+			"RasterGraphics",
 		};
 		return category_matches_any(categories, tokens, 5);
 	}
-	if (strcasecmp(filter, "Information") == 0 ||
+	if (strcasecmp(filter, "Information & Reading") == 0 ||
+			strcasecmp(filter, "Information") == 0 ||
 			strcasecmp(filter, "Info") == 0) {
 		static const char *const tokens[] = {
-			"Education", "Science", "Reference", "Documentation", "News",
+			"Education", "Science", "Reference", "Documentation",
+			"News", "Literature",
 		};
-		return category_matches_any(categories, tokens, 5);
+		return category_matches_any(categories, tokens, 6);
 	}
 	return category_has_token(categories, filter);
 }
@@ -832,6 +785,10 @@ int orange_launcher_filter(
 	for (int i = 0; i < entry_count && count < out_capacity; i++) {
 		const struct orange_desktop_entry *e = &entries[i];
 		if (e->name[0] == '\0' || e->exec[0] == '\0') {
+			continue;
+		}
+		if (!orange_desktop_entry_should_show(e,
+				getenv("XDG_CURRENT_DESKTOP"))) {
 			continue;
 		}
 		if (!entry_matches_category_filter(e, category_filter)) {
@@ -868,6 +825,80 @@ int orange_launcher_filter(
 	qsort_r(out_indices, (size_t)count, sizeof(int),
 		launcher_sort_compare, &ctx);
 	return count;
+}
+
+static bool launcher_entry_matches_app_id(
+		const struct orange_desktop_entry *entry,
+		const char *app_id) {
+	if (entry == NULL || app_id == NULL || app_id[0] == '\0') {
+		return false;
+	}
+	return orange_desktop_entry_match_score(entry, app_id) > 0 ||
+		(entry->name[0] != '\0' &&
+		 strcasecmp(entry->name, app_id) == 0) ||
+		(entry->icon[0] != '\0' &&
+		 orange_desktop_entry_id_matches(entry->icon, app_id));
+}
+
+static bool launcher_entry_is_in_dock(
+		const struct orange_desktop_entry *entry,
+		const struct orange_config *dock_config,
+		const char dock_temporary_app_ids[ORANGE_DOCK_MAX][128],
+		int dock_temporary_count) {
+	if (entry == NULL) {
+		return false;
+	}
+	if (orange_dock_config_contains_app(dock_config, entry->id) ||
+			orange_dock_config_contains_app(dock_config, entry->name) ||
+			orange_dock_config_contains_app(dock_config, entry->icon)) {
+		return true;
+	}
+	if (orange_dock_temporary_contains(
+			dock_temporary_app_ids, dock_temporary_count, entry->id) ||
+			orange_dock_temporary_contains(
+				dock_temporary_app_ids, dock_temporary_count, entry->name) ||
+			orange_dock_temporary_contains(
+				dock_temporary_app_ids, dock_temporary_count, entry->icon)) {
+		return true;
+	}
+	if (dock_temporary_app_ids == NULL) {
+		return false;
+	}
+	for (int i = 0; i < dock_temporary_count && i < ORANGE_DOCK_MAX; i++) {
+		if (launcher_entry_matches_app_id(entry, dock_temporary_app_ids[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+int orange_launcher_filter_available(
+		const struct orange_desktop_entry *entries,
+		int entry_count,
+		const char *query,
+		const char *category_filter,
+		const struct orange_config *dock_config,
+		const void *dock_temporary_app_ids,
+		int dock_temporary_count,
+		int *out_indices,
+		int out_capacity) {
+	const char (*temporary_ids)[128] =
+		(const char (*)[128])dock_temporary_app_ids;
+	int count = orange_launcher_filter(entries, entry_count, query,
+		category_filter, out_indices, out_capacity);
+	int out = 0;
+	for (int i = 0; i < count; i++) {
+		int idx = out_indices[i];
+		if (idx < 0 || idx >= entry_count) {
+			continue;
+		}
+		if (launcher_entry_is_in_dock(&entries[idx], dock_config,
+				temporary_ids, dock_temporary_count)) {
+			continue;
+		}
+		out_indices[out++] = idx;
+	}
+	return out;
 }
 
 const char *orange_launcher_app_label(

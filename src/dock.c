@@ -13,9 +13,11 @@
 #include "orange/shell.h"
 #include "orange/util.h"
 #define ORANGE_GNOME_SETTINGS_DESKTOP "GNOME:Unity:ubuntu"
-#define ORANGE_GNOME_SETTINGS_ENV "env -u GTK_THEME -u GTK_ICON_THEME XDG_CURRENT_DESKTOP=" ORANGE_GNOME_SETTINGS_DESKTOP " XDG_SESSION_DESKTOP=gnome DESKTOP_SESSION=gnome GNOME_DESKTOP_SESSION_ID=this-is-deprecated "
-#define ORANGE_SETTINGS_COMMAND "if command -v gnome-control-center >/dev/null 2>&1; then " ORANGE_GNOME_SETTINGS_ENV "gnome-control-center; elif [ -x build/orange-settings ]; then GSK_RENDERER=cairo build/orange-settings orange.conf; elif command -v systemsettings >/dev/null 2>&1; then systemsettings; elif command -v xfce4-settings-manager >/dev/null 2>&1; then xfce4-settings-manager; fi; true"
-#define ORANGE_TRASH_COMMAND "if command -v nautilus >/dev/null 2>&1; then nautilus trash:///; elif command -v gio >/dev/null 2>&1; then gio open trash:///; else xdg-open trash:///; fi; true"
+#define ORANGE_GNOME_APP_ENV "env -u GTK_THEME -u GTK_ICON_THEME NO_AT_BRIDGE=1 GSK_RENDERER=cairo XDG_CURRENT_DESKTOP=" ORANGE_GNOME_SETTINGS_DESKTOP " XDG_SESSION_DESKTOP=gnome DESKTOP_SESSION=gnome GNOME_DESKTOP_SESSION_ID=this-is-deprecated "
+#define ORANGE_GNOME_SETTINGS_ENV ORANGE_GNOME_APP_ENV
+#define ORANGE_GNOME_SETTINGS_FAST_ENV ORANGE_GNOME_SETTINGS_ENV
+#define ORANGE_SETTINGS_COMMAND "if command -v gnome-control-center >/dev/null 2>&1; then " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center applications || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center display || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center system; elif command -v systemsettings >/dev/null 2>&1; then systemsettings; elif command -v xfce4-settings-manager >/dev/null 2>&1; then xfce4-settings-manager; fi; true"
+#define ORANGE_TRASH_COMMAND "if command -v nautilus >/dev/null 2>&1; then " ORANGE_GNOME_APP_ENV "nautilus trash:///; elif command -v gio >/dev/null 2>&1; then gio open trash:///; else xdg-open trash:///; fi; true"
 
 /* Built-in dock entries (not from .desktop files) */
 static const char *builtin_label(const char *app_id) {
@@ -50,6 +52,11 @@ const char *orange_dock_builtin_command(const char *app_id) {
 			strcmp(app_id, "settings") == 0 ||
 			strcmp(app_id, "org.gnome.Settings.desktop") == 0) {
 		return ORANGE_SETTINGS_COMMAND;
+	}
+	if (orange_desktop_entry_id_matches(app_id, "firefox.desktop") ||
+			orange_desktop_entry_id_matches(app_id,
+				"org.mozilla.firefox.desktop")) {
+		return "/usr/bin/firefox || firefox || /usr/bin/firefox-esr || firefox-esr";
 	}
 	return NULL;
 }
@@ -188,7 +195,7 @@ static const char *dock_fallback_icon(const char *app_id) {
 static const char *dock_fallback_command(const char *app_id) {
 	if (app_id_matches(app_id, "org.gnome.Nautilus") ||
 			app_id_matches(app_id, "nautilus")) {
-		return "nautilus || nemo || thunar || dolphin || xdg-open \"$HOME\"";
+		return ORANGE_GNOME_APP_ENV "nautilus || nemo || thunar || dolphin || xdg-open \"$HOME\"";
 	}
 	if (app_id_matches(app_id, "firefox") ||
 			app_id_matches(app_id, "browser")) {
@@ -253,17 +260,94 @@ static const struct orange_desktop_entry *lookup_entry(
 	if (entries == NULL || app_id == NULL) {
 		return NULL;
 	}
+	const struct orange_desktop_entry *best = NULL;
+	int best_score = 0;
 	for (int i = 0; i < entry_count; i++) {
-		if (app_id_matches(entries[i].id, app_id)) {
-			return &entries[i];
+		if (!orange_desktop_entry_is_available(&entries[i])) {
+			continue;
+		}
+		int score = orange_desktop_entry_match_score(&entries[i], app_id);
+		if (score <= 0 && app_id_matches(entries[i].id, app_id)) {
+			score = 10;
+		}
+		if (score > best_score) {
+			best = &entries[i];
+			best_score = score;
 		}
 	}
-	return NULL;
+	return best;
 }
 
 static double layout_scale(const struct orange_shell_layout *layout) {
 	return clamp(ui_scale_for_size(layout->width, layout->height),
 		ORANGE_MIN_UI_SCALE, ORANGE_MAX_UI_SCALE);
+}
+
+static struct orange_rect clamp_rect_to_size(
+		struct orange_rect rect,
+		int width,
+		int height) {
+	int x1 = rect.x;
+	int y1 = rect.y;
+	int x2 = rect.x + rect.width;
+	int y2 = rect.y + rect.height;
+	if (x1 < 0) {
+		x1 = 0;
+	}
+	if (y1 < 0) {
+		y1 = 0;
+	}
+	if (x2 > width) {
+		x2 = width;
+	}
+	if (y2 > height) {
+		y2 = height;
+	}
+	if (x2 <= x1 || y2 <= y1) {
+		return (struct orange_rect){0, 0, 0, 0};
+	}
+	return (struct orange_rect){x1, y1, x2 - x1, y2 - y1};
+}
+
+struct orange_rect orange_dock_visual_dirty_bounds(
+		const struct orange_shell_layout *layout,
+		int width,
+		int height) {
+	if (layout == NULL || layout->dock.width <= 0 ||
+			layout->dock.height <= 0 || width <= 0 || height <= 0) {
+		return (struct orange_rect){0, 0, 0, 0};
+	}
+	int item_size = layout->dock.height;
+	if (layout->dock_item_count > 0) {
+		item_size = layout->dock_items[0].width > layout->dock_items[0].height ?
+			layout->dock_items[0].width : layout->dock_items[0].height;
+	}
+	int pad = item_size * 2;
+	if (pad < 96) {
+		pad = 96;
+	}
+	if (pad > 360) {
+		pad = 360;
+	}
+	struct orange_rect bounds = {
+		0,
+		layout->dock.y - pad,
+		width,
+		layout->dock.height + pad * 2,
+	};
+	bool vertical =
+		layout->dock_position == ORANGE_DOCK_POSITION_LEFT ||
+		layout->dock_position == ORANGE_DOCK_POSITION_RIGHT;
+	if (vertical) {
+		int min_y = layout->menu_bar.y + layout->menu_bar.height;
+		int bottom = bounds.y + bounds.height;
+		bounds.y = layout->dock.y - pad;
+		if (bounds.y < min_y) {
+			bounds.y = min_y;
+			bounds.height = bottom - bounds.y;
+		}
+	}
+	return clamp_rect_to_size(bounds, width, height);
 }
 
 static void rounded_rect(cairo_t *cr, double x, double y,
@@ -397,15 +481,147 @@ bool orange_dock_app_is_permanent(const char *app_id) {
 bool orange_dock_config_contains_app(
 		const struct orange_config *config,
 		const char *app_id) {
+	return orange_dock_config_find_app(config, app_id) >= 0;
+}
+
+int orange_dock_config_find_app(
+		const struct orange_config *config,
+		const char *app_id) {
 	if (config == NULL || app_id == NULL || app_id[0] == '\0') {
-		return false;
+		return -1;
 	}
 	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
 		if (dock_ids_match(config->dock_apps[i], app_id)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+bool orange_dock_temporary_contains(
+		const char app_ids[ORANGE_DOCK_MAX][128],
+		int app_count,
+		const char *app_id) {
+	if (app_ids == NULL || app_id == NULL || app_id[0] == '\0') {
+		return false;
+	}
+	if (app_count < 0) {
+		app_count = 0;
+	}
+	if (app_count > ORANGE_DOCK_MAX) {
+		app_count = ORANGE_DOCK_MAX;
+	}
+	for (int i = 0; i < app_count; i++) {
+		if (dock_ids_match(app_ids[i], app_id)) {
 			return true;
 		}
 	}
 	return false;
+}
+
+bool orange_dock_temporary_add(
+		char app_ids[ORANGE_DOCK_MAX][128],
+		int *app_count,
+		const char *app_id,
+		const struct orange_config *config) {
+	if (app_ids == NULL || app_count == NULL ||
+			app_id == NULL || app_id[0] == '\0' ||
+			orange_dock_app_is_permanent(app_id) ||
+			orange_dock_config_contains_app(config, app_id)) {
+		return false;
+	}
+	int count = *app_count;
+	if (count < 0) {
+		count = 0;
+	}
+	if (count > ORANGE_DOCK_MAX) {
+		count = ORANGE_DOCK_MAX;
+	}
+	if (orange_dock_temporary_contains(
+			(const char (*)[128])app_ids, count, app_id) ||
+			count >= ORANGE_DOCK_MAX) {
+		*app_count = count;
+		return false;
+	}
+	snprintf(app_ids[count], sizeof(app_ids[count]), "%s", app_id);
+	*app_count = count + 1;
+	return true;
+}
+
+bool orange_dock_temporary_remove(
+		char app_ids[ORANGE_DOCK_MAX][128],
+		int *app_count,
+		const char *app_id) {
+	if (app_ids == NULL || app_count == NULL ||
+			app_id == NULL || app_id[0] == '\0') {
+		return false;
+	}
+	int count = *app_count;
+	if (count < 0) {
+		count = 0;
+	}
+	if (count > ORANGE_DOCK_MAX) {
+		count = ORANGE_DOCK_MAX;
+	}
+	bool removed = false;
+	int out = 0;
+	for (int i = 0; i < count; i++) {
+		if (dock_ids_match(app_ids[i], app_id)) {
+			removed = true;
+			continue;
+		}
+		if (out != i) {
+			memmove(app_ids[out], app_ids[i], sizeof(app_ids[out]));
+		}
+		out++;
+	}
+	for (int i = out; i < ORANGE_DOCK_MAX; i++) {
+		app_ids[i][0] = '\0';
+	}
+	*app_count = out;
+	return removed;
+}
+
+int orange_dock_temporary_prune_config(
+		char app_ids[ORANGE_DOCK_MAX][128],
+		int app_count,
+		const struct orange_config *config) {
+	if (app_ids == NULL) {
+		return 0;
+	}
+	if (app_count < 0) {
+		app_count = 0;
+	}
+	if (app_count > ORANGE_DOCK_MAX) {
+		app_count = ORANGE_DOCK_MAX;
+	}
+	int out = 0;
+	for (int i = 0; i < app_count; i++) {
+		const char *app_id = app_ids[i];
+		if (app_id[0] == '\0' ||
+				orange_dock_app_is_permanent(app_id) ||
+				orange_dock_config_contains_app(config, app_id)) {
+			continue;
+		}
+		bool duplicate = false;
+		for (int j = 0; j < out; j++) {
+			if (dock_ids_match(app_ids[j], app_id)) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (duplicate) {
+			continue;
+		}
+		if (out != i) {
+			memmove(app_ids[out], app_ids[i], sizeof(app_ids[out]));
+		}
+		out++;
+	}
+	for (int i = out; i < ORANGE_DOCK_MAX; i++) {
+		app_ids[i][0] = '\0';
+	}
+	return out;
 }
 
 static int dock_visible_ids(
@@ -548,7 +764,7 @@ bool orange_dock_config_insert_app(
 		return false;
 	}
 	if (visible_index < 0) {
-		visible_index = 0;
+		visible_index = count;
 	}
 	if (visible_index > count) {
 		visible_index = count;
@@ -595,11 +811,6 @@ static const char *dock_icon_name(int launcher_idx,
 	}
 	return "application-x-executable";
 }
-
-struct dock_visual_item {
-	struct orange_rect rect;
-	double scale;
-};
 
 static bool dock_layout_is_vertical(
 		const struct orange_shell_layout *layout) {
@@ -684,7 +895,7 @@ static struct orange_rect dock_rect_for_slot(
 static void apply_dock_drag_spacing(
 		const struct orange_shell_layout *layout,
 		const struct orange_shell_state *state,
-		struct dock_visual_item visual[ORANGE_DOCK_MAX]) {
+		struct orange_dock_visual_item visual[ORANGE_DOCK_MAX]) {
 	if (layout == NULL || state == NULL || layout->dock_item_count <= 0) {
 		return;
 	}
@@ -737,13 +948,70 @@ static void apply_dock_drag_spacing(
 	}
 }
 
-static void compute_dock_visual_items(
+static void clamp_vertical_dock_visual_items(
+		const struct orange_shell_layout *layout,
+		struct orange_dock_visual_item visual[ORANGE_DOCK_MAX]) {
+	if (!dock_layout_is_vertical(layout) || layout->dock_item_count <= 0) {
+		return;
+	}
+
+	double s = layout_scale(layout);
+	int safe_top = layout->menu_bar.y + layout->menu_bar.height +
+		scaled_i(4, s);
+	int safe_bottom = layout->height - scaled_i(6, s);
+	if (safe_bottom <= safe_top) {
+		return;
+	}
+
+	int top = visual[0].rect.y;
+	int bottom = visual[0].rect.y + visual[0].rect.height;
+	for (int i = 1; i < layout->dock_item_count; i++) {
+		if (visual[i].rect.y < top) {
+			top = visual[i].rect.y;
+		}
+		int item_bottom = visual[i].rect.y + visual[i].rect.height;
+		if (item_bottom > bottom) {
+			bottom = item_bottom;
+		}
+	}
+
+	int dy = 0;
+	if (top < safe_top) {
+		dy = safe_top - top;
+	}
+	if (bottom + dy > safe_bottom) {
+		int candidate = safe_bottom - bottom;
+		if (top + candidate >= safe_top) {
+			dy = candidate;
+		}
+	}
+	if (dy == 0) {
+		return;
+	}
+	for (int i = 0; i < layout->dock_item_count; i++) {
+		visual[i].rect.y += dy;
+	}
+}
+
+void orange_dock_compute_visual_items(
 		const struct orange_shell_layout *layout,
 		const struct orange_shell_state *state,
 		const struct orange_config *config,
-		struct dock_visual_item visual[ORANGE_DOCK_MAX]) {
+		struct orange_dock_visual_item visual[ORANGE_DOCK_MAX]) {
+	if (visual == NULL) {
+		return;
+	}
+	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
+		visual[i] = (struct orange_dock_visual_item){
+			.rect = {0, 0, 0, 0},
+			.scale = 1.0,
+		};
+	}
+	if (layout == NULL || layout->dock_item_count <= 0) {
+		return;
+	}
 	for (int i = 0; i < layout->dock_item_count; i++) {
-		visual[i] = (struct dock_visual_item){
+		visual[i] = (struct orange_dock_visual_item){
 			.rect = layout->dock_items[i],
 			.scale = 1.0,
 		};
@@ -791,13 +1059,119 @@ static void compute_dock_visual_items(
 		}
 		visual[i].scale = item_scale;
 	}
+	clamp_vertical_dock_visual_items(layout, visual);
+}
+
+const char *orange_dock_visible_label(
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		const struct orange_config *config,
+		int visible_index) {
+	if (layout == NULL || state == NULL || visible_index < 0 ||
+			visible_index >= layout->dock_item_count ||
+			visible_index >= ORANGE_DOCK_MAX) {
+		return NULL;
+	}
+	if (layout->dock_minimized[visible_index]) {
+		int minimized_index = layout->dock_minimized_indices[visible_index];
+		if (minimized_index >= 0 && minimized_index < ORANGE_DOCK_MAX &&
+				state->dock_minimized_titles[minimized_index][0] != '\0') {
+			return state->dock_minimized_titles[minimized_index];
+		}
+		return "Minimized Window";
+	}
+
+	int launcher_idx = orange_dock_launcher_index(layout, visible_index);
+	if (launcher_idx >= 0) {
+		return orange_dock_label(launcher_idx,
+			state->desktop_entries, state->desktop_entry_count, config);
+	}
+	if (layout->dock_temporary[visible_index]) {
+		const char *app_id = layout->dock_temporary_app_ids[visible_index];
+		const struct orange_desktop_entry *entry =
+			lookup_entry(app_id, state->desktop_entries,
+				state->desktop_entry_count);
+		if (entry != NULL && entry->name[0] != '\0') {
+			return entry->name;
+		}
+		const char *label = dock_fallback_label(app_id);
+		return label != NULL ? label : app_id;
+	}
+	return NULL;
+}
+
+struct orange_rect orange_dock_minimized_thumbnail_rect(
+		struct orange_rect item) {
+	int pad_x = item.width / 18;
+	int pad_y = item.height / 18;
+	if (pad_x < 2) {
+		pad_x = 2;
+	}
+	if (pad_y < 2) {
+		pad_y = 2;
+	}
+	if (pad_x * 2 >= item.width) {
+		pad_x = item.width > 2 ? item.width / 3 : 0;
+	}
+	if (pad_y * 2 >= item.height) {
+		pad_y = item.height > 2 ? item.height / 3 : 0;
+	}
+	return (struct orange_rect){
+		item.x + pad_x,
+		item.y + pad_y,
+		item.width - pad_x * 2,
+		item.height - pad_y * 2,
+	};
+}
+
+static size_t previous_utf8_boundary(const char *text, size_t len) {
+	if (text == NULL || len == 0) {
+		return 0;
+	}
+	len--;
+	while (len > 0 && (((unsigned char)text[len] & 0xc0) == 0x80)) {
+		len--;
+	}
+	return len;
+}
+
+static void dock_label_ellipsize_to_width(cairo_t *cr,
+		const char *text,
+		double max_width,
+		char *out,
+		size_t out_sz) {
+	if (out == NULL || out_sz == 0) {
+		return;
+	}
+	snprintf(out, out_sz, "%s", text != NULL ? text : "");
+	cairo_text_extents_t extents;
+	cairo_text_extents(cr, out, &extents);
+	if (extents.x_advance <= max_width) {
+		return;
+	}
+
+	const char *suffix = "...";
+	size_t suffix_len = strlen(suffix);
+	size_t len = strlen(out);
+	while (len > 0) {
+		len = previous_utf8_boundary(out, len);
+		out[len] = '\0';
+		if (len + suffix_len + 1 <= out_sz) {
+			memcpy(out + len, suffix, suffix_len + 1);
+		}
+		cairo_text_extents(cr, out, &extents);
+		if (extents.x_advance <= max_width) {
+			return;
+		}
+	}
+	snprintf(out, out_sz, "%s", suffix);
 }
 
 static void draw_dock_hover_label(cairo_t *cr,
 		const struct orange_shell_layout *layout,
 		const struct orange_shell_state *state,
 		const struct orange_config *config,
-		const struct dock_visual_item visual[ORANGE_DOCK_MAX]) {
+		const struct orange_dock_visual_item visual[ORANGE_DOCK_MAX]) {
 	int hot = state->hot_dock_index;
 	if (state->dock_drag_insert_before >= 0 ||
 			hot < 0 || hot >= layout->dock_item_count ||
@@ -805,9 +1179,7 @@ static void draw_dock_hover_label(cairo_t *cr,
 		return;
 	}
 
-	int launcher_idx = orange_dock_launcher_index(layout, hot);
-	const char *label = orange_dock_label(launcher_idx,
-		state->desktop_entries, state->desktop_entry_count, config);
+	const char *label = orange_dock_visible_label(layout, state, config, hot);
 	if (label == NULL) {
 		return;
 	}
@@ -826,6 +1198,36 @@ static void draw_dock_hover_label(cairo_t *cr,
 	cairo_text_extents_t extents;
 	cairo_text_extents(cr, label, &extents);
 	double bubble_w = extents.x_advance + pad_x * 2.0;
+	double max_bubble_w = layout->width - 12.0 * s;
+	if (max_bubble_w < 80.0 * s) {
+		max_bubble_w = 80.0 * s;
+	}
+	if (bubble_w > max_bubble_w) {
+		double min_font_size = fmax(10.0, 14.0 * s);
+		while (bubble_w > max_bubble_w &&
+				font_size - 0.5 >= min_font_size) {
+			font_size -= 0.5;
+			cairo_set_font_size(cr, font_size);
+			cairo_text_extents(cr, label, &extents);
+			bubble_w = extents.x_advance + pad_x * 2.0;
+		}
+		if (bubble_w > max_bubble_w) {
+			bubble_w = max_bubble_w;
+		}
+	}
+	char fitted_label[ORANGE_DESKTOP_ENTRY_MAX_TEXT + 4];
+	const char *draw_label = label;
+	double text_w = bubble_w - pad_x * 2.0;
+	if (text_w < 1.0) {
+		text_w = 1.0;
+	}
+	if (extents.x_advance > text_w) {
+		dock_label_ellipsize_to_width(cr, label, text_w,
+			fitted_label, sizeof(fitted_label));
+		draw_label = fitted_label;
+		cairo_text_extents(cr, draw_label, &extents);
+		bubble_w = extents.x_advance + pad_x * 2.0;
+	}
 	double bubble_x = item.x + item.width / 2.0 - bubble_w / 2.0;
 	double bubble_y = item.y - gap - bubble_h;
 	if (dock_layout_is_vertical(layout)) {
@@ -856,10 +1258,15 @@ static void draw_dock_hover_label(cairo_t *cr,
 	cairo_set_line_width(cr, fmax(1.0, s));
 	cairo_stroke(cr);
 
-	draw_text(cr, label,
+	cairo_save(cr);
+	cairo_rectangle(cr, bubble_x + pad_x - 1.0, bubble_y,
+		fmax(1.0, bubble_w - pad_x * 2.0 + 2.0), bubble_h);
+	cairo_clip(cr);
+	draw_text(cr, draw_label,
 		bubble_x + pad_x - extents.x_bearing,
 		bubble_y + (bubble_h + extents.height) / 2.0 - extents.y_bearing * 0.25,
 		font_size, 255, 255, 255, 0.96, true);
+	cairo_restore(cr);
 }
 
 static void draw_dock_remove_bubble(cairo_t *cr,
@@ -968,6 +1375,23 @@ double orange_dock_bounce_offset(const struct orange_dock_bounce *bounce,
 	return -result * 22.0 * scale;
 }
 
+double orange_dock_auto_hide_progress(
+		double start_progress,
+		bool revealed,
+		uint32_t elapsed_ms) {
+	start_progress = clamp(start_progress, 0.0, 1.0);
+	double target = revealed ? 1.0 : 0.0;
+	if (elapsed_ms >= ORANGE_DOCK_AUTO_HIDE_DURATION_MS) {
+		return target;
+	}
+	double t = (double)elapsed_ms /
+		(double)ORANGE_DOCK_AUTO_HIDE_DURATION_MS;
+	double eased = t < 0.5 ?
+		4.0 * t * t * t :
+		1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0;
+	return start_progress + (target - start_progress) * eased;
+}
+
 struct orange_dock_bounce_displacement orange_dock_bounce_displacement(
 		const struct orange_dock_bounce *bounce,
 		uint32_t now_ms,
@@ -983,6 +1407,35 @@ struct orange_dock_bounce_displacement orange_dock_bounce_displacement(
 	default:
 		return (struct orange_dock_bounce_displacement){0.0, offset};
 	}
+}
+
+static bool dock_temporary_visible_item_is_open(
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		int visible_index) {
+	if (layout == NULL || state == NULL || visible_index < 0 ||
+			visible_index >= ORANGE_DOCK_MAX ||
+			!layout->dock_temporary[visible_index]) {
+		return false;
+	}
+	const char *app_id = layout->dock_temporary_app_ids[visible_index];
+	if (app_id == NULL || app_id[0] == '\0') {
+		return false;
+	}
+	int count = state->dock_temporary_count;
+	if (count < 0) {
+		count = 0;
+	}
+	if (count > ORANGE_DOCK_MAX) {
+		count = ORANGE_DOCK_MAX;
+	}
+	for (int i = 0; i < count; i++) {
+		if (state->dock_temporary_open[i] &&
+				dock_ids_match(state->dock_temporary_app_ids[i], app_id)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
@@ -1012,8 +1465,8 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 	cairo_set_line_width(cr, 1.0);
 	cairo_stroke(cr);
 
-	struct dock_visual_item visual[ORANGE_DOCK_MAX];
-	compute_dock_visual_items(layout, state, config, visual);
+	struct orange_dock_visual_item visual[ORANGE_DOCK_MAX];
+	orange_dock_compute_visual_items(layout, state, config, visual);
 
 	for (int i = 0; i < layout->dock_item_count; i++) {
 		int launcher_idx = orange_dock_launcher_index(layout, i);
@@ -1041,8 +1494,8 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 			item.y += (int)bounce.y;
 		}
 		int variant = dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT;
-		bool grid_icon = dock_launcher_is_grid(config, launcher_idx);
 		if (state->assets != NULL && launcher_idx >= 0) {
+			bool grid_icon = dock_launcher_is_grid(config, launcher_idx);
 			const char *icon_name = dock_icon_name(launcher_idx,
 				state->desktop_entries, state->desktop_entry_count, config);
 			cairo_surface_t *icon_surface = icon_name != NULL ?
@@ -1054,10 +1507,33 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 					draw_image_cover(cr, icon_surface, item);
 				}
 			}
+		} else if (state->assets != NULL && layout->dock_temporary[i]) {
+			const char *app_id = layout->dock_temporary_app_ids[i];
+			const struct orange_desktop_entry *entry =
+				lookup_entry(app_id, state->desktop_entries,
+					state->desktop_entry_count);
+			const char *icon_name = entry != NULL &&
+				entry->icon[0] != '\0' ? entry->icon : NULL;
+			if (icon_name == NULL) {
+				icon_name = dock_fallback_icon(app_id);
+			}
+			if (icon_name == NULL) {
+				icon_name = "application-x-executable";
+			}
+			cairo_surface_t *icon_surface =
+				orange_assets_icon(state->assets, variant, icon_name);
+			if (icon_surface != NULL) {
+				draw_image_cover(cr, icon_surface, item);
+			}
 		}
-		if ((config == NULL || config->dock_show_indicators) &&
-				launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
+		bool show_dot = false;
+		if (launcher_idx >= 0 && launcher_idx < ORANGE_DOCK_MAX &&
 				state->dock_open[launcher_idx]) {
+			show_dot = true;
+		} else if (dock_temporary_visible_item_is_open(layout, state, i)) {
+			show_dot = true;
+		}
+		if ((config == NULL || config->dock_show_indicators) && show_dot) {
 			double item_s = (double)item.width / 106.0;
 			set_source_rgba255(cr, dark ? 255 : 34, dark ? 255 : 37, dark ? 255 : 42, 0.70);
 			if (dock_layout_is_vertical(layout)) {
@@ -1072,6 +1548,26 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 				cairo_arc(cr, item.x + item.width / 2.0,
 					r.y + r.height - scaled_i(10, s),
 					4.5 * item_s, 0, 2.0 * M_PI);
+			}
+			cairo_fill(cr);
+		}
+		if (layout->dock_temporary_separator.width > 0 &&
+				layout->dock_temporary_separator.height > 0 && i > 0 &&
+				layout->dock_temporary[i] && !layout->dock_temporary[i - 1]) {
+			struct orange_rect sep = layout->dock_temporary_separator;
+			set_source_rgba255(cr, dark ? 255 : 30, dark ? 255 : 34, dark ? 255 : 38, dark ? 0.45 : 0.32);
+			if (dock_layout_is_vertical(layout)) {
+				double sep_y = sep.y + sep.height / 2.0;
+				cairo_rectangle(cr,
+					r.x + scaled_i(12, s),
+					sep_y,
+					r.width - scaled_i(24, s),
+					fmax(1.0, 2.0 * s));
+			} else {
+				double sep_x = sep.x + sep.width / 2.0;
+				cairo_rectangle(cr, sep_x,
+					r.y + scaled_i(12, s), fmax(1.0, 2.0 * s),
+					r.height - scaled_i(24, s));
 			}
 			cairo_fill(cr);
 		}

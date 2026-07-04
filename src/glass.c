@@ -161,8 +161,23 @@ static void blur_argb32_surface(cairo_surface_t *surface, int radius) {
 	cairo_surface_mark_dirty(surface);
 }
 
-static void paint_blurred_backdrop(cairo_t *cr,
+static void glass_clip_shape(cairo_t *cr,
 		const struct orange_rect *rect,
+		const cairo_path_t *path,
+		double radius) {
+	if (path != NULL && path->status == CAIRO_STATUS_SUCCESS) {
+		cairo_new_path(cr);
+		cairo_append_path(cr, path);
+	} else {
+		orange_glass_rounded_rect(cr, rect->x, rect->y,
+			rect->width, rect->height, radius);
+	}
+	cairo_clip(cr);
+}
+
+static void paint_blurred_backdrop_shape(cairo_t *cr,
+		const struct orange_rect *rect,
+		const cairo_path_t *path,
 		double radius) {
 	cairo_surface_t *main = cairo_get_target(cr);
 	cairo_surface_flush(main);
@@ -248,9 +263,7 @@ static void paint_blurred_backdrop(cairo_t *cr,
 
 	/* 4. paint the device-res backdrop through the AA rounded-rect clip. */
 	cairo_save(cr);
-	orange_glass_rounded_rect(cr, rect->x, rect->y,
-		rect->width, rect->height, radius);
-	cairo_clip(cr);
+	glass_clip_shape(cr, rect, path, radius);
 	cairo_set_source_surface(cr, full, sample_x, sample_y);
 	cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BILINEAR);
 	cairo_paint(cr);
@@ -258,20 +271,13 @@ static void paint_blurred_backdrop(cairo_t *cr,
 	cairo_surface_destroy(full);
 }
 
-void orange_glass_draw(cairo_t *cr,
+static void paint_glass_shade(cairo_t *cr,
 		const struct orange_rect *rect,
+		const cairo_path_t *path,
 		double radius,
 		bool dark) {
-	if (cr == NULL || rect == NULL || rect->width <= 0 || rect->height <= 0) {
-		return;
-	}
-
-	paint_blurred_backdrop(cr, rect, radius);
-
 	cairo_save(cr);
-	orange_glass_rounded_rect(cr, rect->x, rect->y,
-		rect->width, rect->height, radius);
-	cairo_clip(cr);
+	glass_clip_shape(cr, rect, path, radius);
 
 	cairo_pattern_t *shade = cairo_pattern_create_linear(
 		rect->x, rect->y, rect->x, rect->y + rect->height);
@@ -290,6 +296,33 @@ void orange_glass_draw(cairo_t *cr,
 	cairo_pattern_destroy(shade);
 
 	cairo_restore(cr);
+}
+
+void orange_glass_draw(cairo_t *cr,
+		const struct orange_rect *rect,
+		double radius,
+		bool dark) {
+	if (cr == NULL || rect == NULL || rect->width <= 0 || rect->height <= 0) {
+		return;
+	}
+
+	paint_blurred_backdrop_shape(cr, rect, NULL, radius);
+	paint_glass_shade(cr, rect, NULL, radius, dark);
+}
+
+void orange_glass_draw_path(cairo_t *cr,
+		const struct orange_rect *bounds,
+		const cairo_path_t *path,
+		double radius,
+		bool dark) {
+	if (cr == NULL || bounds == NULL || path == NULL ||
+			path->status != CAIRO_STATUS_SUCCESS ||
+			bounds->width <= 0 || bounds->height <= 0) {
+		return;
+	}
+
+	paint_blurred_backdrop_shape(cr, bounds, path, radius);
+	paint_glass_shade(cr, bounds, path, radius, dark);
 }
 
 void orange_glass_draw_panel(cairo_t *cr,

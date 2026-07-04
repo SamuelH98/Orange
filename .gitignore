@@ -1,4 +1,6 @@
-build/
+build-wlroots-0.20/
+.local/
+.venv-wlroots-build/
 .cache/
 .venv/
 private/

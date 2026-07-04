@@ -11,11 +11,28 @@ struct orange_desktop_entry {
 	char name[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
 	char icon[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
 	char exec[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
+	char try_exec[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
 	char categories[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
+	char startup_wm_class[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
+	char only_show_in[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
+	char not_show_in[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
+	char snap_instance[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
+	char snap_app[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
+	char flatpak_id[ORANGE_DESKTOP_ENTRY_MAX_TEXT];
 	bool terminal;
+	bool hidden;
+	bool no_display;
 };
 
 bool orange_desktop_entry_id_matches(const char *entry_id, const char *id);
+bool orange_desktop_entry_is_available(
+	const struct orange_desktop_entry *entry);
+bool orange_desktop_entry_should_show(
+	const struct orange_desktop_entry *entry,
+	const char *desktop_env);
+int orange_desktop_entry_match_score(
+	const struct orange_desktop_entry *entry,
+	const char *id);
 bool orange_desktop_entry_expand_exec(
 	const struct orange_desktop_entry *entry,
 	char *command,

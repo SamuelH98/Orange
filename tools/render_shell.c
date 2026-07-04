@@ -62,8 +62,6 @@ static bool parse_context_menu_kind(
 		*kind = ORANGE_CONTEXT_MENU_DESKTOP_FILE;
 	} else if (strcmp(value, "desktop-volume") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_DESKTOP_VOLUME;
-	} else if (strcmp(value, "status") == 0) {
-		*kind = ORANGE_CONTEXT_MENU_STATUS;
 	} else if (strcmp(value, "status-wifi") == 0) {
 		*kind = ORANGE_CONTEXT_MENU_STATUS_WIFI;
 	} else if (strcmp(value, "status-sound") == 0) {

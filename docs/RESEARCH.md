@@ -2,7 +2,8 @@
 
 ## Local Environment
 
-- `wlroots`: 0.17.1
+- `wlroots`: 0.20.1 through the versioned `wlroots-0.20` pkg-config
+  dependency in the repo-local `.local/wlroots-0.20` prefix
 - `wayland-server`: 1.22.0
 - `vulkan`: 1.3.275
 - `cairo`: 1.18.0
@@ -17,15 +18,12 @@
 
 ## wlroots Notes
 
-The installed wlroots uses the unstable 0.17 renderer API:
+Orange targets wlroots 0.20 directly. Builds should use
+`dependency('wlroots-0.20')`; the older unversioned `wlroots` pkg-config package
+is intentionally unsupported.
 
-- `wlr_backend_autocreate`
-- `wlr_renderer_autocreate`
-- `wlr_allocator_autocreate`
-- `wlr_output_attach_render`
-- `wlr_renderer_begin`
-- `wlr_render_texture_with_matrix`
-- `wlr_output_commit`
+The compositor uses the wlroots 0.20 backend, renderer, allocator, output,
+scene, xdg-shell, and input APIs without a compatibility wrapper.
 
 The Vulkan renderer can be selected through wlroots with
 `WLR_RENDERER=vulkan`. The project checks `wlr_renderer_is_vk()` at runtime
@@ -33,17 +31,13 @@ when the Vulkan renderer headers are available. On this machine, the headless
 backend cannot create a Vulkan renderer because wlroots has no DRM file
 descriptor in that mode; headless validation uses Pixman.
 
-wlroots 0.18 should not be treated as the fix for Orange's context-menu and
-menu-bar dropdown latency by itself. The relevant scene API already exists in
-the installed 0.17.1 headers: `wlr_scene_buffer_set_buffer_with_damage()`
-accepts buffer-local damage, and `wlr_scene_buffer_set_source_box()` can crop
-the sampled region. The measured local issue was Orange's own full-output
-overlay path: tiny menus caused full-screen backdrop copies, full-screen
-unblend scans, and full-screen scene-buffer damage. The fix is therefore to
-compute conservative overlay bounds, copy/unblend only those bounds, and submit
-damage for the previous/current overlay union. A future wlroots 0.18 port can
-still be useful for platform support, but it should not replace correct damage
-tracking in the compositor.
+wlroots version changes should not be treated as the fix for Orange's
+context-menu and menu-bar dropdown latency by themselves. The measured local
+issue was Orange's own full-output overlay path: tiny menus caused full-screen
+backdrop copies, full-screen unblend scans, and full-screen scene-buffer
+damage. The fix is therefore to compute conservative overlay bounds,
+copy/unblend only those bounds, and submit damage for the previous/current
+overlay union.
 
 If context menu/dropdown lag disappears after the same menu has been used a few
 times, the remaining cause is cold icon/theme cache work rather than scene
@@ -60,6 +54,23 @@ to the old every-base/every-directory cold-cache scan.
   Orange removes no-file field codes such as `%f`, `%F`, `%u`, and `%U` for
   Dock/desktop launches and treats `Icon=` as either an absolute path or a
   themed icon name.
+- GNOME-style launcher filtering is a GIO/GDesktopAppInfo concern, not a
+  Mutter compositor concern. `g_app_info_get_all()` may include desktop files
+  hidden from menus by `NoDisplay`, `OnlyShowIn`, or `NotShowIn`, while
+  `g_app_info_should_show()` is the menu/app-grid gate. `Hidden=true` means
+  deleted at the user's level, `NoDisplay=true` means valid for MIME/default
+  app handling but not menus, `OnlyShowIn`/`NotShowIn` are evaluated against
+  `XDG_CURRENT_DESKTOP`, and `TryExec` can be used to ignore entries whose
+  executable is not installed.
+- Mutter exposes sandbox identity for Flatpak/Snap windows through
+  `meta_window_get_sandboxed_app_id()`. GNOME Shell consumes that in
+  `ShellWindowTracker`, looking up `<sandbox-id>.desktop`, and otherwise falls
+  back through `_GTK_APPLICATION_ID`, `StartupWMClass`, and WM_CLASS
+  heuristics. GNOME Shell's `ShellAppSystem` also gives priority to visible
+  desktop files when multiple entries publish the same `StartupWMClass`.
+  Orange mirrors the practical behavior by ranking available desktop entries
+  and skipping stale package-specific entries before falling back to an
+  equivalent non-sandboxed entry.
 - Icon Theme Specification 0.13 defines lookup through `$HOME/.icons`,
   `$XDG_DATA_DIRS/icons`, theme inheritance, mandatory `hicolor` fallback, and
   `/usr/share/pixmaps`. Orange follows that practical lookup model with lazy
@@ -95,6 +106,13 @@ part of that foreground UI layer. The shell therefore renders dock, system menu,
 and context menu panels through glass material helpers instead of opaque menu
 panels.
 
+Apple's 2025 Liquid Glass announcement describes controls and navigation as a
+distinct translucent layer above app content, with sidebars refracting content
+behind and around them and the macOS Tahoe menu bar becoming transparent. For
+Orange's transient menus, this means separation should come from the glass
+material itself without an added bright outside stroke or extra shadow; a white
+rim reads as a halo around the menu instead of a macOS-like floating surface.
+
 Apple's Mac widget guide describes desktop widget customization from the
 desktop and widget shortcut menus: the desktop shortcut menu exposes
 `Edit Widgets`, while a widget shortcut menu exposes widget editing, size
@@ -114,6 +132,24 @@ Mac user guide says the Mac model appears at the top, hardware details such as
 chip and serial number sit immediately below, and version information appears
 below that. The bundled Orange About app follows that structure while showing
 the local Orange build string instead of claiming to be an Apple OS release.
+
+Apple's Desktop & Dock settings expose `Minimize windows using` as a Dock
+preference with the named Genie and Scale effects, and also expose Dock screen
+position and the option to minimize windows into the application icon. Apple's
+Dock user guide presents minimized windows as Dock-resident items that can be
+restored from the Dock. For Orange, the practical model is therefore: minimize
+and restore should animate a visual representation of the actual window toward
+the Dock item that represents the app, falling back to the temporary running
+app slot or the Dock area when no pinned item is available.
+
+Local wlroots 0.20 research showed that Orange can implement this without a
+new protocol. The existing scene-output readback path can build a one-frame
+output state, hide the overlay buffer during capture, read pixels through
+`wlr_texture_read_pixels`, and copy the window rectangle into an
+`orange_buffer`. The compositor can then keep that screenshot buffer while the
+view is minimized and draw it on the existing transparent overlay buffer for
+both minimize and restore animations. This keeps the real toplevel scene node
+hidden during minimize and restore until the animation completes.
 
 The upstream `vinceliuice/MacTahoe-gtk-theme` project describes itself as a
 macOS Tahoe-like GTK theme for Linux desktops, based on WhiteSur. Its README
@@ -264,10 +300,13 @@ let their root widgets inherit that radius instead of hardcoding a separate
 corner value.
 
 Freedesktop's StatusNotifierItem family is the DBus tray/status-area protocol:
-a StatusNotifierHost represents graphical StatusNotifierItem instances and is
-registered on the session bus. Orange's current menu-bar status strip is still
-static compositor chrome, so this pass fixes its icon-theme/local asset lookup;
-a live DBus StatusNotifier host remains a separate feature.
+StatusNotifierItem instances register with `org.kde.StatusNotifierWatcher`, and
+hosts render those items in a status area. Orange now owns the watcher name on
+the session bus, tracks registered AppIndicator/KStatusNotifierItem objects,
+renders active items in the menu-bar tray, and forwards pointer actions through
+the standard `Activate` and `ContextMenu` methods. Orange does not render
+remote DBusMenu trees itself; AppIndicator-style menu items are asked to open
+their own menu through `ContextMenu`.
 
 Orange's custom About app controls use 16px geometry, a 23px button step,
 active red/gray/gray colors, a hover/pressed glyph only on the red close
@@ -279,14 +318,22 @@ the installed MacTahoe dark GTK named colors used during testing:
 Apple's Desktop & Dock settings documentation describes Dock size as
 slider-controlled, Dock magnification as icon magnification when the pointer
 moves over icons, Dock screen position as left/bottom/right, minimized-window
-animation as a selectable effect, and open applications as indicated by a small
-dot below the app icon. Apple's Dock usage documentation also says the Dock
-separator line can be Control-clicked to open a shortcut menu and dragged to
-adjust Dock size. Dock behavior references describe dynamic resizing to fit and
-labels appearing on pointer hover. The shell Dock therefore avoids a circular
-hover halo, keeps the small running indicator dot, uses icon magnification plus
-a compact label bubble for hover feedback, and exposes Dock-wide controls from
-the separator context menu.
+animation as a selectable effect, minimizing windows into application icons,
+automatic Dock hiding/showing, opening-animation control, and open-app
+indicators. Apple's Dock usage documentation also says the Dock separator line
+can be Control-clicked to open a shortcut menu and dragged to adjust Dock size.
+That interaction also implies the separator is a first-class pointer target:
+hover should present a resize cursor and drag should change size directly,
+without requiring the shortcut menu.
+Dock behavior references describe dynamic resizing to fit and labels appearing
+on pointer hover. The shell Dock therefore avoids a circular hover halo, keeps
+the small running indicator dot, uses icon magnification plus a compact label
+bubble for hover feedback, and exposes Dock-wide controls from the separator
+context menu. For Orange's requested hide behavior, the closer Linux precedent
+is an "intellihide"/"dodge windows" model such as Dash to Dock: the Dock stays
+visible unless a mapped application window overlaps its normal rectangle, then
+reveals from the configured edge and is drawn in the overlay layer above
+clients.
 
 Apple's System Settings guide shows the current System Settings interaction
 shape: launchable from the Dock or Apple menu, a searchable sidebar, and grouped
@@ -308,7 +355,7 @@ clipboard history, and related content; direct actions such as sending email or
 creating notes; App Intents integration for third-party actions; and quick keys
 for action shortcuts. Hands-on reports from the Tahoe beta describe the visible
 interaction model as a glass Spotlight bar that exposes command-number browse
-modes: Cmd+1 for Apps, Cmd+2 for Files, Cmd+3 for Shortcuts/Actions, and Cmd+4
+modes: Ctrl+1 for Apps, Ctrl+2 for Files, Ctrl+3 for Shortcuts/Actions, and Ctrl+4
 for Clipboard. The Apps browse mode behaves like a compact Launchpad/App
 Library replacement, while Spotlight still begins from a lightweight search
 entry with nearby browse-mode buttons. Orange should model that by opening
@@ -326,6 +373,27 @@ Apple documents dragging an app from that apps browsing window to the Dock.
 Orange should therefore make Dock removal a drag-off alias operation, keep
 Trash and the launcher available as permanent shell affordances, and let app
 icons from the launcher become Dock aliases when dropped on the Dock.
+
+Fildem's global menu has two relevant discovery paths. Its README requires
+GTK clients to load `appmenu-gtk-module`, and its Python service owns
+`com.canonical.AppMenu.Registrar` at `/com/canonical/AppMenu/Registrar`.
+Exporter modules call `RegisterWindow(windowId, menuObjectPath)`, Fildem stores
+the DBus sender and object path, and then asks `GetMenuForWindow(xid)` before
+reading the `com.canonical.dbusmenu` tree with `GetLayout`. Fildem also has a
+GTK-specific fallback that reads `_GTK_UNIQUE_BUS_NAME`,
+`_GTK_MENUBAR_OBJECT_PATH`, and related X11 window properties before querying
+`org.gtk.Menus`/`org.gtk.Actions`. Orange cannot depend on those X11
+properties for native Wayland clients, so the compositor-owned registrar uses
+DBus sender PID plus Wayland client PID matching as the Wayland equivalent.
+
+The AT-SPI DBus interfaces provide a no-appmenu-module fallback for controls
+that applications expose to accessibility tools: `org.a11y.Bus.GetAddress`
+returns the accessibility bus address, `org.a11y.atspi.Accessible.GetChildren`
+walks the accessible tree, `Accessible.Name`/`GetRoleName` identify controls,
+and `org.a11y.atspi.Action.DoAction` invokes an exposed action. This can find
+buttons, menu items, tabs, links, and toggles in many GTK/libadwaita apps, but
+it is not a true native global-menu protocol. Completeness depends on the app's
+accessibility tree and exposed action names.
 
 Mac Dock shortcut-menu references confirm that running applications are
 represented distinctly in the Dock and expose app lifecycle actions from their
@@ -353,8 +421,8 @@ lists. Orange therefore now suppresses leading icons for regular system, app,
 Dock, widget, desktop background, desktop file/volume, and desktop app-icon
 menus, while keeping icons in status/control menus. Because common Linux Sans
 font stacks can render macOS shortcut symbols as missing-glyph boxes in Cairo,
-Orange presents legible ASCII shortcut labels such as `Cmd+O` and
-`Opt+Cmd+Esc` instead of relying on proprietary or unavailable symbol fonts.
+Orange presents legible ASCII shortcut labels such as `Ctrl+O` and
+`Ctrl+Alt+Esc` instead of relying on proprietary or unavailable symbol fonts.
 
 The same references and Mac desktop behavior indicate that desktop shortcut
 menus should expose useful local state rather than inert rows. Orange maps
@@ -364,10 +432,15 @@ and maps Clean Up By to a snap-back-to-grid operation that clears saved manual
 positions. Finder desktop item behavior also implies that files on the desktop
 open when clicked, can be repositioned by dragging, and expose real file
 operations from the shortcut menu. Orange therefore maps desktop files to
-Open, Show in Files, Copy, Get Info, Rename/select, Duplicate, Quick Look/open,
-Share, and Move to Trash actions, and stores dragged desktop positions for the
-full visible desktop item capacity. Date/size desktop sorts remain out of
-scope until Orange threads filesystem metadata through shell layout.
+Open, Open With, Show in Files, Copy, Get Info, Rename/select, Duplicate,
+Quick Look/open, Share, and Move to Trash actions. Open With behaves as a
+highlighted side submenu rather than replacing the parent menu, is populated
+from the freedesktop MIME associations exposed through GIO's GAppInfo
+recommended and all-app lookup APIs, shows up to 16 associated app choices, and
+launches the selected desktop application ID with the file URI. Orange also
+stores dragged desktop positions for the full visible desktop item capacity.
+Date/size desktop sorts remain out of scope until Orange threads filesystem
+metadata through shell layout.
 
 Apple's desktop organization guide describes desktop item layout as an icon
 view surface with configurable icon size, grid spacing, text size, label
@@ -393,7 +466,8 @@ pointer is not over a child icon or text item.
 
 ## Risks
 
-- wlroots APIs are explicitly unstable; code targets 0.17.1 as installed.
+- wlroots APIs are explicitly unstable; code targets wlroots 0.20.1 through the
+  `wlroots-0.20` pkg-config dependency.
 - Vulkan renderer availability depends on GPU/driver/runtime environment.
 - wlroots' Vulkan renderer needs a DRM render-node path from the backend. WSLg
   can expose GPU acceleration to Linux GUI clients without exposing the DRM FD
@@ -467,10 +541,30 @@ pointer is not over a child icon or text item.
   https://support.apple.com/guide/mac-help/organize-files-on-your-desktop-mh35846/mac
 - Apple Support, "Preview a file":
   https://support.apple.com/guide/mac-help/preview-a-file-mh14119/mac
+- Apple Support, "Choose an app to open a file on Mac":
+  https://support.apple.com/guide/mac-help/choose-an-app-to-open-a-file-on-mac-mh35597/mac
+- GIO `GAppInfo`:
+  https://docs.gtk.org/gio/iface.AppInfo.html
+- GIO `g_app_info_get_all`:
+  https://docs.gtk.org/gio/type_func.AppInfo.get_all.html
+- GIO `g_app_info_should_show`:
+  https://docs.gtk.org/gio/method.AppInfo.should_show.html
+- GIO Unix `GDesktopAppInfo`:
+  https://docs.gtk.org/gio-unix/class.DesktopAppInfo.html
+- GNOME Shell `ShellAppSystem` source:
+  https://raw.githubusercontent.com/GNOME/gnome-shell/main/src/shell-app-system.c
+- GNOME Shell `ShellWindowTracker` source:
+  https://raw.githubusercontent.com/GNOME/gnome-shell/main/src/shell-window-tracker.c
+- GNOME Mutter `MetaWindow` sandboxed app ID source:
+  https://raw.githubusercontent.com/GNOME/mutter/main/src/core/window.c
+- Freedesktop MIME Applications Associations Specification:
+  https://specifications.freedesktop.org/mime-apps-spec/latest/
 - Apple Support, "System Settings on your Mac":
   https://support.apple.com/guide/imac/system-settings-apda966cb8af/mac
 - GNOME Settings source mirror:
   https://github.com/GNOME/gnome-control-center
+- Dash to Dock source and intellihide behavior:
+  https://github.com/micheleg/dash-to-dock
 - xdg-desktop-portal Settings frontend interface:
   https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Settings.html
 - xdg-desktop-portal Settings backend interface:
@@ -498,5 +592,5 @@ pointer is not over a child icon or text item.
   https://www.theverge.com/apple/685052/apple-macos-tahoe-26-beta-hands-on-liquid-glass-themes-spotlight
 - TechRadar, "How to use Spotlight in macOS Tahoe":
   https://www.techradar.com/computing/mac-os/how-to-use-spotlight-in-macos-tahoe
-- wlroots 0.17 local headers and online renderer documentation.
+- wlroots 0.20 local headers and online renderer documentation.
 - Khronos Vulkan documentation for Vulkan instance/rendering concepts.

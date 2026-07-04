@@ -1,0 +1,28 @@
+#ifndef ORANGE_STATUS_NOTIFIER_H
+#define ORANGE_STATUS_NOTIFIER_H
+
+#include <stdbool.h>
+
+#include "orange/assets.h"
+
+#define ORANGE_STATUS_NOTIFIER_ITEM_MAX 16
+#define ORANGE_STATUS_NOTIFIER_ID_MAX 384
+#define ORANGE_STATUS_NOTIFIER_SERVICE_MAX 128
+#define ORANGE_STATUS_NOTIFIER_PATH_MAX 256
+#define ORANGE_STATUS_NOTIFIER_TITLE_MAX 128
+#define ORANGE_STATUS_NOTIFIER_STATUS_MAX 32
+
+struct orange_status_notifier_item {
+	char id[ORANGE_STATUS_NOTIFIER_ID_MAX];
+	char service[ORANGE_STATUS_NOTIFIER_SERVICE_MAX];
+	char path[ORANGE_STATUS_NOTIFIER_PATH_MAX];
+	char title[ORANGE_STATUS_NOTIFIER_TITLE_MAX];
+	char icon_name[ORANGE_ASSET_ICON_NAME_MAX];
+	char attention_icon_name[ORANGE_ASSET_ICON_NAME_MAX];
+	char status[ORANGE_STATUS_NOTIFIER_STATUS_MAX];
+	char menu_path[ORANGE_STATUS_NOTIFIER_PATH_MAX];
+	bool item_is_menu;
+	bool has_menu;
+};
+
+#endif

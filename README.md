@@ -8,16 +8,22 @@ and status icons are resolved from the configured freedesktop icon theme.
 ## Build
 
 ```sh
-meson setup build
-ninja -C build
+PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig \
+  .venv-wlroots-build/bin/meson setup build-wlroots-0.20
+PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig \
+  ninja -C build-wlroots-0.20
 ```
+
+Orange targets wlroots 0.20 through the versioned `wlroots-0.20` pkg-config
+dependency. The older unversioned `wlroots` package is not a supported build
+target.
 
 ## Run
 
 From a nested Wayland/X11 session:
 
 ```sh
-WLR_RENDERER=vulkan build/orange
+WLR_RENDERER=vulkan ./build-wlroots-0.20/orange
 ```
 
 `WLR_RENDERER=vulkan` requires a backend that can hand wlroots a DRM render
@@ -28,7 +34,7 @@ On WSLg, run it nested inside the existing WSLg Wayland session:
 
 ```sh
 cd ~/orange-wlroots
-WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build/orange --assets assets --config orange.conf
+WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build-wlroots-0.20/orange --assets assets --config orange.conf
 ```
 
 When this command logs `running on Wayland display wayland-N`, startup
@@ -43,13 +49,13 @@ means renderer setup failed before Orange can fall back.
 For automated/headless validation:
 
 ```sh
-WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once
+WLR_BACKENDS=headless WLR_RENDERER=pixman ./build-wlroots-0.20/orange --headless --once
 ```
 
 For a custom-size startup smoke test that exits on its own:
 
 ```sh
-WLR_BACKENDS=headless WLR_RENDERER=pixman build/orange --headless --once --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf
+WLR_BACKENDS=headless WLR_RENDERER=pixman ./build-wlroots-0.20/orange --headless --once --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf
 ```
 
 ## Assets
@@ -77,25 +83,14 @@ via `dock_apps` in `orange.conf` (comma-separated desktop file IDs).
 
 ## Settings And Themes
 
-The compositor reloads `orange.conf` once per second. The GTK Settings app source
-is included and will build as `build/orange-settings` when GTK4 development
-headers are installed.
+The compositor reloads `orange.conf` once per second. GNOME Settings integration
+through Orange's session services is the active settings path for the 0.20
+build. The older in-tree GTK Settings and About utilities are currently disabled
+in Meson while they are rewritten, so `build-wlroots-0.20/orange-settings` and
+`build-wlroots-0.20/orange-about` are not expected build outputs.
 
-The GTK About Orange app source is included and will build as
-`build/orange-about` when GTK4 development headers are installed. It opens from
-the system menu > About Orange and shows model, real chip and memory values, and
-Orange version/build details.
-
-Settings uses a macOS-like full-height translucent sidebar, custom
-traffic-light controls, rounded back/forward arrow capsule, and
-Appearance-first panel layout. It covers appearance, accent color,
-highlight/folder color modes, icon/widget style, sidebar icon size, window
-tinting, scroll-bar visibility, installed GTK/icon theme selection, desktop icon
-visibility/scale/labels, widget visibility/size, Dock
-size/icon/magnification/indicator controls, and installed cursor theme/size.
-Theme dropdowns include a System Default choice plus installed themes discovered
-from standard user and system theme directories. Cursor settings write
-`cursor_theme=` and `cursor_size=` to `orange.conf`.
+Theme and cursor settings are still stored in `orange.conf`; cursor settings
+write `cursor_theme=` and `cursor_size=`.
 
 Desktop icons can be dragged; custom positions are persisted in `orange.conf` as
 `desktop_icon_N_position=x,y`. Right-click desktop icons or Dock items to open
@@ -123,32 +118,35 @@ test default.
 
 Install or develop GTK/icon themes outside this repository, then set the theme
 names in `orange.conf`. The compositor exports `GTK_THEME`, `GTK_ICON_THEME`,
-and `ORANGE_APPEARANCE` before launching child GTK clients.
+`ORANGE_APPEARANCE`, Wayland toolkit backends, and Chromium/Electron Ozone
+Wayland hints before launching child clients. Discord launch commands suppress
+global Chromium wrapper flags while keeping the Electron Wayland hint because
+Orange does not provide an X11 `DISPLAY`.
 
 To render a native-size PNG for manual inspection:
 
 ```sh
-./build/orange-render-shell /tmp/orange-shell.png
+./build-wlroots-0.20/orange-render-shell /tmp/orange-shell.png
 ```
 
 The render tool defaults to the native `2880x1800` shell size. Use
 foreground-only output to measure shell geometry without wallpaper differences:
 
 ```sh
-./build/orange-render-shell --foreground-only /tmp/orange-foreground.png
+./build-wlroots-0.20/orange-render-shell --foreground-only /tmp/orange-foreground.png
 ```
 
 Notification Center and context menus can be rendered directly for glass/text
 checks:
 
 ```sh
-./build/orange-render-shell --notification-center /tmp/orange-notification-center.png
+./build-wlroots-0.20/orange-render-shell --notification-center /tmp/orange-notification-center.png
 ```
 
 ```sh
-./build/orange-render-shell --foreground-only --context-menu status-wifi /tmp/orange-status-wifi.png
+./build-wlroots-0.20/orange-render-shell --foreground-only --context-menu status-wifi /tmp/orange-status-wifi.png
 ```
 
 ```sh
-./build/orange-render-shell --foreground-only --context-menu desktop --context-x 1440 --context-y 900 /tmp/orange-menu.png
+./build-wlroots-0.20/orange-render-shell --foreground-only --context-menu desktop --context-x 1440 --context-y 900 /tmp/orange-menu.png
 ```

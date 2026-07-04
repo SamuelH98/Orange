@@ -53,6 +53,18 @@ transient surfaces such as context menus, system menus, Notification Center,
 and the launcher. Closing the last transient surface clears and damages the
 overlay buffer before the next scene commit, preventing stale overlay pixels
 from remaining above the desktop or client windows.
+Window minimize and restore effects also use the overlay buffer. Before a view
+is hidden, the compositor captures the view's current output rectangle from a
+scene-output readback into a transient `orange_buffer`, stores that screenshot
+on the view while it is minimized, and drives a short compositor-owned
+animation between the view rectangle and a minimized-window Dock thumbnail.
+Those thumbnail slots are part of Dock layout, sit immediately left of Trash,
+and draw the retained screenshot after the minimize animation lands. The Scale
+effect draws the fitted screenshot rectangle directly; the Genie effect draws
+the same screenshot clipped through a tapered curved path toward the configured
+Dock edge. The real scene node stays disabled while minimized and is re-enabled
+after a restore animation finishes. Clicking a minimized thumbnail restores the
+corresponding view instead of entering Dock app reorder logic.
 Live Dock and launcher-app drag feedback also belongs to the overlay buffer:
 the overlay draws the moving icon ghost and Remove affordance over the
 old/current damage union, while the base shell redraws only when the insertion
@@ -64,8 +76,8 @@ affordances available.
 
 Dock layout carries a config-derived screen position (`bottom`, `left`, or
 `right`) and a first-class separator rectangle. Shell hit testing treats the
-separator as its own target so right-click opens a Dock-wide bubble menu, while
-Dock item menus remain app-specific. Bottom Dock layout uses horizontal item
+separator as its own target so right-click opens a Dock-wide command menu,
+while Dock item menus remain app-specific. Bottom Dock layout uses horizontal item
 geometry; side Dock layout uses vertical item geometry, rotated separator
 drawing, side-aware drag insertion, and maximize bounds that reserve the side
 Dock strip.
@@ -74,6 +86,16 @@ chrome hit targets. Child controls such as Dock items, the Dock separator,
 menu tabs, and status items win first; otherwise the chrome background consumes
 the pointer hit so right-click dispatch cannot fall through to the desktop
 background menu.
+
+Orange's session services also own `org.kde.StatusNotifierWatcher` on the
+session bus for AppIndicator/KStatusNotifierItem clients. Registered
+StatusNotifierItem objects are normalized to a stable service/path ID, their
+standard properties are cached, and active or attention-needed items are copied
+into shell state as immutable draw snapshots. Layout reserves tray slots to the
+left of the built-in Wi-Fi/sound/battery/search/clock items, hit testing returns
+`ORANGE_HIT_TRAY_ITEM`, and the compositor routes left-clicks to
+`Activate` or menu-first `ContextMenu` for AppIndicator-style items while
+right-clicks always request `ContextMenu`.
 
 Dock item menus are selected by compositor state after hit testing. The layout
 module exposes static non-running, running, launcher, Trash, and Dock separator
@@ -246,6 +268,17 @@ Spec responsibilities:
   close flows without inventing non-protocol client state.
 - xdg-decoration/KDE server decoration: prefer client-side decorations and do
   not force proprietary server decorations.
+- AppMenu/DBusMenu: own `com.canonical.AppMenu.Registrar` on the session bus,
+  collect `RegisterWindow(windowId, menuObjectPath)` calls from appmenu
+  exporters, resolve the DBus sender PID through `org.freedesktop.DBus`, and
+  match registered menu exporters to the focused Wayland client PID. Imported
+  DBusMenu trees populate the active app tabs and dispatch item clicks through
+  `com.canonical.dbusmenu.Event`.
+- AT-SPI fallback: when no DBusMenu/GMenu exporter is found, connect to the
+  accessibility bus through `org.a11y.Bus`, match the focused Wayland client PID
+  to an AT-SPI application bus name, scan a bounded accessible subtree, and
+  expose named actionable controls as an `Actions` app-menu tab. Item clicks
+  dispatch `org.a11y.atspi.Action.DoAction`.
 - freedesktop desktop integration: launch `.desktop` entries using spec-aware
   `Exec` field-code removal for no-file launches, resolve `Icon=` through the
   Icon Theme inheritance and `hicolor` fallback path, and use standard Icon
@@ -260,6 +293,15 @@ Responsibilities:
 - launch commands through `/bin/sh -c` in a child process,
 - prepare freedesktop `.desktop` `Exec` commands for no-file launches by
   removing file/URL field codes and expanding safe name/icon field codes,
+- keep the full parsed desktop-entry table for Dock, desktop, and app-ID
+  resolution, but apply GNOME-style `should_show` filtering before app launcher
+  search/category display so `Hidden`, `NoDisplay`, incompatible
+  `OnlyShowIn`/`NotShowIn`, and missing `TryExec` entries do not become
+  top-level launcher shortcuts,
+- parse package and window-matching metadata (`X-SnapInstanceName`,
+  `X-SnapAppName`, `X-Flatpak`, and `StartupWMClass`) so Dock/app matching can
+  skip stale package-specific desktop files and choose the best available
+  equivalent entry,
 - prefer user-configured environment variables for terminal/app picker,
 - export `GTK_THEME`, `GTK_ICON_THEME`, and `ORANGE_APPEARANCE` for launched
   GTK clients,
@@ -286,24 +328,44 @@ Responsibilities:
    above mapped client surfaces respectively.
 5. wlroots scene nodes render shell buffers and mapped client surfaces.
 6. Runtime commits the scene output and sends frame callbacks.
-7. Pointer hit testing first finds client surfaces; if none, shell hit testing
-   handles Dock, desktop, and menu clicks.
+7. Pointer hit testing first updates Dock hiding state by checking whether a
+   mapped, non-minimized client rectangle overlaps the Dock's normal rectangle.
+   Edge-hover reveal is only active while that obstruction-driven hidden state
+   is true, so the Dock remains visible unless an app gets in the way. Normal
+   client hit-testing then runs; when a hidden Dock is revealed, Dock hover and
+   click dispatch are handled as overlay shell input above client surfaces.
+   Otherwise, shell hit testing handles Dock, desktop, and menu clicks only
+   when no client surface is under the pointer.
 8. A compositor timer refreshes widget data and dirties the shell/overlay when
    Calendar, Screen Time, or Weather values change.
 8. Clicking or right-clicking the active app title or one of the app menu tabs
    opens a shell-rendered app menu anchored under that tab. The compositor fills
-   the menu bar label from the focused view's Dock entry, app ID, or title.
-   Common commands are dispatched to the focused keyboard client as standard
-   accelerators such as Ctrl+O, Ctrl+S, Ctrl+Z, Ctrl+C, Ctrl+V, Ctrl+F,
-   Ctrl+P, F11, and F1; window-level commands use compositor state where
-   available.
+   the menu bar label from the focused view's Dock entry, app ID, or title. If
+   the focused Wayland client PID matches an AppMenu registrar entry, the
+   compositor imports that DBusMenu tree and uses the exported native menu
+   labels/items. If no menu exporter is present, Orange can fall back to
+   AT-SPI-exposed buttons/actions under an `Actions` tab. Otherwise, common
+   commands are dispatched to the focused keyboard client as standard
+   accelerators such as Ctrl+O, Ctrl+S, Ctrl+Z, Ctrl+C, Ctrl+V, Ctrl+F, Ctrl+P,
+   F11, and F1; window-level commands use compositor state where available.
 9. Shell click handlers launch commands from Dock definitions or parsed XDG
    `.desktop` entries. Dock item presses become click-or-drag gestures: a
    click launches, horizontal/vertical movement starts overlay-only drag
    feedback, dropping in the Dock reorders, and dropping clearly off the Dock
-   removes the alias when the item is removable. Launcher app presses use the
-   same click-or-drag split: a click launches, while dropping a non-duplicate
-   app on the Dock inserts a new alias before Trash.
+   removes the alias when the item is removable. When Dock hiding is enabled
+   and a window obstructs the Dock, the base shell buffer omits the Dock and
+   the overlay buffer draws it while revealed so it sits above client windows
+   without changing window work areas during reveal. Launcher app presses use
+   the same click-or-drag split: a click launches, while dropping a
+   non-duplicate app on the Dock inserts a new alias before Trash.
+   The Dock separator is a separate hover and drag target: hover sets a
+   divider-axis resize cursor, left-drag updates `dock_scale` live using
+   Dock-position-aware drag math, and release persists the new scale. Bottom
+   Docks resize from vertical pointer movement above/below the Dock, while side
+   Docks resize from vertical movement along the horizontal divider. Hover
+   magnification, hover labels, and bounce frames mark a conservative Dock dirty
+   rectangle so the base shell redraw clips to the Dock area instead of
+   repainting and damaging the whole output.
 10. Desktop drag state updates the in-memory config while dragging and saves
    `orange.conf` on release. The shell layout recomputes desktop grid metrics
    after Dock geometry is known so dragged icons cannot be placed under or too

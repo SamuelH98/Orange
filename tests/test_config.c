@@ -26,6 +26,7 @@ int main(void) {
 	config.dock_icon_scale = 1.15;
 	config.dock_magnification = false;
 	config.dock_magnification_scale = 1.50;
+	config.dock_auto_hide = true;
 	config.dock_position = ORANGE_DOCK_POSITION_LEFT;
 	config.minimize_effect = ORANGE_MINIMIZE_EFFECT_SCALE;
 	config.dock_show_indicators = false;
@@ -68,6 +69,7 @@ int main(void) {
 	assert(!loaded.dock_magnification);
 	assert(loaded.dock_magnification_scale > 1.49 &&
 		loaded.dock_magnification_scale < 1.51);
+	assert(loaded.dock_auto_hide);
 	assert(loaded.dock_position == ORANGE_DOCK_POSITION_LEFT);
 	assert(loaded.minimize_effect == ORANGE_MINIMIZE_EFFECT_SCALE);
 	assert(!loaded.dock_show_indicators);
@@ -83,6 +85,21 @@ int main(void) {
 	assert(strcmp(loaded.gtk_theme_dark, "Adwaita-dark") == 0);
 	assert(strcmp(loaded.dock_apps[0], "test-app.desktop") == 0);
 	assert(strcmp(loaded.dock_apps[1], "__trash__") == 0);
+
+	orange_config_apply_ui_scale(&loaded, 1.75);
+	assert(loaded.desktop_icon_scale > 1.74 && loaded.desktop_icon_scale < 1.76);
+	assert(loaded.dock_scale > 1.74 && loaded.dock_scale < 1.76);
+	assert(loaded.dock_icon_scale > 1.74 && loaded.dock_icon_scale < 1.76);
+
+	orange_config_apply_ui_scale(&loaded, 8.0);
+	assert(loaded.desktop_icon_scale > 1.99 && loaded.desktop_icon_scale < 2.01);
+	assert(loaded.dock_scale > 1.99 && loaded.dock_scale < 2.01);
+	assert(loaded.dock_icon_scale > 1.99 && loaded.dock_icon_scale < 2.01);
+
+	orange_config_apply_ui_scale(&loaded, 0.4);
+	assert(loaded.desktop_icon_scale > 0.59 && loaded.desktop_icon_scale < 0.61);
+	assert(loaded.dock_scale > 0.59 && loaded.dock_scale < 0.61);
+	assert(loaded.dock_icon_scale > 0.59 && loaded.dock_icon_scale < 0.61);
 
 	puts("config tests passed");
 	return 0;

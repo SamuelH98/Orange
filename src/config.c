@@ -384,14 +384,16 @@ static void apply_pair(struct orange_config *config,
 			config->desktop_positions[desktop_index].y = clamp_int(y, 0, 16384);
 		}
 	} else if (strcmp(key, "dock_scale") == 0) {
-		config->dock_scale = clamp_double(strtod(value, NULL), 0.60, 1.60);
+		config->dock_scale = clamp_double(strtod(value, NULL), 0.60, 2.00);
 	} else if (strcmp(key, "dock_icon_scale") == 0) {
-		config->dock_icon_scale = clamp_double(strtod(value, NULL), 0.60, 1.80);
+		config->dock_icon_scale = clamp_double(strtod(value, NULL), 0.60, 2.00);
 	} else if (strcmp(key, "dock_magnification") == 0) {
 		config->dock_magnification = parse_bool(value);
 	} else if (strcmp(key, "dock_magnification_scale") == 0) {
 		config->dock_magnification_scale =
 			clamp_double(strtod(value, NULL), 1.00, 2.20);
+	} else if (strcmp(key, "dock_auto_hide") == 0) {
+		config->dock_auto_hide = parse_bool(value);
 	} else if (strcmp(key, "dock_position") == 0) {
 		config->dock_position = parse_dock_position(value);
 	} else if (strcmp(key, "minimize_effect") == 0) {
@@ -498,6 +500,7 @@ void orange_config_set_defaults(struct orange_config *config) {
 	config->dock_icon_scale = 1.0;
 	config->dock_magnification = true;
 	config->dock_magnification_scale = 1.28;
+	config->dock_auto_hide = false;
 	config->dock_position = ORANGE_DOCK_POSITION_BOTTOM;
 	config->minimize_effect = ORANGE_MINIMIZE_EFFECT_GENIE;
 	config->dock_show_indicators = true;
@@ -509,13 +512,13 @@ void orange_config_set_defaults(struct orange_config *config) {
 	config->weather_widget_visible = true;
 	config->calendar_widget_size = ORANGE_WIDGET_SIZE_SMALL;
 	config->weather_widget_size = ORANGE_WIDGET_SIZE_SMALL;
-	config->cursor_theme[0] = '\0';
+	snprintf(config->cursor_theme, sizeof(config->cursor_theme), "%s", "Adwaita");
 	config->cursor_size = 28;
-	snprintf(config->icon_theme, sizeof(config->icon_theme), "%s", "MacTahoe");
+	snprintf(config->icon_theme, sizeof(config->icon_theme), "%s", "Adwaita");
 	snprintf(config->gtk_theme_light, sizeof(config->gtk_theme_light),
-		"%s", "MacTahoe-Light");
+		"%s", "Adwaita");
 	snprintf(config->gtk_theme_dark, sizeof(config->gtk_theme_dark),
-		"%s", "MacTahoe-Dark");
+		"%s", "Adwaita-dark");
 	/* Default dock — macOS Golden Gate order hybridized with GNOME core apps */
 	const char *default_dock[] = {
 		"org.gnome.Nautilus.desktop",
@@ -539,6 +542,16 @@ void orange_config_set_defaults(struct orange_config *config) {
 			config->dock_apps[i][0] = '\0';
 		}
 	}
+}
+
+void orange_config_apply_ui_scale(struct orange_config *config, double scale) {
+	if (config == NULL) {
+		return;
+	}
+
+	config->desktop_icon_scale = clamp_double(scale, 0.60, 2.00);
+	config->dock_scale = clamp_double(scale, 0.60, 2.00);
+	config->dock_icon_scale = clamp_double(scale, 0.60, 2.00);
 }
 
 bool orange_config_load(struct orange_config *config, const char *path) {
@@ -631,6 +644,8 @@ bool orange_config_save(const struct orange_config *config, const char *path) {
 		config->dock_magnification ? "true" : "false");
 	fprintf(file, "dock_magnification_scale=%.2f\n",
 		config->dock_magnification_scale);
+	fprintf(file, "dock_auto_hide=%s\n",
+		config->dock_auto_hide ? "true" : "false");
 	fprintf(file, "dock_position=%s\n",
 		dock_position_name(config->dock_position));
 	fprintf(file, "minimize_effect=%s\n",

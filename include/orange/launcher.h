@@ -21,6 +21,16 @@ int orange_launcher_filter(
 	const char *category_filter,
 	int *out_indices,
 	int out_capacity);
+int orange_launcher_filter_available(
+	const struct orange_desktop_entry *entries,
+	int entry_count,
+	const char *query,
+	const char *category_filter,
+	const struct orange_config *dock_config,
+	const void *dock_temporary_app_ids,
+	int dock_temporary_count,
+	int *out_indices,
+	int out_capacity);
 
 const char *orange_launcher_app_label(
 	const struct orange_desktop_entry *entries,

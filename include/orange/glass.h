@@ -22,6 +22,12 @@ void orange_glass_draw(cairo_t *cr,
 	double radius,
 	bool dark);
 
+void orange_glass_draw_path(cairo_t *cr,
+	const struct orange_rect *bounds,
+	const cairo_path_t *path,
+	double radius,
+	bool dark);
+
 /* Raised panel material: drop shadow + orange_glass_draw + a brighter vertical
  * shade + outer/inner highlight hairlines. Use when a stronger floating panel
  * surface is intentional. */

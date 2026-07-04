@@ -9,6 +9,9 @@
 
 #include <gio/gio.h>
 
+#define USEC_PER_SEC 1000000u
+#define SECONDS_PER_DAY 86400
+
 #ifdef ORANGE_HAVE_SYSTEMD
 #include <systemd/sd-login.h>
 #endif
@@ -53,7 +56,7 @@ void orange_widget_data_format_duration(uint64_t seconds,
 }
 
 time_t orange_widget_data_session_start_time(time_t fallback) {
-#ifdef ORANGE_HAVE_SYSTEMD
+#if defined(ORANGE_HAVE_SYSTEMD) && defined(ORANGE_HAVE_SD_SESSION_GET_START_TIME)
 	char *session = NULL;
 	uint64_t usec = 0;
 	if (sd_pid_get_session(0, &session) >= 0 &&
@@ -61,7 +64,7 @@ time_t orange_widget_data_session_start_time(time_t fallback) {
 			sd_session_get_start_time(session, &usec) >= 0 &&
 			usec > 0) {
 		free(session);
-		return (time_t)(usec / 1000000u);
+		return (time_t)(usec / USEC_PER_SEC);
 	}
 	free(session);
 #endif
@@ -294,10 +297,10 @@ static void process_ics_line(struct orange_calendar_data *calendar,
 			return;
 		}
 		if (!*has_end) {
-			event->end = event->start + (event->all_day ? 86400 : 3600);
+			event->end = event->start + (event->all_day ? SECONDS_PER_DAY : 3600);
 		}
 		time_t day_start = local_day_start(now);
-		time_t day_end = day_start + 86400;
+		time_t day_end = day_start + SECONDS_PER_DAY;
 		if (event->start < day_end && event->end >= now) {
 			if (event->title[0] == '\0') {
 				copy_text(event->title, sizeof(event->title),

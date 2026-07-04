@@ -8,18 +8,25 @@
 #include "orange/glass.h"
 #include "orange/util.h"
 
+#define SESSION_TARGET_SECONDS (12.0 * 60.0 * 60.0)
+
+#define WIDGET_REF_WIDTH 1440.0
+#define WIDGET_REF_HEIGHT 900.0
+#define WIDGET_SCALE_MIN 0.55
+#define WIDGET_SCALE_MAX 2.2
+
 static double widget_layout_scale(const struct orange_shell_layout *layout) {
 	if (layout == NULL || layout->width <= 0 || layout->height <= 0) {
 		return 1.0;
 	}
-	double sx = (double)layout->width / 1440.0;
-	double sy = (double)layout->height / 900.0;
+	double sx = (double)layout->width / WIDGET_REF_WIDTH;
+	double sy = (double)layout->height / WIDGET_REF_HEIGHT;
 	double s = sx < sy ? sx : sy;
-	if (s < 0.55) {
-		s = 0.55;
+	if (s < WIDGET_SCALE_MIN) {
+		s = WIDGET_SCALE_MIN;
 	}
-	if (s > 2.2) {
-		s = 2.2;
+	if (s > WIDGET_SCALE_MAX) {
+		s = WIDGET_SCALE_MAX;
 	}
 	return s;
 }
@@ -471,7 +478,7 @@ static void draw_notification_screen_time_widget(cairo_t *cr,
 	set_source_rgba255(cr, dark ? 255 : 30, dark ? 255 : 34,
 		dark ? 255 : 38, dark ? 0.10 : 0.08);
 	cairo_fill(cr);
-	double ratio = (double)seconds / (12.0 * 60.0 * 60.0);
+	double ratio = (double)seconds / SESSION_TARGET_SECONDS;
 	if (ratio < 0.02 && seconds > 0) {
 		ratio = 0.02;
 	}

@@ -9,6 +9,7 @@
 #include "orange/config.h"
 #include "orange/desktop_entry.h"
 #include "orange/notifications.h"
+#include "orange/status_notifier.h"
 #include "orange/widget_data.h"
 #define ORANGE_DESKTOP_MAX 64
 #define ORANGE_DESKTOP_FILE_MAX 48
@@ -16,14 +17,15 @@
 #define ORANGE_MENU_ITEM_MAX 20
 #define ORANGE_WIDGET_MAX 16
 #define ORANGE_CONTEXT_MENU_ITEM_MAX 16
+#define ORANGE_OPEN_WITH_APP_MAX 16
 #define ORANGE_NOTIFICATION_CENTER_CARD_MAX 8
-#define ORANGE_STATUS_ITEM_COUNT 6
+#define ORANGE_STATUS_ITEM_COUNT 5
 #define ORANGE_STATUS_TEXT_MAX 64
 #define ORANGE_APP_MENU_LABEL_MAX 64
 #define ORANGE_APP_MENU_TAB_COUNT 8
 #define ORANGE_APP_MENU_ITEM_MAX 16
 #define ORANGE_APP_MENU_ACTION_MAX 128
-#define ORANGE_LAUNCHER_COLS 5
+#define ORANGE_LAUNCHER_COLS 6
 #define ORANGE_LAUNCHER_ROWS 4
 #define ORANGE_LAUNCHER_CELL_MAX 512
 #define ORANGE_LAUNCHER_MODE_COUNT 4
@@ -56,6 +58,7 @@ enum orange_shell_hit_kind {
 	ORANGE_HIT_APP_MENU,
 	ORANGE_HIT_STATUS_AREA,
 	ORANGE_HIT_STATUS_ITEM,
+	ORANGE_HIT_TRAY_ITEM,
 	ORANGE_HIT_MENU_BAR,
 	ORANGE_HIT_NOTIFICATION_CENTER,
 	ORANGE_HIT_NOTIFICATION_CENTER_EDIT,
@@ -66,6 +69,7 @@ enum orange_shell_hit_kind {
 	ORANGE_HIT_DESKTOP_ITEM,
 	ORANGE_HIT_DESKTOP,
 	ORANGE_HIT_CONTEXT_MENU_ITEM,
+	ORANGE_HIT_CONTEXT_SUBMENU_ITEM,
 	ORANGE_HIT_LAUNCHER_SEARCH,
 	ORANGE_HIT_LAUNCHER_MODE,
 	ORANGE_HIT_LAUNCHER_APP,
@@ -124,9 +128,12 @@ enum orange_context_menu_kind {
 	ORANGE_CONTEXT_MENU_DESKTOP_ICON,
 	ORANGE_CONTEXT_MENU_DESKTOP_VOLUME,
 	ORANGE_CONTEXT_MENU_DESKTOP_FILE,
+	ORANGE_CONTEXT_MENU_DESKTOP_FILE_OPEN_WITH,
+	ORANGE_CONTEXT_MENU_DOCK_OPTIONS,
+	ORANGE_CONTEXT_MENU_DOCK_MINIMIZE_USING,
+	ORANGE_CONTEXT_MENU_DOCK_POSITION,
 	ORANGE_CONTEXT_MENU_DESKTOP_SELECTION,
 	ORANGE_CONTEXT_MENU_DESKTOP_FILE_SELECTION,
-	ORANGE_CONTEXT_MENU_STATUS,
 	ORANGE_CONTEXT_MENU_STATUS_WIFI,
 	ORANGE_CONTEXT_MENU_STATUS_SOUND,
 	ORANGE_CONTEXT_MENU_STATUS_BATTERY,
@@ -137,7 +144,6 @@ enum orange_status_item {
 	ORANGE_STATUS_ITEM_SOUND,
 	ORANGE_STATUS_ITEM_BATTERY,
 	ORANGE_STATUS_ITEM_SEARCH,
-	ORANGE_STATUS_ITEM_CONTROL_CENTER,
 	ORANGE_STATUS_ITEM_CLOCK,
 };
 
@@ -206,6 +212,7 @@ struct orange_desktop_item_info {
 struct orange_shell_layout {
 	int width;
 	int height;
+	double menu_scale;
 
 	struct orange_rect menu_bar;
 	struct orange_rect system_menu_button;
@@ -214,6 +221,9 @@ struct orange_shell_layout {
 	int app_menu_item_count;
 	struct orange_rect status_area;
 	struct orange_rect status_items[ORANGE_STATUS_ITEM_COUNT];
+	struct orange_rect status_notifier_items[
+		ORANGE_STATUS_NOTIFIER_ITEM_MAX];
+	int status_notifier_item_count;
 	struct orange_rect notification_center_panel;
 	struct orange_rect notification_center_cards[ORANGE_NOTIFICATION_CENTER_CARD_MAX];
 	enum orange_notification_center_card_kind notification_center_card_kinds[
@@ -237,16 +247,37 @@ struct orange_shell_layout {
 	struct orange_rect dock;
 	struct orange_rect dock_items[ORANGE_DOCK_MAX];
 	struct orange_rect dock_separator;
+	struct orange_rect dock_reveal_zone;
 	enum orange_dock_position dock_position;
+	bool dock_auto_hide;
+	bool dock_auto_hide_blocked;
+	bool dock_auto_hidden;
 	int dock_launcher_indices[ORANGE_DOCK_MAX];
 	int dock_item_count;
+	bool dock_temporary[ORANGE_DOCK_MAX];
+	char dock_temporary_app_ids[ORANGE_DOCK_MAX][128];
+	int dock_temporary_count;
+	bool dock_minimized[ORANGE_DOCK_MAX];
+	int dock_minimized_indices[ORANGE_DOCK_MAX];
+	int dock_minimized_count;
+	struct orange_rect dock_temporary_separator;
 
 	enum orange_context_menu_kind context_menu_kind;
 	int context_menu_index;
+	int open_with_app_count;
+	bool open_with_submenu_open;
+	bool dock_options_submenu_open;
+	bool dock_minimize_submenu_open;
+	bool dock_position_submenu_open;
+	bool context_menu_alt_pressed;
+	bool context_menu_dock_temporary;
 	struct orange_rect context_menu_panel;
 	struct orange_rect context_menu_items[ORANGE_CONTEXT_MENU_ITEM_MAX];
 	bool context_menu_separator[ORANGE_CONTEXT_MENU_ITEM_MAX];
 	int context_menu_item_count;
+	struct orange_rect context_submenu_panel;
+	struct orange_rect context_submenu_items[ORANGE_CONTEXT_MENU_ITEM_MAX];
+	int context_submenu_item_count;
 
 	bool launcher_visible;
 	enum orange_launcher_mode launcher_display_mode;
@@ -286,10 +317,17 @@ struct orange_shell_state {
 	int hot_dock_index;
 	int dock_pointer_x;
 	int dock_pointer_y;
+	bool dock_auto_hide_revealed;
+	bool dock_auto_hide_blocked;
+	bool dock_auto_hide_animating;
+	double dock_auto_hide_progress;
 	time_t now;
 	struct orange_assets *assets;
 	const struct orange_config *config;
 	struct orange_status_state status;
+	struct orange_status_notifier_item status_notifier_items[
+		ORANGE_STATUS_NOTIFIER_ITEM_MAX];
+	int status_notifier_item_count;
 	const struct orange_desktop_entry *desktop_entries;
 	int desktop_entry_count;
 	const struct orange_volume_info *volumes;
@@ -312,9 +350,21 @@ struct orange_shell_state {
 	int context_menu_index;
 	int context_menu_cursor_x;
 	int context_menu_cursor_y;
+	int open_with_app_count;
+	bool open_with_submenu_open;
+	bool dock_options_submenu_open;
+	bool dock_minimize_submenu_open;
+	bool dock_position_submenu_open;
+	bool context_menu_alt_pressed;
+	bool context_menu_dock_temporary;
+	char open_with_app_labels[ORANGE_OPEN_WITH_APP_MAX][ORANGE_APP_MENU_LABEL_MAX];
+	char open_with_app_icons[ORANGE_OPEN_WITH_APP_MAX][ORANGE_ASSET_ICON_NAME_MAX];
 	bool desktop_selected[ORANGE_DESKTOP_MAX];
 	bool desktop_selection_active;
 	struct orange_rect desktop_selection_rect;
+	bool desktop_rename_active;
+	int desktop_rename_index;
+	char desktop_rename_text[256];
 
 	bool launcher_open;
 	enum orange_launcher_mode launcher_display_mode;
@@ -340,11 +390,20 @@ struct orange_shell_state {
 	bool dock_bounce_active;
 	int dock_bounce_launcher_idx;
 	uint32_t dock_bounce_start_time;
+	int dock_temporary_count;
+	char dock_temporary_app_ids[ORANGE_DOCK_MAX][128];
+	bool dock_temporary_open[ORANGE_DOCK_MAX];
+	int dock_minimized_count;
+	char dock_minimized_titles[ORANGE_DOCK_MAX][ORANGE_APP_MENU_LABEL_MAX];
 };
 
 struct orange_shell_draw_options {
 	bool draw_wallpaper;
 	bool skip_transient_overlays;
+	bool skip_dock;
+	bool draw_only_dock;
+	bool clip_to_bounds;
+	struct orange_rect clip_bounds;
 };
 
 #include "orange/dock.h"
@@ -361,9 +420,61 @@ void orange_shell_layout_compute(
 	const struct orange_file_info *desktop_files,
 	int desktop_file_count,
 	struct orange_shell_layout *layout);
+void orange_shell_layout_compute_with_dock_temporary(
+	int width,
+	int height,
+	bool system_menu_open,
+	const struct orange_config *config,
+	int desktop_entry_count,
+	int desktop_volume_count,
+	const struct orange_file_info *desktop_files,
+	int desktop_file_count,
+	int dock_temporary_count,
+	const void *dock_temporary_app_ids,
+	struct orange_shell_layout *layout);
+void orange_shell_layout_compute_with_dock_state(
+	int width,
+	int height,
+	bool system_menu_open,
+	const struct orange_config *config,
+	int desktop_entry_count,
+	int desktop_volume_count,
+	const struct orange_file_info *desktop_files,
+	int desktop_file_count,
+	int dock_temporary_count,
+	const void *dock_temporary_app_ids,
+	int dock_minimized_count,
+	struct orange_shell_layout *layout);
 void orange_shell_layout_clean_up(
 	struct orange_shell_layout *layout,
 	const struct orange_config *config);
+void orange_shell_layout_apply_dock_auto_hide(
+	struct orange_shell_layout *layout,
+	const struct orange_config *config,
+	bool blocked,
+	bool revealed);
+void orange_shell_layout_apply_dock_auto_hide_progress(
+	struct orange_shell_layout *layout,
+	const struct orange_config *config,
+	bool blocked,
+	bool revealed,
+	double visible_progress);
+bool orange_shell_layout_dock_auto_hide_blocked_by_view(
+	const struct orange_shell_layout *layout,
+	struct orange_rect view_rect,
+	bool fullscreen);
+double orange_shell_dock_scale_for_separator_drag(
+	enum orange_dock_position position,
+	double start_scale,
+	int start_x,
+	int start_y,
+	int current_x,
+	int current_y);
+double orange_shell_minimize_animation_ease(double progress);
+struct orange_rect orange_shell_minimize_animation_rect(
+	struct orange_rect start,
+	struct orange_rect target,
+	double progress);
 void orange_shell_layout_sort_by(
 	struct orange_shell_layout *layout,
 	enum orange_desktop_sort_by sort_by,
@@ -382,6 +493,10 @@ void orange_shell_layout_set_app_menu_tabs(
 	struct orange_shell_layout *layout,
 	const char *active_app_label,
 	const struct orange_app_menu_model *app_menu);
+void orange_shell_layout_set_status_notifier_items(
+	struct orange_shell_layout *layout,
+	const struct orange_status_notifier_item *items,
+	int item_count);
 void orange_shell_layout_set_context_menu(
 	struct orange_shell_layout *layout,
 	enum orange_context_menu_kind kind,
@@ -394,11 +509,18 @@ void orange_shell_layout_set_notification_center(
 	int notification_count);
 struct orange_rect orange_shell_layout_work_area(
 	const struct orange_shell_layout *layout);
+struct orange_rect orange_shell_desktop_label_rect(
+	const struct orange_shell_layout *layout,
+	const struct orange_config *config,
+	int index);
+struct orange_rect orange_shell_desktop_item_context_rect(
+	const struct orange_shell_layout *layout,
+	int index);
 void orange_shell_layout_set_launcher(
 	struct orange_shell_layout *layout,
 	bool searching,
-		enum orange_launcher_mode display_mode,
-		int app_count);
+	enum orange_launcher_mode display_mode,
+	int app_count);
 
 struct orange_shell_hit orange_shell_hit_test(
 	const struct orange_shell_layout *layout,

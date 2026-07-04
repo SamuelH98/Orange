@@ -14,6 +14,7 @@ cc = meson.get_compiler('c')
 add_project_arguments(
   '-D_GNU_SOURCE',
   '-DWLR_USE_UNSTABLE',
+  '-Wno-gnu-zero-variadic-macro-arguments',
   language: 'c',
 )
 
@@ -26,11 +27,18 @@ gio_dep = dependency('gio-2.0')
 drm_dep = dependency('libdrm')
 pixman_dep = dependency('pixman-1')
 wayland_server_dep = dependency('wayland-server')
-wlroots_dep = dependency('wlroots')
+wlroots_dep = dependency('wlroots-0.20')
 xkbcommon_dep = dependency('xkbcommon')
 systemd_dep = dependency('libsystemd', required: false)
 if systemd_dep.found()
   add_project_arguments('-DORANGE_HAVE_SYSTEMD=1', language: 'c')
+  if cc.has_function(
+    'sd_session_get_start_time',
+    dependencies: systemd_dep,
+    prefix: '#include <systemd/sd-login.h>',
+  )
+    add_project_arguments('-DORANGE_HAVE_SD_SESSION_GET_START_TIME=1', language: 'c')
+  endif
 endif
 vulkan_dep = dependency('vulkan', required: false)
 if vulkan_dep.found()
@@ -54,11 +62,13 @@ orange_core_sources = files(
   'src/assets.c',
   'src/config.c',
   'src/desktop_entry.c',
+  'src/desktop.c',
   'src/dock.c',
   'src/glass.c',
   'src/launcher.c',
   'src/menubar.c',
   'src/notifications.c',
+  'src/session_services.c',
   'src/shell.c',
   'src/widget_data.c',
   'src/widgets.c',
@@ -171,9 +181,23 @@ test_desktop_entry = executable(
   dependencies: [orange_core_dep],
 )
 
+test_desktop = executable(
+  'test-desktop',
+  files('tests/test_desktop.c'),
+  include_directories: inc,
+  dependencies: [orange_core_dep],
+)
+
 test_notifications = executable(
   'test-notifications',
   files('tests/test_notifications.c'),
+  include_directories: inc,
+  dependencies: [orange_core_dep],
+)
+
+test_session_services = executable(
+  'test-session-services',
+  files('tests/test_session_services.c'),
   include_directories: inc,
   dependencies: [orange_core_dep],
 )
@@ -187,6 +211,26 @@ test_widget_data = executable(
 
 test('config', test_config)
 test('assets', test_assets)
+test('desktop', test_desktop)
 test('desktop-entry', test_desktop_entry)
 test('notifications', test_notifications)
+test('session-services', test_session_services)
 test('widget-data', test_widget_data)
+
+bash_prog = find_program('bash', required: false)
+if bash_prog.found()
+  test(
+    'vm-script-syntax',
+    bash_prog,
+    args: [
+      '-n',
+      files(
+        'scripts/build-vm.sh',
+        'scripts/build-void-vm.sh',
+        'scripts/orange-appmenu-sandbox-setup.sh',
+        'scripts/run-vm.sh',
+        'scripts/run-void-vm.sh',
+      ),
+    ],
+  )
+endif

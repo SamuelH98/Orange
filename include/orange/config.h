@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#define ORANGE_CURSOR_THEME_MAX 128
+#define ORANGE_CONFIG_STRING_MAX 128
 #define ORANGE_DESKTOP_POSITION_MAX 64
 #define ORANGE_DOCK_MAX 24
 
@@ -123,6 +123,7 @@ struct orange_config {
 	double dock_icon_scale;
 	bool dock_magnification;
 	double dock_magnification_scale;
+	bool dock_auto_hide;
 	enum orange_dock_position dock_position;
 	enum orange_minimize_effect minimize_effect;
 	bool dock_show_indicators;
@@ -134,15 +135,16 @@ struct orange_config {
 	enum orange_widget_size calendar_widget_size;
 	enum orange_widget_size weather_widget_size;
 
-	char cursor_theme[ORANGE_CURSOR_THEME_MAX];
+	char cursor_theme[ORANGE_CONFIG_STRING_MAX];
 	int cursor_size;
-	char icon_theme[ORANGE_CURSOR_THEME_MAX];
-	char gtk_theme_light[ORANGE_CURSOR_THEME_MAX];
-	char gtk_theme_dark[ORANGE_CURSOR_THEME_MAX];
+	char icon_theme[ORANGE_CONFIG_STRING_MAX];
+	char gtk_theme_light[ORANGE_CONFIG_STRING_MAX];
+	char gtk_theme_dark[ORANGE_CONFIG_STRING_MAX];
 	char dock_apps[ORANGE_DOCK_MAX][128];
 };
 
 void orange_config_set_defaults(struct orange_config *config);
+void orange_config_apply_ui_scale(struct orange_config *config, double scale);
 bool orange_config_load(struct orange_config *config, const char *path);
 bool orange_config_save(const struct orange_config *config, const char *path);
 const char *orange_config_appearance_name(enum orange_appearance appearance);
