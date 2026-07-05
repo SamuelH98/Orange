@@ -4781,8 +4781,23 @@ static void output_redraw_shell(struct orange_output *output) {
 			.now = time(NULL),
 			.assets = &output->server->assets,
 			.config = &output->server->config,
+			.status = output->server->status,
 			.desktop_entries = output->server->desktop_entries,
 			.desktop_entry_count = (int)output->server->desktop_entry_count,
+			.volumes = output->server->volumes,
+			.volume_count = output->server->volume_count,
+			.desktop_volume_count = output->server->desktop_volume_count,
+			.desktop_files = output->server->desktop_files,
+			.desktop_file_count = output->server->desktop_file_count,
+			.desktop_selection_active = output->server->desktop_select_active &&
+				output->server->desktop_select_moved,
+			.desktop_selection_rect = normalized_rect_from_points(
+				output->server->desktop_select_start_x,
+				output->server->desktop_select_start_y,
+				output->server->desktop_select_x,
+				output->server->desktop_select_y),
+			.desktop_rename_active = output->server->desktop_rename.active,
+			.desktop_rename_index = output->server->desktop_rename.layout_index,
 			.dock_drag_index = -1,
 			.dock_drag_insert_before = -1,
 			.dock_bounce_active = output->server->dock_bounce_active,
@@ -4802,6 +4817,14 @@ static void output_redraw_shell(struct orange_output *output) {
 			output->server->dock_temporary_open,
 			sizeof(state.dock_temporary_open));
 		server_populate_minimized_dock_titles(output->server, &state);
+		memcpy(state.desktop_selected, output->server->desktop_selected,
+			sizeof(state.desktop_selected));
+		memcpy(state.desktop_rename_text,
+			output->server->desktop_rename.text,
+			sizeof(state.desktop_rename_text));
+		server_active_app_label(output->server,
+			state.active_app_label, sizeof(state.active_app_label));
+		state.app_menu = output->server->app_menu;
 		const struct orange_shell_draw_options options = {
 			.draw_wallpaper = true,
 			.skip_transient_overlays = true,

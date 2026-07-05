@@ -4498,6 +4498,11 @@ void orange_shell_draw_with_options(
 	if (options != NULL && options->draw_only_dock) {
 		if (options->draw_wallpaper) {
 			draw_wallpaper(cr, width, height, state->assets, config);
+			/* Side-Dock hover dirty bounds can cross desktop icons. Rebuild
+			 * clipped base-shell content before painting the Dock over it. */
+			orange_menubar_draw(cr, &layout, state, config);
+			draw_widget_layer(cr, &layout, state, config);
+			draw_desktop_items(cr, &layout, state, config);
 		}
 		if (!layout.dock_auto_hidden && !options->skip_dock) {
 			orange_dock_draw(cr, &layout, state, config);

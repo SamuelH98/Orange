@@ -1283,6 +1283,100 @@ static void test_desktop_image_preview_and_selection_draw(void) {
 	free(pixels);
 }
 
+static void test_side_dock_hover_redraw_preserves_desktop_icons(void) {
+	const int width = 1440;
+	const int height = 900;
+	const int stride = width * 4;
+	uint32_t *pixels = calloc((size_t)height, (size_t)stride);
+	assert(pixels != NULL);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+	config.dock_position = ORANGE_DOCK_POSITION_RIGHT;
+	config.dock_magnification = true;
+	config.desktop_sort_by = ORANGE_DESKTOP_SORT_NONE;
+
+	struct orange_shell_layout dock_layout;
+	orange_shell_layout_compute(width, height, false, &config,
+		0, 0, NULL, 0, &dock_layout);
+	config.desktop_positions[0] = (struct orange_desktop_icon_position){
+		.valid = true,
+		.x = width / 2,
+		.y = dock_layout.dock.y + dock_layout.dock.height / 2,
+	};
+
+	struct orange_file_info files[1] = {
+		{
+			.name = "Keep.txt",
+			.path = "/tmp/orange-keep.txt",
+			.icon_name = "text-x-generic",
+			.is_directory = false,
+			.is_image = false,
+		},
+	};
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config,
+		0, 0, files, 1, &layout);
+	assert(layout.desktop_item_count == 1);
+	assert(layout.dock_item_count > 0);
+
+	cairo_surface_t *icon = solid_icon_surface();
+	struct orange_assets assets = {0};
+	orange_assets_init(&assets);
+	add_test_icon(&assets, "text-x-generic", icon);
+
+	struct orange_rect item = layout.desktop_items[0];
+	int sample_x = item.x + item.width / 2;
+	int sample_y = item.y + item.width / 2;
+	struct orange_rect dirty =
+		orange_dock_visual_dirty_bounds(&layout, width, height);
+	assert(sample_x >= dirty.x);
+	assert(sample_x < dirty.x + dirty.width);
+	assert(sample_y >= dirty.y);
+	assert(sample_y < dirty.y + dirty.height);
+
+	struct orange_shell_state state = {
+		.system_menu_open = false,
+		.hot_dock_index = 0,
+		.dock_pointer_x = layout.dock_items[0].x +
+			layout.dock_items[0].width / 2,
+		.dock_pointer_y = layout.dock_items[0].y +
+			layout.dock_items[0].height / 2,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1757638380,
+		.assets = &assets,
+		.config = &config,
+		.desktop_files = files,
+		.desktop_file_count = 1,
+	};
+	const struct orange_shell_draw_options full_options = {
+		.draw_wallpaper = true,
+		.skip_transient_overlays = true,
+	};
+	orange_shell_draw_with_options(pixels, width, height, stride,
+		&state, &full_options);
+	assert(is_solid_icon_pixel(pixel_at(pixels, stride, sample_x, sample_y)));
+
+	const struct orange_shell_draw_options dock_options = {
+		.draw_wallpaper = true,
+		.skip_transient_overlays = true,
+		.skip_dock = false,
+		.draw_only_dock = true,
+		.clip_to_bounds = true,
+		.clip_bounds = dirty,
+	};
+	orange_shell_draw_with_options(pixels, width, height, stride,
+		&state, &dock_options);
+	assert(is_solid_icon_pixel(pixel_at(pixels, stride, sample_x, sample_y)));
+
+	cairo_surface_destroy(icon);
+	orange_assets_finish(&assets);
+	free(pixels);
+}
+
 static void test_dock_magnification_wave_paints_above_base_icons(void) {
 	const int width = 1440;
 	const int height = 900;
@@ -1664,6 +1758,7 @@ int main(void) {
 	test_desktop_volume_icon_draws();
 	test_desktop_image_preview_and_selection_draw();
 	test_dock_magnification_wave_paints_above_base_icons();
+	test_side_dock_hover_redraw_preserves_desktop_icons();
 	test_status_notifier_icon_draws_in_menu_bar();
 	test_side_dock_magnification_stays_below_menu_bar();
 	test_default_dock_prefers_desktop_icons_before_role_icons();

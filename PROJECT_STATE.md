@@ -27,21 +27,22 @@ GNOME DisplayConfig compatibility services for settings clients, scoped
 Wayland/freedesktop spec compliance documentation, PNG render export,
 foreground-only visual smoke coverage, and headless one-shot validation.
 
-### Current Session - Discord-Safe Ozone Wayland Hints
+### Current Session - Side-Dock Hover Desktop Icon Redraw
 
-Extended Orange's client launch environment so Chromium/Electron/Ozone-capable
-apps are steered toward Wayland in the same centralized path that already
-forces GTK, Qt, SDL, Clutter, and Firefox. Direct child launches and DBus
-activation exports now set `ELECTRON_OZONE_PLATFORM_HINT=wayland` and
-`NIXOS_OZONE_WL=1`. Follow-up from real Discord testing removed the global
-`CHROME_FLAGS`/`CHROMIUM_FLAGS=--ozone-platform=wayland` injection and added a
-Discord launch-command compatibility path that keeps
-`ELECTRON_OZONE_PLATFORM_HINT=wayland` but unsets `NIXOS_OZONE_WL`,
-`CHROME_FLAGS`, and `CHROMIUM_FLAGS`. Discord cannot fall back to X11 under
-Orange because the compositor intentionally does not export a parent `DISPLAY`.
+Fixed side-Dock hover redraws erasing desktop icons. Dock hover and
+magnification use a clipped redraw path that clears wallpaper inside the Dock
+dirty bounds before repainting the Dock. For left/right Docks that dirty band
+can cross manually placed desktop icons, so the clipped path now rebuilds the
+base shell content in that region before painting the Dock over it. The live
+compositor dock-only redraw state now carries the same desktop file, volume,
+selection, rename, status, active-app, and app-menu data needed for that clipped
+base repaint. Added visual regression coverage that renders a desktop file icon
+inside the right-Dock hover dirty band, performs the clipped Dock redraw, and
+asserts the icon pixel remains visible.
 
-Validation passed with `ninja -C build-wlroots-0.20`,
-`./build-wlroots-0.20/test-desktop-entry`,
+Validation passed with `ninja -C build-wlroots-0.20 test-shell-visual`,
+`./build-wlroots-0.20/test-shell-visual`, full
+`ninja -C build-wlroots-0.20`,
 `.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
 targeted `git diff --check`, and `WLR_BACKENDS=headless WLR_RENDERER=pixman
 ./build-wlroots-0.20/orange --headless --once`. The headless smoke still emits
@@ -49,6 +50,23 @@ the known sandbox dconf warnings for read-only `/run/user/1000/dconf/user`, but
 exits successfully.
 
 Previous recent session notes:
+
+Discord-safe Ozone Wayland hints extended Orange's client launch environment so
+Chromium/Electron/Ozone-capable apps are steered toward Wayland in the same
+centralized path that already forces GTK, Qt, SDL, Clutter, and Firefox. Direct
+child launches and DBus activation exports now set
+`ELECTRON_OZONE_PLATFORM_HINT=wayland` and `NIXOS_OZONE_WL=1`. Follow-up from
+real Discord testing removed the global
+`CHROME_FLAGS`/`CHROMIUM_FLAGS=--ozone-platform=wayland` injection and added a
+Discord launch-command compatibility path that keeps
+`ELECTRON_OZONE_PLATFORM_HINT=wayland` but unsets `NIXOS_OZONE_WL`,
+`CHROME_FLAGS`, and `CHROMIUM_FLAGS`. Discord cannot fall back to X11 under
+Orange because the compositor intentionally does not export a parent `DISPLAY`.
+Validation passed with `ninja -C build-wlroots-0.20`,
+`./build-wlroots-0.20/test-desktop-entry`,
+`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+targeted `git diff --check`, and `WLR_BACKENDS=headless WLR_RENDERER=pixman
+./build-wlroots-0.20/orange --headless --once`.
 
 Implemented AppIndicator/KStatusNotifierItem tray support through a session-bus
 `org.kde.StatusNotifierWatcher`. Orange now accepts
