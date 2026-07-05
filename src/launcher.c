@@ -232,7 +232,7 @@ static const char *launcher_mode_title(int mode) {
 	case ORANGE_LAUNCHER_MODE_FILES:
 		return "Files";
 	case ORANGE_LAUNCHER_MODE_ACTIONS:
-		return "Shortcuts";
+		return "Actions";
 	case ORANGE_LAUNCHER_MODE_CLIPBOARD:
 		return "Clipboard";
 	case ORANGE_LAUNCHER_MODE_APPS:
@@ -246,12 +246,143 @@ static const char *launcher_compact_mode_icon_name(int mode) {
 	case ORANGE_LAUNCHER_MODE_FILES:
 		return "folder";
 	case ORANGE_LAUNCHER_MODE_ACTIONS:
-		return "view-grid-symbolic";
+		return "system-run";
 	case ORANGE_LAUNCHER_MODE_CLIPBOARD:
 		return "edit-copy";
 	case ORANGE_LAUNCHER_MODE_APPS:
 	default:
 		return "system-software-install";
+	}
+}
+
+static void draw_mode_chip(cairo_t *cr,
+		struct orange_rect r,
+		double s,
+		bool dark,
+		bool active,
+		cairo_surface_t *icon,
+		const char *label) {
+	if (r.width <= 0 || r.height <= 0 || label == NULL) {
+		return;
+	}
+	cairo_save(cr);
+	rounded_rect(cr, r.x, r.y, r.width, r.height, r.height / 2.0);
+	cairo_set_source_rgba(cr, 1.0, 1.0, 1.0,
+		active ? (dark ? 0.22 : 0.42) : (dark ? 0.08 : 0.18));
+	cairo_fill(cr);
+	rounded_rect(cr, r.x + 0.5, r.y + 0.5,
+		r.width - 1.0, r.height - 1.0, r.height / 2.0);
+	cairo_set_source_rgba(cr, 1.0, 1.0, 1.0,
+		active ? 0.34 : 0.14);
+	cairo_set_line_width(cr, fmax(0.6, 1.0 * s));
+	cairo_stroke(cr);
+	cairo_restore(cr);
+
+	int icon_size = (int)clamp((double)r.height * 0.54, 14.0, 22.0);
+	int icon_x = r.x + (int)fmax(10.0, 14.0 * s);
+	int icon_y = r.y + (r.height - icon_size) / 2;
+	if (icon != NULL) {
+		draw_tinted_image_fit(cr, icon,
+			(struct orange_rect){icon_x, icon_y, icon_size, icon_size},
+			active ? 0.96 : 0.72, 255, 255, 255);
+	}
+
+	double font_size = fmax(11.0, 18.0 * s);
+	cairo_select_font_face(cr, "Sans",
+		CAIRO_FONT_SLANT_NORMAL,
+		active ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
+	cairo_set_font_size(cr, font_size);
+	double text_x = icon != NULL ?
+		icon_x + icon_size + fmax(6.0, 8.0 * s) :
+		r.x + fmax(12.0, 16.0 * s);
+	double text_max = r.x + r.width - text_x - fmax(10.0, 14.0 * s);
+	char fitted[64];
+	ellipsize_to_width(cr, label, text_max, fitted, sizeof(fitted));
+	cairo_text_extents_t ext;
+	cairo_text_extents(cr, fitted, &ext);
+	draw_text(cr, fitted, text_x,
+		r.y + (r.height - ext.height) / 2.0 - ext.y_bearing,
+		font_size, 255, 255, 255,
+		active ? 0.96 : 0.76, active);
+}
+
+static void draw_launcher_result_row(cairo_t *cr,
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		struct orange_rect row,
+		int result_index,
+		bool dark,
+		double s) {
+	if (state == NULL || result_index < 0 ||
+			result_index >= state->launcher_result_count ||
+			result_index >= ORANGE_LAUNCHER_RESULT_MAX) {
+		return;
+	}
+	const struct orange_launcher_result *result =
+		&state->launcher_results[result_index];
+	bool hot = result_index == state->launcher_hot_app;
+	int inset_x = (int)fmax(4.0, 8.0 * s);
+	struct orange_rect bg = {
+		row.x + inset_x,
+		row.y + (int)fmax(2.0, 4.0 * s),
+		row.width - inset_x * 2,
+		row.height - (int)fmax(4.0, 8.0 * s),
+	};
+	if (hot) {
+		cairo_save(cr);
+		rounded_rect(cr, bg.x, bg.y, bg.width, bg.height,
+			fmax(12.0, 18.0 * s));
+		cairo_set_source_rgba(cr, dark ? 0.26 : 0.68,
+			dark ? 0.38 : 0.82, dark ? 0.68 : 1.00,
+			dark ? 0.30 : 0.34);
+		cairo_fill(cr);
+		cairo_restore(cr);
+	}
+
+	int variant = dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT;
+	cairo_surface_t *icon = NULL;
+	if (state->assets != NULL && result->icon_name[0] != '\0') {
+		icon = orange_assets_icon(state->assets, variant, result->icon_name);
+	}
+	if (icon == NULL && state->assets != NULL) {
+		icon = orange_assets_icon(state->assets, variant,
+			result->kind == ORANGE_LAUNCHER_RESULT_FILE ?
+				"text-x-generic" : "application-x-executable");
+	}
+	int icon_size = layout->launcher_grid_icon_size > 0 ?
+		layout->launcher_grid_icon_size : (int)clamp(42.0 * s, 34.0, 48.0);
+	struct orange_rect icon_rect = {
+		bg.x + (int)fmax(12.0, 16.0 * s),
+		bg.y + (bg.height - icon_size) / 2,
+		icon_size,
+		icon_size,
+	};
+	if (icon != NULL) {
+		draw_image_fit(cr, icon, icon_rect, 0.92);
+	}
+
+	double title_size = fmax(13.0, 21.0 * s);
+	double subtitle_size = fmax(10.0, 15.0 * s);
+	double text_x = icon_rect.x + icon_rect.width + fmax(12.0, 18.0 * s);
+	double text_w = bg.x + bg.width - text_x - fmax(12.0, 18.0 * s);
+	char title[ORANGE_LAUNCHER_RESULT_LABEL_MAX];
+	char subtitle[ORANGE_LAUNCHER_RESULT_SUBTITLE_MAX];
+	cairo_select_font_face(cr, "Sans",
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+	cairo_set_font_size(cr, title_size);
+	ellipsize_to_width(cr, result->label, text_w, title, sizeof(title));
+	cairo_select_font_face(cr, "Sans",
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+	cairo_set_font_size(cr, subtitle_size);
+	ellipsize_to_width(cr, result->subtitle, text_w,
+		subtitle, sizeof(subtitle));
+	double title_y = bg.y + bg.height * 0.43;
+	double subtitle_y = bg.y + bg.height * 0.70;
+	draw_text(cr, title, text_x, title_y, title_size,
+		255, 255, 255, hot ? 0.98 : 0.92, true);
+	if (subtitle[0] != '\0') {
+		draw_text(cr, subtitle, text_x, subtitle_y, subtitle_size,
+			255, 255, 255, hot ? 0.72 : 0.56, false);
 	}
 }
 
@@ -303,7 +434,7 @@ void orange_launcher_draw(cairo_t *cr,
 		const char *query = state->launcher_query;
 		const char *placeholder = state->launcher_current_mode ==
 			ORANGE_LAUNCHER_MODE_APPS ?
-			"Search apps and actions" :
+			"Search apps, files, actions, and web" :
 			launcher_mode_title(state->launcher_current_mode);
 		const char *text = query != NULL && query[0] != '\0' ?
 			query : placeholder;
@@ -337,27 +468,18 @@ void orange_launcher_draw(cairo_t *cr,
 		cairo_set_line_width(cr, 1.0);
 		cairo_stroke(cr);
 
-		int mode = state->launcher_current_mode;
-		if (mode != ORANGE_LAUNCHER_MODE_APPS) {
-			double x = layout->launcher_viewport.x + scaled_i(8, s);
-			double y = layout->launcher_viewport.y + scaled_i(26, s);
-			draw_text(cr, launcher_mode_title(mode), x, y + 30.0 * s,
-				fmax(18.0, 34.0 * s), 255, 255, 255, 0.86, true);
-			const char *body = mode == ORANGE_LAUNCHER_MODE_FILES ?
-				"Recent files appear here as Spotlight results." :
-				mode == ORANGE_LAUNCHER_MODE_ACTIONS ?
-				"Quick actions and shortcuts appear here." :
-				"Clipboard history appears here after it is enabled.";
-			draw_text(cr, body, x, y + 74.0 * s,
-				fmax(12.0, 22.0 * s), 255, 255, 255, 0.62, false);
-			return;
-		}
-
-		for (int section = 0; section < layout->launcher_section_count; section++) {
-			struct orange_rect header = layout->launcher_section_headers[section];
-			if (header.width <= 0) {
+		for (int i = 0; i < ORANGE_LAUNCHER_MODE_COUNT; i++) {
+			struct orange_rect chip = layout->launcher_mode_buttons[i];
+			if (chip.width <= 0) {
 				continue;
 			}
+			cairo_surface_t *mode_icon = state->assets != NULL ?
+				orange_assets_icon(state->assets,
+					dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT,
+					launcher_compact_mode_icon_name(i)) : NULL;
+			draw_mode_chip(cr, chip, s, dark,
+				i == state->launcher_current_mode,
+				mode_icon, launcher_mode_title(i));
 		}
 
 		for (int i = 0; i < layout->launcher_category_count; i++) {
@@ -425,6 +547,41 @@ void orange_launcher_draw(cairo_t *cr,
 				layout->launcher_viewport.x + scaled_i(12, s),
 				layout->launcher_viewport.y + scaled_i(34, s),
 				empty_size, 255, 255, 255, 0.58, false);
+		}
+
+		if (layout->launcher_list_results) {
+			for (int i = 0; i < layout->launcher_grid_cell_count; i++) {
+				int result_index = layout->launcher_grid_indices[i];
+				if (result_index < 0 ||
+						result_index >= state->launcher_result_count) {
+					continue;
+				}
+				draw_launcher_result_row(cr, layout, state,
+					layout->launcher_grid_cells[i], result_index,
+					dark, s);
+			}
+			cairo_restore(cr);
+			if (layout->launcher_scroll_track.width > 0 &&
+					layout->launcher_scroll_thumb.width > 0) {
+				struct orange_rect track = layout->launcher_scroll_track;
+				struct orange_rect thumb = layout->launcher_scroll_thumb;
+				double visual_w = fmax(3.0, 5.0 * s);
+				double track_x = track.x + (track.width - visual_w) / 2.0;
+				double thumb_x = thumb.x + (thumb.width - visual_w) / 2.0;
+				cairo_save(cr);
+				rounded_rect(cr, track_x, track.y, visual_w, track.height,
+					visual_w / 2.0);
+				cairo_set_source_rgba(cr, 1.0, 1.0, 1.0,
+					dark ? 0.07 : 0.16);
+				cairo_fill(cr);
+				rounded_rect(cr, thumb_x, thumb.y, visual_w, thumb.height,
+					visual_w / 2.0);
+				cairo_set_source_rgba(cr, 1.0, 1.0, 1.0,
+					dark ? 0.42 : 0.64);
+				cairo_fill(cr);
+				cairo_restore(cr);
+			}
+			return;
 		}
 
 		for (int i = 0; i < layout->launcher_grid_cell_count; i++) {
@@ -567,7 +724,7 @@ void orange_launcher_draw(cairo_t *cr,
 	const char *query = state->launcher_query;
 	const char *placeholder = state->launcher_current_mode ==
 		ORANGE_LAUNCHER_MODE_APPS ?
-		"Search apps and actions" :
+		"Search apps, files, actions, and web" :
 		launcher_mode_title(state->launcher_current_mode);
 	const char *text = query != NULL && query[0] != '\0' ?
 		query : placeholder;
@@ -899,6 +1056,335 @@ int orange_launcher_filter_available(
 		out_indices[out++] = idx;
 	}
 	return out;
+}
+
+struct launcher_action_def {
+	const char *id;
+	const char *label;
+	const char *subtitle;
+	const char *icon_name;
+	const char *keywords;
+};
+
+static const struct launcher_action_def launcher_actions[] = {
+	{
+		"open-terminal",
+		"Open Terminal",
+		"Ghostty terminal",
+		"utilities-terminal",
+		"terminal ghostty shell command console",
+	},
+	{
+		"open-files",
+		"Open Files",
+		"Home folder",
+		"system-file-manager",
+		"files finder file manager home folder",
+	},
+	{
+		"open-documents",
+		"Open Documents",
+		"Documents folder",
+		"folder-documents",
+		"documents docs files folder",
+	},
+	{
+		"open-downloads",
+		"Open Downloads",
+		"Downloads folder",
+		"folder-download",
+		"downloads downloaded files folder",
+	},
+	{
+		"open-desktop",
+		"Open Desktop",
+		"Desktop folder",
+		"user-desktop",
+		"desktop files folder",
+	},
+	{
+		"open-settings",
+		"Open Settings",
+		"System settings",
+		"preferences-system",
+		"settings preferences control center system",
+	},
+	{
+		"open-software",
+		"Open Software",
+		"Install and manage apps",
+		"system-software-install",
+		"software store install apps packages",
+	},
+	{
+		"recent-files",
+		"Recent Files",
+		"Open recent items",
+		"document-open-recent",
+		"recent files documents history",
+	},
+	{
+		"new-folder",
+		"New Folder",
+		"Create a folder on the Desktop",
+		"folder-new",
+		"new folder create desktop",
+	},
+	{
+		"paste-desktop",
+		"Paste to Desktop",
+		"Paste copied files onto the Desktop",
+		"edit-paste",
+		"paste clipboard desktop files copy",
+	},
+	{
+		"lock-screen",
+		"Lock Screen",
+		"Secure this session",
+		"system-lock-screen",
+		"lock screen secure session",
+	},
+};
+
+static bool text_matches_query(const char *text, const char *query) {
+	if (query == NULL || query[0] == '\0') {
+		return true;
+	}
+	return text != NULL && text[0] != '\0' &&
+		strcasestr(text, query) != NULL;
+}
+
+static bool result_text_matches_query(
+		const char *query,
+		const char *label,
+		const char *subtitle,
+		const char *keywords) {
+	if (query == NULL || query[0] == '\0') {
+		return true;
+	}
+	return text_matches_query(label, query) ||
+		text_matches_query(subtitle, query) ||
+		text_matches_query(keywords, query);
+}
+
+static bool launcher_add_result(
+		struct orange_launcher_result *out_results,
+		int out_capacity,
+		int *count,
+		enum orange_launcher_result_kind kind,
+		int source_index,
+		const char *label,
+		const char *subtitle,
+		const char *icon_name,
+		const char *action) {
+	if (out_results == NULL || count == NULL ||
+			*count < 0 || *count >= out_capacity ||
+			label == NULL || label[0] == '\0') {
+		return false;
+	}
+	struct orange_launcher_result *result = &out_results[*count];
+	memset(result, 0, sizeof(*result));
+	result->kind = kind;
+	result->source_index = source_index;
+	snprintf(result->label, sizeof(result->label), "%s", label);
+	snprintf(result->subtitle, sizeof(result->subtitle), "%s",
+		subtitle != NULL ? subtitle : "");
+	snprintf(result->icon_name, sizeof(result->icon_name), "%s",
+		icon_name != NULL && icon_name[0] != '\0' ?
+			icon_name : "application-x-executable");
+	snprintf(result->action, sizeof(result->action), "%s",
+		action != NULL ? action : "");
+	(*count)++;
+	return true;
+}
+
+static int launcher_add_app_results(
+		const struct orange_desktop_entry *entries,
+		int entry_count,
+		const char *query,
+		const char *category_filter,
+		const struct orange_config *dock_config,
+		const void *dock_temporary_app_ids,
+		int dock_temporary_count,
+		bool only_available,
+		struct orange_launcher_result *out_results,
+		int out_capacity,
+		int count,
+		int limit) {
+	if (entries == NULL || entry_count <= 0 || count >= out_capacity ||
+			limit <= 0) {
+		return count;
+	}
+	int indices[ORANGE_LAUNCHER_APP_MAX];
+	int index_count = only_available ?
+		orange_launcher_filter_available(entries, entry_count, query,
+			category_filter, dock_config, dock_temporary_app_ids,
+			dock_temporary_count, indices, ORANGE_LAUNCHER_APP_MAX) :
+		orange_launcher_filter(entries, entry_count, query,
+			category_filter, indices, ORANGE_LAUNCHER_APP_MAX);
+	for (int i = 0; i < index_count && count < out_capacity &&
+			i < limit; i++) {
+		int idx = indices[i];
+		if (idx < 0 || idx >= entry_count) {
+			continue;
+		}
+		const struct orange_desktop_entry *entry = &entries[idx];
+		launcher_add_result(out_results, out_capacity, &count,
+			ORANGE_LAUNCHER_RESULT_APP, idx, entry->name, "Application",
+			entry->icon[0] != '\0' ?
+				entry->icon : "application-x-executable",
+			"");
+	}
+	return count;
+}
+
+static int launcher_add_file_results(
+		const struct orange_file_info *files,
+		int file_count,
+		const char *query,
+		struct orange_launcher_result *out_results,
+		int out_capacity,
+		int count,
+		int limit) {
+	if (files == NULL || file_count <= 0 || count >= out_capacity ||
+			limit <= 0) {
+		return count;
+	}
+	for (int i = 0; i < file_count && count < out_capacity &&
+			limit > 0; i++) {
+		const struct orange_file_info *file = &files[i];
+		if (file->name[0] == '\0' || file->path[0] == '\0') {
+			continue;
+		}
+		if (!result_text_matches_query(query,
+				file->name, file->path,
+				file->is_directory ? "folder directory" : "file document")) {
+			continue;
+		}
+		launcher_add_result(out_results, out_capacity, &count,
+			ORANGE_LAUNCHER_RESULT_FILE, i, file->name,
+			file->is_directory ? "Folder on Desktop" : "File on Desktop",
+			file->icon_name[0] != '\0' ? file->icon_name :
+				(file->is_directory ? "folder" : "text-x-generic"),
+			"");
+		limit--;
+	}
+	return count;
+}
+
+static int launcher_add_action_results(
+		const char *query,
+		struct orange_launcher_result *out_results,
+		int out_capacity,
+		int count,
+		int limit) {
+	int action_count = (int)(sizeof(launcher_actions) /
+		sizeof(launcher_actions[0]));
+	for (int i = 0; i < action_count && count < out_capacity &&
+			limit > 0; i++) {
+		const struct launcher_action_def *action = &launcher_actions[i];
+		if (!result_text_matches_query(query, action->label,
+				action->subtitle, action->keywords)) {
+			continue;
+		}
+		launcher_add_result(out_results, out_capacity, &count,
+			ORANGE_LAUNCHER_RESULT_ACTION, i, action->label,
+			action->subtitle, action->icon_name, action->id);
+		limit--;
+	}
+	return count;
+}
+
+static int launcher_add_web_result(
+		const char *query,
+		struct orange_launcher_result *out_results,
+		int out_capacity,
+		int count) {
+	if (query == NULL || query[0] == '\0' || count >= out_capacity) {
+		return count;
+	}
+	char label[ORANGE_LAUNCHER_RESULT_LABEL_MAX];
+	snprintf(label, sizeof(label), "Search Web for \"%s\"", query);
+	launcher_add_result(out_results, out_capacity, &count,
+		ORANGE_LAUNCHER_RESULT_WEB, -1, label,
+		"Internet Search", "web-browser", query);
+	return count;
+}
+
+int orange_launcher_build_results(
+		const struct orange_desktop_entry *entries,
+		int entry_count,
+		const struct orange_file_info *files,
+		int file_count,
+		const char *query,
+		int mode,
+		const char *category_filter,
+		const struct orange_config *dock_config,
+		const void *dock_temporary_app_ids,
+		int dock_temporary_count,
+		struct orange_launcher_result *out_results,
+		int out_capacity) {
+	if (out_results == NULL || out_capacity <= 0) {
+		return 0;
+	}
+	for (int i = 0; i < out_capacity; i++) {
+		memset(&out_results[i], 0, sizeof(out_results[i]));
+	}
+	if (mode < 0 || mode >= ORANGE_LAUNCHER_MODE_COUNT) {
+		mode = ORANGE_LAUNCHER_MODE_APPS;
+	}
+	bool has_query = query != NULL && query[0] != '\0';
+	int count = 0;
+
+	if (mode == ORANGE_LAUNCHER_MODE_APPS) {
+		count = launcher_add_app_results(entries, entry_count, query,
+			has_query ? NULL : category_filter, dock_config,
+			dock_temporary_app_ids, dock_temporary_count,
+			!has_query, out_results, out_capacity, count,
+			has_query ? 6 : out_capacity);
+		if (has_query) {
+			count = launcher_add_file_results(files, file_count, query,
+				out_results, out_capacity, count, 5);
+			count = launcher_add_action_results(query, out_results,
+				out_capacity, count, 5);
+			count = launcher_add_web_result(query, out_results,
+				out_capacity, count);
+		}
+		return count;
+	}
+
+	if (mode == ORANGE_LAUNCHER_MODE_FILES) {
+		count = launcher_add_file_results(files, file_count, query,
+			out_results, out_capacity, count, out_capacity);
+		if (has_query) {
+			count = launcher_add_web_result(query, out_results,
+				out_capacity, count);
+		}
+		return count;
+	}
+
+	if (mode == ORANGE_LAUNCHER_MODE_ACTIONS) {
+		count = launcher_add_action_results(query, out_results,
+			out_capacity, count, out_capacity);
+		if (has_query) {
+			count = launcher_add_web_result(query, out_results,
+				out_capacity, count);
+		}
+		return count;
+	}
+
+	if (mode == ORANGE_LAUNCHER_MODE_CLIPBOARD) {
+		count = launcher_add_action_results(
+			has_query ? query : "paste clipboard",
+			out_results, out_capacity, count, out_capacity);
+		if (has_query) {
+			count = launcher_add_web_result(query, out_results,
+				out_capacity, count);
+		}
+		return count;
+	}
+
+	return count;
 }
 
 const char *orange_launcher_app_label(

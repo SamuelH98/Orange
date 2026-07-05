@@ -25,13 +25,12 @@ Orange package-first:
 The `orange` Void package is deliberately desktop-complete for a normal Void
 install. A repository user should be able to add the repo and run
 `xbps-install orange`; the dependency set pulls GDM, `gnome-core`,
-`gnome-apps`, Nautilus/GVFS, Firefox, Foot, Adwaita icons/fonts/backgrounds,
-Adwaita GTK light/dark theme support, `appmenu-gtk3-module`, ModemManager,
-and `wl-clipboard`. The package
+`gnome-apps`, Nautilus/GVFS, Firefox, Ghostty, Adwaita icons/fonts/backgrounds,
+Adwaita GTK light/dark theme support, ModemManager, and `wl-clipboard`. The package
 installs the Orange session file, default config, bundled wallpapers under both
-`/usr/share/orange/assets` and `/usr/share/backgrounds/orange`, and the session
-wrapper that enables `GTK_MODULES=appmenu-gtk-module` when the GTK3 module is
-present.
+`/usr/share/orange/assets` and `/usr/share/backgrounds/orange`, and a Wayland
+session wrapper that exports toolkit Wayland defaults, Chromium/Electron Ozone
+hints, Firefox Wayland mode, and `ORANGE_TERMINAL=ghostty`.
 
 Void still leaves runit service activation to the administrator. After
 installing Orange on a real Void system, enable the session services once:

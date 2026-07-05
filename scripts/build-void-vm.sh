@@ -296,7 +296,6 @@ tar -C "$repo_root" \
 	--exclude='.venv' \
 	--exclude='.venv-wlroots-build' \
 	--exclude='build' \
-	--exclude='build-wlroots-0.20' \
 	--exclude='private' \
 	--exclude='*.qcow' \
 	--exclude='*.qcow2' \
@@ -409,7 +408,7 @@ sud env XBPS_ARCH="$void_arch" XBPS_TARGET_ARCH="$void_arch" "$xbps_install" -Sy
 	-R "$binpkgs" \
 	-R "$void_repo" \
 	runit-void linux grub qemu-ga dbus elogind seatd gdm polkit \
-	orange gnome-core gnome-apps foot firefox nautilus appmenu-gtk3-module \
+	orange gnome-core gnome-apps ghostty firefox nautilus \
 	adwaita-icon-theme adwaita-fonts hicolor-icon-theme \
 	gnome-themes-extra gnome-themes-extra-gtk gnome-backgrounds gvfs \
 	dejavu-fonts-ttf mesa-dri \

@@ -1319,6 +1319,7 @@ static const char *const aliases_software[] = {
 	"software", "application-x-executable", NULL,
 };
 static const char *const aliases_terminal[] = {
+	"com.mitchellh.ghostty", "ghostty",
 	"org.gnome.Terminal", "utilities-terminal", "terminal",
 	"application-x-executable", NULL,
 };
@@ -1415,6 +1416,8 @@ static const struct icon_alias_set icon_alias_sets[] = {
 	{"org.gnome.Software", aliases_software},
 	{"system-software-install", aliases_software},
 	{"org.gnome.Terminal", aliases_terminal},
+	{"com.mitchellh.ghostty", aliases_terminal},
+	{"ghostty", aliases_terminal},
 	{"utilities-terminal", aliases_terminal},
 	{"folder", aliases_folder},
 	{"inode-directory", aliases_folder},

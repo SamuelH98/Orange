@@ -1,5 +1,6 @@
 #include "orange/config.h"
 #include "orange/desktop_entry.h"
+#include "orange/dock.h"
 #include "orange/shell.h"
 
 #include <assert.h>
@@ -1644,6 +1645,73 @@ static void test_side_dock_magnification_stays_below_menu_bar(void) {
 	free(pixels);
 }
 
+static void test_dock_trash_icon_reflects_full_state(void) {
+	const int width = 640;
+	const int height = 480;
+	cairo_surface_t *surface = cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, width, height);
+	assert(surface != NULL);
+	cairo_t *cr = cairo_create(surface);
+
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	config.calendar_widget_visible = false;
+	config.weather_widget_visible = false;
+	config.dock_magnification = false;
+	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
+		config.dock_apps[i][0] = '\0';
+	}
+	snprintf(config.dock_apps[0], sizeof(config.dock_apps[0]),
+		"%s", "__trash__");
+
+	struct orange_shell_layout layout;
+	orange_shell_layout_compute(width, height, false, &config,
+		0, 0, NULL, 0, &layout);
+	assert(layout.dock_item_count == 1);
+	assert(orange_dock_launcher_index(&layout, 0) == 0);
+
+	cairo_surface_t *empty = colored_icon_surface(0.95, 0.12, 0.18);
+	cairo_surface_t *full = colored_icon_surface(0.12, 0.75, 0.24);
+	struct orange_assets assets = {0};
+	orange_assets_init(&assets);
+	add_test_icon(&assets, "user-trash", empty);
+	add_test_icon(&assets, "user-trash-full", full);
+
+	struct orange_rect item = layout.dock_items[0];
+	struct orange_shell_state state = {
+		.system_menu_open = false,
+		.hot_dock_index = -1,
+		.dock_drag_index = -1,
+		.dock_drag_insert_before = -1,
+		.now = 1757638380,
+		.assets = &assets,
+		.config = &config,
+		.trash_full = false,
+	};
+	orange_dock_draw(cr, &layout, &state, &config);
+	cairo_surface_flush(surface);
+	uint32_t *pixels = (uint32_t *)cairo_image_surface_get_data(surface);
+	int stride = cairo_image_surface_get_stride(surface);
+	assert(color_close(pixel_at(pixels, stride,
+		item.x + item.width / 2,
+		item.y + item.height / 2), 242, 31, 46));
+
+	memset(pixels, 0, (size_t)height * (size_t)stride);
+	cairo_surface_mark_dirty(surface);
+	state.trash_full = true;
+	orange_dock_draw(cr, &layout, &state, &config);
+	cairo_surface_flush(surface);
+	assert(color_close(pixel_at(pixels, stride,
+		item.x + item.width / 2,
+		item.y + item.height / 2), 31, 191, 61));
+
+	cairo_destroy(cr);
+	cairo_surface_destroy(empty);
+	cairo_surface_destroy(full);
+	orange_assets_finish(&assets);
+	cairo_surface_destroy(surface);
+}
+
 static void test_default_dock_prefers_desktop_icons_before_role_icons(void) {
 	const int width = 1440;
 	const int height = 900;
@@ -1761,6 +1829,7 @@ int main(void) {
 	test_side_dock_hover_redraw_preserves_desktop_icons();
 	test_status_notifier_icon_draws_in_menu_bar();
 	test_side_dock_magnification_stays_below_menu_bar();
+	test_dock_trash_icon_reflects_full_state();
 	test_default_dock_prefers_desktop_icons_before_role_icons();
 	puts("shell visual tests passed");
 	return 0;

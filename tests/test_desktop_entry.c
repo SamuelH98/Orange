@@ -90,6 +90,7 @@ int main(void) {
 	char try_missing_path[2048];
 	char stale_snap_path[2048];
 	char stale_flatpak_path[2048];
+	char game_path[2048];
 	char helper_path[2048];
 	char missing_helper_path[2048];
 	snprintf(viewer_path, sizeof(viewer_path),
@@ -108,6 +109,8 @@ int main(void) {
 		"%s/stale-snap.desktop", home_apps);
 	snprintf(stale_flatpak_path, sizeof(stale_flatpak_path),
 		"%s/stale-flatpak.desktop", home_apps);
+	snprintf(game_path, sizeof(game_path),
+		"%s/example-game.desktop", home_apps);
 	snprintf(helper_path, sizeof(helper_path), "%s/helper", root);
 	snprintf(missing_helper_path, sizeof(missing_helper_path),
 		"%s/missing-helper", root);
@@ -148,6 +151,8 @@ int main(void) {
 		"helper", "stale-flatpak", "Utility;",
 		"X-Flatpak=dev.orange.MissingFlatpak\n"
 		"StartupWMClass=dev.orange.MissingFlatpak\n");
+	write_desktop_entry(game_path, "Example Game", "game-icon",
+		"example-game", "Game;ActionGame;");
 
 	struct orange_desktop_entry entry;
 	assert(orange_desktop_entry_load(viewer_path, &entry));
@@ -157,6 +162,8 @@ int main(void) {
 	assert(strcmp(entry.icon, "org.example.Viewer") == 0);
 	assert(strcmp(entry.exec, "example-viewer --open %U --name %c %i") == 0);
 	assert(strcmp(entry.categories, "Graphics;Photography;") == 0);
+	assert(orange_desktop_entry_has_category(&entry, "Graphics"));
+	assert(!orange_desktop_entry_is_game(&entry));
 	assert(orange_desktop_entry_id_matches(entry.id, "org.example.Viewer.desktop"));
 	assert(orange_desktop_entry_id_matches("firefox_firefox", "firefox.desktop"));
 	assert(orange_desktop_entry_id_matches("org.mozilla.firefox", "firefox.desktop"));
@@ -191,12 +198,16 @@ int main(void) {
 	assert(strcmp(entry.flatpak_id, "dev.orange.MissingFlatpak") == 0);
 	assert(!orange_desktop_entry_is_available(&entry));
 	assert(!orange_desktop_entry_should_show(&entry, "orange"));
+	assert(orange_desktop_entry_load(game_path, &entry));
+	assert(orange_desktop_entry_has_category(&entry, "ActionGame"));
+	assert(orange_desktop_entry_is_game(&entry));
 
 	struct orange_desktop_entry entries[16];
 	size_t count = 0;
 	assert(orange_desktop_entry_load_all(home_apps, entries, 16, &count));
-	assert(count == 10);
+	assert(count == 11);
 	assert(contains_entry(entries, count, "alpha"));
+	assert(contains_entry(entries, count, "example-game"));
 	assert(contains_entry(entries, count, "org.example.Viewer"));
 
 	char xdg_home[1024];

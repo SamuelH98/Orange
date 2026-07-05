@@ -12,15 +12,31 @@ scripts/run-void-vm.sh
 ```
 
 For an installed Void system using this repository as a local package source,
-installing `orange` is intended to pull the desktop stack:
+copy the overlay into a `void-packages` checkout, build it, index the generated
+local repository, and install `orange`:
 
 ```sh
-sudo xbps-install -S orange
+git clone https://github.com/void-linux/void-packages.git
+cd void-packages
+./xbps-src binary-bootstrap
+
+ORANGE_REPO=/path/to/orange-wlroots
+cp -a "$ORANGE_REPO/packaging/void/srcpkgs/orange" srcpkgs/orange
+rm -rf srcpkgs/orange/files/src
+mkdir -p srcpkgs/orange/files/src
+tar -C "$ORANGE_REPO" \
+  --exclude .git \
+  --exclude build \
+  -cf - . | tar -C srcpkgs/orange/files/src -xf -
+
+./xbps-src -1 pkg orange
+xbps-rindex -a hostdir/binpkgs/*.xbps
+sudo xbps-install -S -R "$PWD/hostdir/binpkgs" orange
 ```
 
 The package depends on GDM, `gnome-core`, `gnome-apps`, Nautilus/GVFS,
-Firefox, Foot, Adwaita icons/fonts/backgrounds, Adwaita GTK light/dark theme
-support, the GTK3 appmenu module, ModemManager, and wl-clipboard. Void packages do not enable runit
+Firefox, Ghostty, Adwaita icons/fonts/backgrounds, Adwaita GTK light/dark theme
+support, ModemManager, and wl-clipboard. Void packages do not enable runit
 services automatically; enable the login/session services once after install:
 
 ```sh

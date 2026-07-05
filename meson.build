@@ -227,7 +227,6 @@ if bash_prog.found()
       files(
         'scripts/build-vm.sh',
         'scripts/build-void-vm.sh',
-        'scripts/orange-appmenu-sandbox-setup.sh',
         'scripts/run-vm.sh',
         'scripts/run-void-vm.sh',
       ),

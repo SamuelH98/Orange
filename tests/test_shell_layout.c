@@ -337,6 +337,33 @@ static void test_minimize_animation_rect_math(void) {
 	assert(last.height == dock.height);
 }
 
+static void test_workspace_animation_offset_math(void) {
+	double start = orange_shell_workspace_animation_ease(0.0);
+	double mid = orange_shell_workspace_animation_ease(0.5);
+	double end = orange_shell_workspace_animation_ease(1.0);
+	assert(start == 0.0);
+	assert(mid > 0.5 && mid < 0.9);
+	assert(end == 1.0);
+
+	int span = 1440;
+	assert(orange_shell_workspace_animation_offset(span, 1, 0.0, false) == 0);
+	assert(orange_shell_workspace_animation_offset(span, 1, 1.0, false) ==
+		-span);
+	assert(orange_shell_workspace_animation_offset(span, 1, 0.0, true) ==
+		span);
+	assert(orange_shell_workspace_animation_offset(span, 1, 1.0, true) == 0);
+	assert(orange_shell_workspace_animation_offset(span, -1, 0.0, true) ==
+		-span);
+	assert(orange_shell_workspace_animation_offset(span, -1, 1.0, false) ==
+		span);
+	int incoming_mid = orange_shell_workspace_animation_offset(
+		span, 1, 0.5, true);
+	int outgoing_mid = orange_shell_workspace_animation_offset(
+		span, 1, 0.5, false);
+	assert(incoming_mid > 0 && incoming_mid < span / 2);
+	assert(outgoing_mid < -span / 2 && outgoing_mid > -span);
+}
+
 static void test_dock_scale_resizes_separator_layout(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
@@ -409,13 +436,18 @@ static void test_default_dock_apps_have_fallback_commands(void) {
 	assert(settings_command != NULL);
 	const char *gnome_display =
 		strstr(settings_command, "gnome-control-center display");
+	const char *gnome_multitasking =
+		strstr(settings_command, "gnome-control-center multitasking");
 	const char *gnome_system =
 		strstr(settings_command, "gnome-control-center system");
+	assert(gnome_multitasking != NULL);
 	assert(gnome_display != NULL);
 	assert(gnome_system != NULL);
+	assert(gnome_multitasking < gnome_display);
 	assert(gnome_display < gnome_system);
 	assert(strstr(settings_command, "gnome-control-center;") == NULL);
 	assert(strstr(settings_command, "build/orange-settings") == NULL);
+	assert(strstr(settings_command, "GSETTINGS_SCHEMA_DIR") == NULL);
 	assert(strstr(settings_command,
 		"XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu") != NULL);
 	assert(strstr(settings_command,
@@ -436,7 +468,7 @@ static void test_firefox_dock_matches_snap_desktop_entry(void) {
 			.id = "firefox_firefox",
 			.name = "Firefox Web Browser",
 			.icon = "/snap/firefox/current/default256.png",
-			.exec = "/home/samuel/.local/bin/firefox-appmenu %u",
+			.exec = "/home/samuel/.local/bin/firefox-snap-wrapper %u",
 		},
 	};
 
@@ -446,7 +478,7 @@ static void test_firefox_dock_matches_snap_desktop_entry(void) {
 	const char *command = orange_dock_command(2, entries, 1, &config);
 	assert(command != NULL);
 	assert(strstr(command, "/usr/bin/firefox") != NULL);
-	assert(strstr(command, "firefox-appmenu") == NULL);
+	assert(strstr(command, "firefox-snap-wrapper") == NULL);
 }
 
 static void test_dock_lookup_skips_stale_package_desktop_entry(void) {
@@ -601,6 +633,14 @@ static void test_temporary_dock_apps_appear_before_trash(void) {
 		"org.example.OtherApp.desktop") == 0);
 	assert(layout.dock_temporary_separator.width > 0);
 	assert(layout.dock_temporary_separator.height > 0);
+	struct orange_shell_hit hit = orange_shell_hit_test(
+		&layout,
+		layout.dock_temporary_separator.x +
+			layout.dock_temporary_separator.width / 2,
+		layout.dock_temporary_separator.y +
+			layout.dock_temporary_separator.height / 2);
+	assert(hit.kind == ORANGE_HIT_DOCK_SEPARATOR);
+	assert(hit.index == 1);
 }
 
 static void test_minimized_dock_screenshots_appear_left_of_trash(void) {
@@ -1299,6 +1339,25 @@ static void test_app_menu_layout_and_labels(void) {
 		sizeof(active_state.active_app_label), "%s", "Terminal");
 	assert(strcmp(orange_menubar_active_app_label(&active_state), "Terminal") == 0);
 
+	struct orange_app_menu_model stale_native_menu = {
+		.available = true,
+		.native = true,
+		.tab_count = ORANGE_APP_MENU_TAB_COUNT,
+	};
+	snprintf(stale_native_menu.tab_labels[ORANGE_APP_MENU_TAB_FILE],
+		sizeof(stale_native_menu.tab_labels[ORANGE_APP_MENU_TAB_FILE]),
+		"%s", "Native File");
+	orange_shell_layout_set_app_menu_tabs(&layout, "Files",
+		&stale_native_menu);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_FILE].width > 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_EDIT].width > 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_VIEW].width > 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_GO].width > 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_WINDOW].width > 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_TOOLS].width == 0);
+	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_HELP].width > 0);
+	orange_shell_layout_set_app_menu_tabs(&layout, "Photoshop", NULL);
+
 	struct orange_rect app_tab =
 		layout.app_menu_items[ORANGE_APP_MENU_TAB_APP];
 	struct orange_shell_hit hit = orange_shell_hit_test(
@@ -1793,11 +1852,12 @@ static void test_launcher_search_mode_transforms_to_overlay(void) {
 	orange_shell_layout_set_launcher(&layout, true,
 		ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY, 24);
 
-	assert(layout.launcher_display_mode == ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY);
+	assert(layout.launcher_display_mode == ORANGE_LAUNCHER_DISPLAY_FULL);
 	assert(layout.launcher_panel.width > 0);
-	assert(layout.launcher_panel.width == layout.launcher_search_field.width);
-	assert(layout.launcher_viewport.width == 0);
-	assert(layout.launcher_grid_cell_count == 0);
+	assert(layout.launcher_panel.width > layout.launcher_search_field.width);
+	assert(layout.launcher_viewport.width > 0);
+	assert(layout.launcher_grid_cell_count > 0);
+	assert(layout.launcher_list_results);
 	assert(layout.launcher_mode_buttons[0].width > 0);
 	assert(layout.launcher_mode_buttons[1].width > 0);
 
@@ -1816,8 +1876,11 @@ static void test_launcher_search_mode_transforms_to_overlay(void) {
 	assert(layout.launcher_panel.height <= (int)(layout.height * 0.56));
 	assert(layout.launcher_viewport.width > 0);
 	assert(layout.launcher_grid_cell_count > 0);
+	assert(layout.launcher_list_results);
 	assert(layout.launcher_mode_buttons[0].width > 0);
-	assert(layout.launcher_mode_buttons[1].width == 0);
+	assert(layout.launcher_mode_buttons[1].width > 0);
+	assert(layout.launcher_mode_buttons[2].width > 0);
+	assert(layout.launcher_mode_buttons[3].width > 0);
 	assert(layout.launcher_search_field.y + layout.launcher_search_field.height <
 		layout.launcher_panel.y);
 	assert(abs((layout.launcher_search_field.x +
@@ -1859,6 +1922,105 @@ static bool filter_contains_id(
 		}
 	}
 	return false;
+}
+
+static bool results_contain_kind_label(
+		const struct orange_launcher_result *results,
+		int count,
+		enum orange_launcher_result_kind kind,
+		const char *label) {
+	for (int i = 0; i < count; i++) {
+		if (results[i].kind == kind &&
+				strcmp(results[i].label, label) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool results_contain_action(
+		const struct orange_launcher_result *results,
+		int count,
+		const char *action) {
+	for (int i = 0; i < count; i++) {
+		if (results[i].kind == ORANGE_LAUNCHER_RESULT_ACTION &&
+				strcmp(results[i].action, action) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void test_launcher_spotlight_results(void) {
+	struct orange_config config;
+	orange_config_set_defaults(&config);
+	struct orange_desktop_entry entries[2] = {
+		{
+			.id = "org.gnome.Calculator.desktop",
+			.name = "Calculator",
+			.icon = "accessories-calculator",
+			.exec = "gnome-calculator",
+			.categories = "Utility;",
+		},
+		{
+			.id = "org.example.Notes.desktop",
+			.name = "Notes",
+			.icon = "accessories-text-editor",
+			.exec = "notes",
+			.categories = "Office;",
+		},
+	};
+	struct orange_file_info files[2] = {
+		{
+			.name = "Budget.xlsx",
+			.path = "/home/example/Desktop/Budget.xlsx",
+			.icon_name = "x-office-spreadsheet",
+			.is_directory = false,
+			.is_image = false,
+		},
+		{
+			.name = "Screenshots",
+			.path = "/home/example/Desktop/Screenshots",
+			.icon_name = "folder-pictures",
+			.is_directory = true,
+			.is_image = false,
+		},
+	};
+	struct orange_launcher_result results[16];
+	int count = orange_launcher_build_results(entries, 2, files, 2,
+		"calc", ORANGE_LAUNCHER_MODE_APPS, NULL, &config, NULL, 0,
+		results, 16);
+	assert(results_contain_kind_label(results, count,
+		ORANGE_LAUNCHER_RESULT_APP, "Calculator"));
+	assert(results_contain_kind_label(results, count,
+		ORANGE_LAUNCHER_RESULT_WEB, "Search Web for \"calc\""));
+
+	count = orange_launcher_build_results(entries, 2, files, 2,
+		"budget", ORANGE_LAUNCHER_MODE_APPS, NULL, &config, NULL, 0,
+		results, 16);
+	assert(results_contain_kind_label(results, count,
+		ORANGE_LAUNCHER_RESULT_FILE, "Budget.xlsx"));
+	assert(results_contain_kind_label(results, count,
+		ORANGE_LAUNCHER_RESULT_WEB, "Search Web for \"budget\""));
+
+	count = orange_launcher_build_results(entries, 2, files, 2,
+		"terminal", ORANGE_LAUNCHER_MODE_APPS, NULL, &config, NULL, 0,
+		results, 16);
+	assert(results_contain_action(results, count, "open-terminal"));
+
+	count = orange_launcher_build_results(entries, 2, files, 2,
+		"", ORANGE_LAUNCHER_MODE_FILES, NULL, &config, NULL, 0,
+		results, 16);
+	assert(count == 2);
+	assert(results[0].kind == ORANGE_LAUNCHER_RESULT_FILE);
+	assert(results[1].kind == ORANGE_LAUNCHER_RESULT_FILE);
+
+	count = orange_launcher_build_results(entries, 2, files, 2,
+		"", ORANGE_LAUNCHER_MODE_ACTIONS, NULL, &config, NULL, 0,
+		results, 16);
+	assert(count > 0);
+	assert(results_contain_action(results, count, "open-terminal"));
+	assert(results_contain_action(results, count, "open-settings"));
 }
 
 static void test_launcher_category_filter(void) {
@@ -2780,6 +2942,7 @@ int main(void) {
 	test_dock_visual_dirty_bounds_include_hover_labels();
 	test_dock_separator_drag_scale_math();
 	test_minimize_animation_rect_math();
+	test_workspace_animation_offset_math();
 	test_dock_scale_resizes_separator_layout();
 	test_dock_separator_menu_fits_minimize_detail();
 	test_default_dock_apps_have_fallback_commands();
@@ -2824,6 +2987,7 @@ int main(void) {
 	test_notification_center_layout_and_hit();
 	test_launcher_full_layout_scrolls_all_apps();
 	test_launcher_search_mode_transforms_to_overlay();
+	test_launcher_spotlight_results();
 	test_launcher_category_filter();
 	test_launcher_hides_desktop_entries_gnome_would_hide();
 	test_launcher_filters_apps_already_in_dock();

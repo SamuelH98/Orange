@@ -27,7 +27,207 @@ GNOME DisplayConfig compatibility services for settings clients, scoped
 Wayland/freedesktop spec compliance documentation, PNG render export,
 foreground-only visual smoke coverage, and headless one-shot validation.
 
-### Current Session - Side-Dock Hover Desktop Icon Redraw
+### Current Session - Fast macOS-Style Workspace Switching
+
+Orange workspace switches now use a short macOS-inspired horizontal slide
+instead of an instant hide/show. Research used Apple's current Mac User Guide:
+Spaces are navigated left/right with gestures or Control+Arrow, and Apple's
+Motion accessibility docs call out desktop switching as interface movement that
+users may reduce. Orange follows that model with a fast 170 ms cubic ease-out
+slide of live scene nodes; client window geometry stays unchanged and the
+scene-node offsets are reset exactly when the animation settles.
+
+The animation is compositor-local and respects Orange's hybrid shell model:
+menu bar, Dock, and shell overlays remain stable while workspace-scoped windows
+slide horizontally. Switching to a higher workspace brings the incoming
+workspace from the right and moves the outgoing workspace left; switching lower
+does the reverse. The existing GNOME `enable-animations` setting is now treated
+as the reduce-motion path for this feature, so workspace switches remain
+instant when animations are disabled.
+
+Validation passed with `ninja -C build test-shell-layout orange`,
+`./build/test-shell-layout`, `ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs` (11/11),
+`git diff --check` on the touched files, and
+`WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once`.
+The headless smoke still emits the known sandbox dconf warnings for read-only
+`/run/user/1000/dconf/user`, but exits successfully.
+
+Previous recent session notes:
+
+GNOME Multitasking Settings Integration:
+
+Orange now treats GNOME Settings' Multitasking panel as real compositor input
+instead of launching it with local schema shims. The temporary GNOME extension
+schema stub and `GSETTINGS_SCHEMA_DIR` command prefix were removed; Settings
+still falls back through `gnome-control-center multitasking`, but Orange now
+reads the real `org.gnome.desktop.interface`, `org.gnome.mutter`,
+`org.gnome.desktop.wm.preferences`, and `org.gnome.shell.app-switcher` keys.
+
+Implemented behavior keeps Orange's macOS-like shell while adding GNOME-style
+multitasking controls: top-left hot corner opens Orange's full launcher
+overview, active screen edges snap moved windows to the left/right half or
+maximize at the top using the work area, dynamic/fixed workspace settings drive
+Orange's workspace count, workspace display policy scopes workspaces to all
+outputs or only the primary output, and app switching can include all
+workspaces or only the current workspace. Keyboard workspace affordances are
+available with Super+Page/Arrow to switch and Super+Shift+Page/Arrow to move
+the focused window with the workspace switch.
+
+Validation passed with `ninja -C build test-shell-layout orange`,
+`./build/test-shell-layout`, `ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs` (11/11), an
+environment-matched `gnome-control-center --list` check showing the
+`multitasking` panel, `git diff --check` on the touched files, and
+`WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once`.
+The headless smoke still emits the known sandbox dconf warnings for read-only
+`/run/user/1000/dconf/user`, but exits successfully.
+
+Previous recent session notes:
+
+Fullscreen and Work-Area Window Bounds:
+
+Orange now follows the researched macOS distinction between true fullscreen and
+ordinary enlarged windows. Fullscreen xdg-shell toplevels are configured to the
+raw output rectangle so videos and games cover the menu bar and Dock, while
+maximized windows continue to use the shell work area. Interactive resize now
+caps the client rectangle against the same work area before sending the resize
+configure, preventing normal windows from being dragged over a visible Dock or
+side Dock. The compositor also uses `wlr_output_layout_get_box()` for these
+output rectangles so multi-output fullscreen/work-area math uses layout
+coordinates consistently. Fullscreen transitions now retain the previous
+work-area-safe frame and restore it on exit, with a centered work-area fallback
+for clients that launch directly fullscreen.
+
+Validation passed with `ninja -C build orange test-shell-layout`,
+`./build/test-shell-layout`, `ninja -C build`, `.venv-wlroots-build/bin/meson
+test -C build --print-errorlogs` (11/11), `git diff --check -- src/compositor.c
+PROJECT_STATE.md`, and `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange
+--headless --once`. The headless smoke still emits the known sandbox dconf
+warnings for read-only `/run/user/1000/dconf/user`, but exits successfully.
+
+Previous recent session notes:
+
+Spotlight Launcher Search:
+
+Orange's launcher now follows the macOS Tahoe Spotlight model more closely.
+Typing in compact Search expands to the full launcher panel, and query results
+switch from the empty-app grid to vertical Spotlight-style rows. The unified
+result model can show installed applications, cached Desktop files, built-in
+actions, and a web-search row. The full launcher now exposes four browse-mode
+chips for Applications, Files, Actions, and Clipboard-style actions; empty
+Applications mode keeps the existing app grid and category filters.
+
+The result builder lives in `src/launcher.c` so app/file/action/web ordering is
+testable outside the live compositor. The compositor activates rows by kind:
+apps use desktop-entry launch, files reuse `gio open`/`xdg-open`, actions reuse
+existing shell command helpers, and web rows launch a DuckDuckGo search through
+the default browser. Mouse clicks activate list rows immediately, while empty
+Applications grid cells keep the existing launcher-to-Dock drag behavior.
+
+Validation passed with `ninja -C build`, `./build/test-shell-layout`,
+`./build/test-shell-visual`, `.venv-wlroots-build/bin/meson test -C build
+--print-errorlogs` (11/11), `git diff --check`, and `WLR_BACKENDS=headless
+WLR_RENDERER=pixman ./build/orange --headless --once`. The headless smoke still
+emits the known sandbox dconf warnings for read-only `/run/user/1000/dconf/user`,
+but exits successfully.
+
+Previous recent session notes:
+
+Wayland launch, Void defaults, and build directory:
+
+Orange now treats Wayland as the default launch policy for non-game clients:
+direct launches export GTK/Qt/SDL/Clutter Wayland backends, Firefox Wayland
+mode, Electron Ozone hints, and scoped Chromium/Chrome flag environment when a
+Chromium-family browser command is detected. `Categories=Game` desktop entries
+are the exception: Orange does not force toolkit Wayland variables for them and
+leaves inherited nested-session display and session-bus state available until
+Orange has its own Xwayland host.
+
+The legacy GTK menu module path was removed from the package/session/docs
+surface. The Void session wrapper clears inherited GTK module injection, the
+old sandbox bridge script is gone, Meson no longer syntax-checks it, and the
+Void package/VM runtime lists no longer install that module package. Ghostty is
+now the packaged/default terminal through the Void dependency list,
+`ORANGE_TERMINAL=ghostty`, Dock fallback commands, app icon aliases, and the
+default Dock config. README and Void docs now include the local `void-packages`
+overlay, `xbps-src -1 pkg orange`, `xbps-rindex`, and `xbps-install -R` flow
+for installing Orange.
+
+The development build directory has been simplified to `build`; the wlroots
+target remains pinned through the versioned `wlroots-0.20` pkg-config
+dependency. README, requirements, Void packaging copy excludes, `.gitignore`,
+and handoff commands now use `build`. The local generated build directory was
+regenerated at `build` because Meson does not support relocating a configured
+build directory cleanly.
+
+Validation passed with `ninja -C build test-desktop-entry
+test-shell-layout orange`, `./build/test-desktop-entry`,
+`./build/test-shell-layout`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
+`bash -n scripts/build-vm.sh scripts/build-void-vm.sh scripts/run-vm.sh
+scripts/run-void-vm.sh`, `sh -n
+packaging/void/srcpkgs/orange/files/orange-session`, `git diff --check`, stale
+module reference searches, and `WLR_BACKENDS=headless WLR_RENDERER=pixman
+./build/orange --headless --once`. The standalone headless smoke
+still emits the known sandbox dconf warnings for read-only
+`/run/user/1000/dconf/user`, but exits successfully.
+After the build-directory rename, validation also passed with absolute
+wlroots-local paths for `.venv-wlroots-build/bin/meson setup build --reconfigure`,
+`ninja -C build`, `.venv-wlroots-build/bin/meson test -C build --print-errorlogs`
+(11/11), `git diff --check`, a stale versioned-build-directory reference
+search, and the same headless smoke from `./build/orange`.
+
+Optimization audit follow-up reviewed the largest compositor, shell, Dock,
+launcher, menubar, asset, script, package, and test surfaces with static
+searches for unsafe copy APIs, large stack buffers, repeated synchronous DBus
+access, Cairo surface churn, allocation patterns, and filesystem scans. The
+interactive app-menu discovery and activation paths now reuse Orange's cached
+session bus connection instead of performing fresh synchronous
+`g_bus_get_sync()` lookups. Validation passed with `ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs` (11/11),
+`git diff --check`, and `WLR_BACKENDS=headless WLR_RENDERER=pixman
+./build/orange --headless --once`; the headless smoke still emits the known
+sandbox dconf warnings for read-only `/run/user/1000/dconf/user`, but exits
+successfully.
+
+Older recent session notes:
+
+Dock Trash full icon:
+
+The Dock Trash launcher now reflects the current FreeDesktop trash state.
+Orange caches whether `$XDG_DATA_HOME/Trash/files` or
+`~/.local/share/Trash/files` contains any entries, initializes that state at
+startup, polls it from the compositor timer, and uses dock-only redraws when
+the full/empty state is the only visual change. Desktop "Move to Trash" actions
+and the Dock "Empty Trash" action request an immediate rescan on the next timer
+pass. The Dock renderer now switches the built-in `__trash__` launcher between
+`user-trash` and `user-trash-full` through shell state, with visual regression
+coverage for both icon states.
+
+Validation passed with `ninja -C build test-shell-visual
+test-shell-layout orange`, `./build/test-shell-visual`,
+`./build/test-shell-layout`, full `ninja -C
+build`, `.venv-wlroots-build/bin/meson test -C
+build --print-errorlogs`, targeted `git diff --check`, and
+`WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange
+--headless --once`. The headless smoke still emits the known sandbox dconf
+warnings for read-only `/run/user/1000/dconf/user`, but exits successfully.
+
+Clicking a desktop file or empty desktop now moves shell focus back to the
+Files desktop context. The compositor deactivates the previously focused client,
+clears keyboard focus, resets imported app-menu/AT-SPI state, and marks the
+shell dirty so the menu bar returns to Orange's built-in Files profile. The
+same focus transition is applied to desktop right-clicks so desktop context
+menus are also Files-scoped. Shell layout now ignores stale native app-menu
+models whenever the active app label is Files, with regression coverage for
+that fallback. Validation passed with `ninja -C build
+test-shell-layout orange`, `./build/test-shell-layout`, full
+`ninja -C build`, `.venv-wlroots-build/bin/meson test -C
+build --print-errorlogs`, targeted `git diff --check`, and
+`WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange
+--headless --once`. The headless smoke still emits the known sandbox dconf
+warnings for read-only `/run/user/1000/dconf/user`, but exits successfully.
 
 Fixed side-Dock hover redraws erasing desktop icons. Dock hover and
 magnification use a clipped redraw path that clears wallpaper inside the Dock
@@ -38,18 +238,13 @@ compositor dock-only redraw state now carries the same desktop file, volume,
 selection, rename, status, active-app, and app-menu data needed for that clipped
 base repaint. Added visual regression coverage that renders a desktop file icon
 inside the right-Dock hover dirty band, performs the clipped Dock redraw, and
-asserts the icon pixel remains visible.
-
-Validation passed with `ninja -C build-wlroots-0.20 test-shell-visual`,
-`./build-wlroots-0.20/test-shell-visual`, full
-`ninja -C build-wlroots-0.20`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+asserts the icon pixel remains visible. Validation passed with
+`ninja -C build test-shell-visual`,
+`./build/test-shell-visual`, full
+`ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 targeted `git diff --check`, and `WLR_BACKENDS=headless WLR_RENDERER=pixman
-./build-wlroots-0.20/orange --headless --once`. The headless smoke still emits
-the known sandbox dconf warnings for read-only `/run/user/1000/dconf/user`, but
-exits successfully.
-
-Previous recent session notes:
+./build/orange --headless --once`.
 
 Discord-safe Ozone Wayland hints extended Orange's client launch environment so
 Chromium/Electron/Ozone-capable apps are steered toward Wayland in the same
@@ -62,11 +257,11 @@ Discord launch-command compatibility path that keeps
 `ELECTRON_OZONE_PLATFORM_HINT=wayland` but unsets `NIXOS_OZONE_WL`,
 `CHROME_FLAGS`, and `CHROMIUM_FLAGS`. Discord cannot fall back to X11 under
 Orange because the compositor intentionally does not export a parent `DISPLAY`.
-Validation passed with `ninja -C build-wlroots-0.20`,
-`./build-wlroots-0.20/test-desktop-entry`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+Validation passed with `ninja -C build`,
+`./build/test-desktop-entry`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 targeted `git diff --check`, and `WLR_BACKENDS=headless WLR_RENDERER=pixman
-./build-wlroots-0.20/orange --headless --once`.
+./build/orange --headless --once`.
 
 Implemented AppIndicator/KStatusNotifierItem tray support through a session-bus
 `org.kde.StatusNotifierWatcher`. Orange now accepts
@@ -80,15 +275,15 @@ with a fallback glyph; hit testing returns tray-item indices; left-click routes
 to `Activate` or menu-first `ContextMenu` for AppIndicator-style items, and
 right-click routes to `ContextMenu`.
 
-Validation passed with `ninja -C build-wlroots-0.20 test-session-services
+Validation passed with `ninja -C build test-session-services
 test-shell-layout test-shell-visual`,
-`./build-wlroots-0.20/test-session-services`,
-`./build-wlroots-0.20/test-shell-layout`,
-`./build-wlroots-0.20/test-shell-visual`, full
-`ninja -C build-wlroots-0.20`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+`./build/test-session-services`,
+`./build/test-shell-layout`,
+`./build/test-shell-visual`, full
+`ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 targeted `git diff --check`, and `WLR_BACKENDS=headless WLR_RENDERER=pixman
-./build-wlroots-0.20/orange --headless --once`. The headless smoke still emits
+./build/orange --headless --once`. The headless smoke still emits
 the known sandbox dconf warnings for read-only `/run/user/1000/dconf/user`, but
 exits successfully.
 
@@ -102,14 +297,14 @@ commands grouped together. The menu now uses `Change Wallpaper...` and
 `Clean Up By`. The compositor action switch was updated to preserve the
 expected behavior for every visible row.
 
-Validation passed with `ninja -C build-wlroots-0.20 test-shell-layout
-test-shell-visual`, `./build-wlroots-0.20/test-shell-layout`,
-`./build-wlroots-0.20/test-shell-visual`, rebuilt `orange-render-shell`, a
+Validation passed with `ninja -C build test-shell-layout
+test-shell-visual`, `./build/test-shell-layout`,
+`./build/test-shell-visual`, rebuilt `orange-render-shell`, a
 manual render review of `/tmp/orange-menu-after.png`, full
-`ninja -C build-wlroots-0.20`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+`ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 targeted `git diff --check`, and `WLR_BACKENDS=headless WLR_RENDERER=pixman
-./build-wlroots-0.20/orange --headless --once`. The headless smoke still emits
+./build/orange --headless --once`. The headless smoke still emits
 the known sandbox dconf warnings for read-only `/run/user/1000/dconf/user`, but
 exits successfully.
 
@@ -117,16 +312,16 @@ Implemented hidden-by-default Dock auto-hide behavior for `dock_auto_hide=true`
 while keeping the existing `Automatically Hide and Show Dock` config/menu
 surface. The Dock now slides up from the configured screen edge when revealed
 and slides down when dismissed, using shared easing math covered by shell layout
-tests. Validation completed with `ninja -C build-wlroots-0.20`, `meson test -C
-build-wlroots-0.20 --print-errorlogs`, and `WLR_BACKENDS=headless
-WLR_RENDERER=pixman ./build-wlroots-0.20/orange --headless --once`.
+tests. Validation completed with `ninja -C build`, `meson test -C
+build --print-errorlogs`, and `WLR_BACKENDS=headless
+WLR_RENDERER=pixman ./build/orange --headless --once`.
 Dock context menus now render as one-piece soft chat-bubble panels without the
 bright white edge glow, with a wider integrated tail painted through the same
 glass path as the menu body, pointing back to the clicked Dock item/separator,
 a shorter rounded lower tip, top-left/top-right side-Dock tail placement, and a
 larger off-Dock gap.
-Validation for that refinement passed with `ninja -C build-wlroots-0.20` and
-`meson test -C build-wlroots-0.20 --print-errorlogs`.
+Validation for that refinement passed with `ninja -C build` and
+`meson test -C build --print-errorlogs`.
 Latest menu refinement removes the shared bright white outline and the added
 outside shadow from system menu dropdowns, context menus, and side submenus;
 those transient surfaces now separate from content through the glass material
@@ -134,17 +329,17 @@ itself. Visual coverage rejects bright source pixels at menu edges, asserts no
 outside shadow pixels remain, checks the Dock context bubble tail has no
 transparent seam at its base, and verifies oversized side-Dock magnification
 does not paint into the menu-bar gap. Validation passed with
-`ninja -C build-wlroots-0.20 test-shell-visual`,
-`./build-wlroots-0.20/test-shell-visual`, `ninja -C build-wlroots-0.20`, and
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`.
+`ninja -C build test-shell-visual`,
+`./build/test-shell-visual`, `ninja -C build`, and
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`.
 Side-Dock separator mouse resize now follows the horizontal divider's visible
 movement: dragging the separator down grows a left/right Dock and dragging it
 up shrinks it, with `ns-resize` used for bottom and side Dock separators. Shell
 layout coverage now asserts side-Dock vertical drag math, shrink behavior, and
 horizontal-drift stability. Validation passed with
-`ninja -C build-wlroots-0.20 test-shell-layout`,
-`./build-wlroots-0.20/test-shell-layout`, `ninja -C build-wlroots-0.20`, and
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`.
+`ninja -C build test-shell-layout`,
+`./build/test-shell-layout`, `ninja -C build`, and
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`.
 Genie and Scale window minimize effects now animate a temporary screenshot
 image between the real window rectangle and its Dock target. The compositor
 captures the view from the composed scene before hiding it, retains that
@@ -152,9 +347,9 @@ screenshot while minimized, and redraws the effect through the overlay buffer
 until completion.
 Scale uses fitted screenshot interpolation; the initial Genie pass reused the
 screenshot with a tapered curved clip toward the configured Dock edge. Validation
-passed with `ninja -C build-wlroots-0.20 test-shell-layout`,
-`./build-wlroots-0.20/test-shell-layout`, `ninja -C build-wlroots-0.20`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+passed with `ninja -C build test-shell-layout`,
+`./build/test-shell-layout`, `ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check`.
 Follow-up minimize refinement makes the retained screenshot a real Dock
 thumbnail item immediately left of Trash instead of only a transient animation
@@ -164,9 +359,9 @@ restore. The animation lifecycle now redraws the Dock after landing, avoids
 duplicating the static thumbnail while the flight is active, routes app-icon
 restore through the same minimize state machine, and guards Cairo surface
 creation to avoid crashes on repeated Genie/minimize draws. Validation passed
-with `ninja -C build-wlroots-0.20 test-shell-layout`,
-`./build-wlroots-0.20/test-shell-layout`, `ninja -C build-wlroots-0.20`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+with `ninja -C build test-shell-layout`,
+`./build/test-shell-layout`, `ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check`.
 Restore/re-minimize crash follow-up defers focus for Dock-thumbnail restores
 until the restore animation completes, instead of focusing a view while its real
@@ -174,8 +369,8 @@ scene node is still hidden behind the screenshot animation. Cancelling an
 in-flight restore now always re-enables the real scene node before another
 minimize capture can run, and starting a new minimize while a restore is active
 suppresses the pending restore-focus request. Validation passed with
-`ninja -C build-wlroots-0.20`, `./build-wlroots-0.20/test-shell-layout`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+`ninja -C build`, `./build/test-shell-layout`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check`.
 The wlroots buffer ownership crash reported as
 `wlr_buffer_drop: Assertion '!buffer->dropped' failed` is fixed by releasing
@@ -183,42 +378,42 @@ animation-held screenshot references with `wlr_buffer_unlock()` instead of
 `wlr_buffer_drop()`. Orange still drops the producer-owned retained thumbnail
 buffer when the view no longer needs it. Dock screenshot thumbnails no longer
 draw a border or backing frame around the image. Validation passed with
-`ninja -C build-wlroots-0.20`, `./build-wlroots-0.20/test-shell-layout`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+`ninja -C build`, `./build/test-shell-layout`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check`.
 Genie now uses its own screenshot warp renderer instead of sharing the Scale
 paint path with only a tapered clip. The edge nearest the configured Dock
 position leads while the opposite edge trails, and the overlay damage bounds
 cover the warped strip envelope. Scale remains the existing fitted screenshot
-interpolation. Validation passed with `ninja -C build-wlroots-0.20`,
-`./build-wlroots-0.20/test-shell-layout`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+interpolation. Validation passed with `ninja -C build`,
+`./build/test-shell-layout`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check`.
 Minimized Dock thumbnails now participate in the same Dock magnification visual
 rect calculation as launcher and Trash items, including auto-hide overlay Dock
 rendering. The Dock hover label for a minimized thumbnail is populated from the
 window title, with a generic fallback only when the client has no title. Layout
 coverage asserts minimized thumbnail magnification and title labeling.
-Validation passed with `ninja -C build-wlroots-0.20`,
-`./build-wlroots-0.20/test-shell-layout`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+Validation passed with `ninja -C build`,
+`./build/test-shell-layout`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check`.
 Dock screenshot thumbnails now use a larger thumbnail content rect than the
 previous inset and paint with Cairo's highest-quality image filter. The
 minimize/restore landing target for thumbnail slots uses the same larger rect,
 while launcher-icon targets keep their prior inset. Layout coverage asserts the
 new thumbnail footprint is larger than the previous `item / 12` inset.
-Validation passed with `ninja -C build-wlroots-0.20`,
-`./build-wlroots-0.20/test-shell-layout`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+Validation passed with `ninja -C build`,
+`./build/test-shell-layout`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check`.
 Long app names such as `Firefox Web Browser` now have more room in the menubar
 active-app tab, and Dock hover labels keep their full measured label while
 clamping/shrinking only when the bubble would exceed the screen. Layout coverage
 asserts the longer Firefox desktop-entry name is preserved for Dock labels and
 gets a wider active-app tab than the shorter `Firefox` label. Validation passed
-with `ninja -C build-wlroots-0.20`, `./build-wlroots-0.20/test-shell-layout`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+with `ninja -C build`, `./build/test-shell-layout`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check`.
 Follow-up Dock hover label clipping fix widens incremental Dock redraw bounds
 to the full output width so long hover bubbles are not clipped by partial
@@ -226,12 +421,12 @@ repaints, including with magnification enabled. Labels that are wider than the
 screen now render with an explicit `...` after font shrinking instead of being
 hard-clipped. Layout coverage asserts the shared Dock dirty-bounds helper spans
 the output width for bottom and side docks. Validation passed with
-`ninja -C build-wlroots-0.20 test-shell-layout`,
-`./build-wlroots-0.20/test-shell-layout`,
-`ninja -C build-wlroots-0.20 test-shell-visual`,
-`./build-wlroots-0.20/test-shell-visual`, `ninja -C build-wlroots-0.20`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 shell-layout shell-visual --print-errorlogs`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+`ninja -C build test-shell-layout`,
+`./build/test-shell-layout`,
+`ninja -C build test-shell-visual`,
+`./build/test-shell-visual`, `ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build shell-layout shell-visual --print-errorlogs`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check`.
 Menu surfaces now scale with the GNOME DisplayConfig/UI scale choices written
 through `orange_config_apply_ui_scale`: system-menu dropdowns, app-menu
@@ -239,7 +434,7 @@ dropdowns, desktop context menus, Dock menus, and Dock submenus use a
 menu-specific layout scale derived from resolution scale times the configured
 UI multiplier. Regression coverage checks 100%, 125%, 150%, 175%, and 200%
 scale steps. Validation passed with targeted `test-shell-layout` and
-`test-shell-visual` builds/binaries, full `ninja -C build-wlroots-0.20`,
+`test-shell-visual` builds/binaries, full `ninja -C build`,
 targeted and full Meson tests, and targeted `git diff --check`.
 Desktop icon grid follow-up gives desktop items a larger, distributed grid
 inside the usable work area with near-edge horizontal columns, a screen-edge
@@ -262,9 +457,9 @@ Overlap follow-up keeps free-placement desktop icons from stacking their
 selection/highlight hit regions on top of each other. The later icon is nudged
 to the nearest non-overlapping local position inside the same safe work area,
 instead of snapping to a far grid column.
-Validation passed with `ninja -C build-wlroots-0.20 test-shell-layout`,
-`./build-wlroots-0.20/test-shell-layout`, `ninja -C build-wlroots-0.20`,
-`.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`,
+Validation passed with `ninja -C build test-shell-layout`,
+`./build/test-shell-layout`, `ninja -C build`,
+`.venv-wlroots-build/bin/meson test -C build --print-errorlogs`,
 and targeted `git diff --check -- src/compositor.c src/shell.c tests/test_shell_layout.c PROJECT_STATE.md`.
 The system `meson test` binary is incompatible with this build directory's
 metadata; use the repo-local `.venv-wlroots-build/bin/meson` for this build.
@@ -433,7 +628,7 @@ Meson startup smoke test for custom headless compositor arguments.
   environment to DBus activation after the socket is created, and the 0.20
   pointer button handler uses the Wayland button-state enum so Dock releases
   are handled on the wlroots 0.20 event type.
-- Direct nested runs such as `./build-wlroots-0.20/orange` now launch clients
+- Direct nested runs such as `./build/orange` now launch clients
   with Orange's `WAYLAND_DISPLAY`, force common toolkits to Wayland, unset the
   parent `DISPLAY`, and use private per-launch DBus sessions by default so
   GNOME/GApplication single-instance apps do not activate an already-running
@@ -451,34 +646,34 @@ Meson startup smoke test for custom headless compositor arguments.
 
 #### Validation
 
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" ninja -C build-wlroots-0.20`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" ninja -C build`
   passed, with existing wlroots/compositor warnings.
-- Reconfigured and rebuilt `build-wlroots-0.20/orange` with the repo-local
+- Reconfigured and rebuilt `build/orange` with the repo-local
   wlroots 0.20 environment after the Settings launch and DisplayConfig fixes;
   the rebuilt binary contains no `build/orange-settings` launch strings and
   uses the GNOME-first `gnome-control-center display`, then
   `gnome-control-center system` fallback order. `meson test -C
-  build-wlroots-0.20 --print-errorlogs` passed (11/11 tests).
+  build --print-errorlogs` passed (11/11 tests).
 - A `dbus-run-session` headless smoke test called
   `org.gnome.Mutter.DisplayConfig.ApplyMonitorsConfig` with GNOME's scale and
   orientation payload. Verify and temporary apply returned `()`, and a
   subsequent `GetCurrentState` reported scale `1.25` and transform `uint32 1`.
   The smoke config file also contained `desktop_icon_scale=1.25`,
   `dock_scale=1.25`, and `dock_icon_scale=1.25`.
-- Rebuilt `build-wlroots-0.20/orange` after the scaled window-barrier fix.
-  `meson test -C build-wlroots-0.20 --print-errorlogs` passed (11/11 tests).
+- Rebuilt `build/orange` after the scaled window-barrier fix.
+  `meson test -C build --print-errorlogs` passed (11/11 tests).
   A scaled `dbus-run-session` DisplayConfig smoke applied scale `1.25`,
   returned `()`, and reported scale `1.25` in `GetCurrentState`.
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 shell-layout shell-visual --print-errorlogs`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build shell-layout shell-visual --print-errorlogs`
   passed.
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build --print-errorlogs`
   passed (9/9 tests).
-- `meson compile -C build-wlroots-0.20` passed.
-- `meson test -C build-wlroots-0.20 --print-errorlogs` passed (10/10 tests).
-- `.venv-wlroots-build/bin/meson setup --reconfigure build-wlroots-0.20`
+- `meson compile -C build` passed.
+- `meson test -C build --print-errorlogs` passed (10/10 tests).
+- `.venv-wlroots-build/bin/meson setup --reconfigure build`
   passed after adding `src/desktop.c` and `tests/test_desktop.c`.
-- `.venv-wlroots-build/bin/meson compile -C build-wlroots-0.20` passed cleanly.
-- `.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+- `.venv-wlroots-build/bin/meson compile -C build` passed cleanly.
+- `.venv-wlroots-build/bin/meson test -C build --print-errorlogs`
   passed (11/11 tests).
 - `git diff --check` passed for the files touched by the desktop rename,
   Open With, GNOME Files launch, and shortcut-label changes.
@@ -621,10 +816,10 @@ Meson startup smoke test for custom headless compositor arguments.
 
 - **Compact Search pill**: Menu-bar Search and Help search open a centered
   Spotlight-style glass pill with four adjacent round mode buttons. Typing
-  stays in the pill and does not expose hidden launch results.
-- **First-button transform**: Clicking the first adjacent mode button transforms
-  the pill into a smaller glass app-launcher panel anchored to the same
-  search/header position.
+  expands the pill into the launcher panel and shows unified local/web results.
+- **Mode-button transform**: Clicking any adjacent mode button transforms the
+  pill into a smaller glass app-launcher panel anchored to the same
+  search/header position and narrows results to that browse mode.
 - **Smaller app launcher**: Dock launcher and Super+Space open the centered app
   launcher panel directly at a reduced scale.
 - **Draggable placement**: Compact pill and expanded/full launcher panels can be
@@ -1112,7 +1307,7 @@ build here. They remain conditional for systems without GTK4 development files.
 
 - Installed wlroots 0.20.1 into the repo-local development prefix
   `.local/wlroots-0.20`; the pkg-config dependency name is `wlroots-0.20`.
-- Added `.local/`, `.venv-wlroots-build/`, and `build-wlroots-0.20/` to the
+- Added `.local/`, `.venv-wlroots-build/`, and `build/` to the
   local ignore list.
 - Updated Orange's Meson dependency to `dependency('wlroots-0.20')`.
 - Ported Orange directly to wlroots 0.20 APIs without a compatibility wrapper:
@@ -1131,13 +1326,13 @@ build here. They remain conditional for systems without GTK4 development files.
 
 - `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig pkg-config --modversion wlroots-0.20`
   returned `0.20.1`.
-- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" ninja -C build-wlroots-0.20`
+- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" ninja -C build`
   passed.
-- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build --print-errorlogs`
   passed (8/8 tests).
-- `ldd build-wlroots-0.20/orange` resolves `libdisplay-info.so.4` from
+- `ldd build/orange` resolves `libdisplay-info.so.4` from
   `.local/wlroots-0.20/lib/x86_64-linux-gnu` with no missing libraries.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build-wlroots-0.20/orange --headless --once --width 800 --height 600`
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once --width 800 --height 600`
   exited 0 after the local runpath fix.
 
 ### Void Package And KVM VM
@@ -1150,13 +1345,14 @@ build here. They remain conditional for systems without GTK4 development files.
   `/usr/share/orange/orange.conf`, and the tracked wallpaper assets.
 - The Orange Void package is now intended to be installable as the user's
   desktop entrypoint after adding the local repository. Installing `orange`
-  pulls `gdm`, `gnome-core`, `gnome-apps`, Nautilus/GVFS, Firefox, Foot,
-  Adwaita icons/fonts/backgrounds, Adwaita GTK light/dark theme packages, and
-  `appmenu-gtk3-module`. The package also installs bundled wallpapers under
+  pulls `gdm`, `gnome-core`, `gnome-apps`, Nautilus/GVFS, Firefox, Ghostty,
+  Adwaita icons/fonts/backgrounds, and Adwaita GTK light/dark theme packages.
+  The package also installs bundled wallpapers under
   `/usr/share/backgrounds/orange`.
-- `/usr/bin/orange-session` sets Adwaita GTK/icon/cursor defaults, enables
-  Firefox Wayland mode, and appends `appmenu-gtk-module` to `GTK_MODULES` when
-  Void's GTK3 appmenu module is installed.
+- `/usr/bin/orange-session` sets Adwaita GTK/icon/cursor defaults, clears
+  inherited GTK module injection, enables Firefox Wayland mode, exports
+  Wayland toolkit backends, exports Chromium/Electron Ozone hints, and defaults
+  `ORANGE_TERMINAL` to `ghostty`.
 - The Orange Void package now depends on Void's packaged `wlroots0.20-devel`
   binary package instead of the `wlroots-devel` metapackage. The metapackage
   template in the current `void-packages` checkout points at `wlroots0.20` while
@@ -1189,7 +1385,7 @@ build here. They remain conditional for systems without GTK4 development files.
   `/etc/sv/qemu-ga` service name for the QEMU guest agent; it uses Void's
   `dejavu-fonts-ttf` font package name; it installs Void's `gdm` package
   rather than Debian's `gdm3` package name; it includes `gnome-core`,
-  `gnome-apps`, Firefox, Nautilus/GVFS, Adwaita, and appmenu GTK3 packages; and
+  `gnome-apps`, Firefox, Ghostty, Nautilus/GVFS, and Adwaita packages; and
   it installs Void's `grub` package for guest bootloader setup.
 - The VM builder now writes `/etc/dracut.conf.d/orange-vm.conf` inside the guest,
   disables host-only initramfs generation, includes QEMU virtio/storage/display
@@ -1232,9 +1428,9 @@ build here. They remain conditional for systems without GTK4 development files.
 - Extracting the guest chroot heredoc from `scripts/build-void-vm.sh` and piping
   it to `/bin/sh -n` passed after adding the GRUB install and `grub.cfg`
   generation path.
-- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson setup build-wlroots-0.20 --reconfigure`
+- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson setup build --reconfigure`
   passed and registered the `vm-script-syntax` Meson test.
-- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 vm-script-syntax --print-errorlogs`
+- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build vm-script-syntax --print-errorlogs`
   passed.
 - `ORANGE_VOID_IMAGE_FORMAT=vti ORANGE_VOID_IMAGE=/tmp/orange-missing.vti ORANGE_VM_ALLOW_TCG=1 scripts/run-void-vm.sh`
   reached the expected missing-image guard, confirming the `vti` alias is
@@ -1259,7 +1455,7 @@ build here. They remain conditional for systems without GTK4 development files.
 - `rg -n "[[:blank:]]$" scripts/build-void-vm.sh scripts/run-void-vm.sh docs/VOID_VM.md packaging/void/README.md PROJECT_STATE.md`
   returned no matches, covering the untracked VM files that `git diff --check`
   does not inspect.
-- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+- `env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build --print-errorlogs`
   passed (8/8 tests) after the minimal-rootfs builder update, with existing
   wlroots 0.20 compiler warnings in `src/compositor.c`.
 - The rootfs checksum verifier was fixed so status output from the checksum
@@ -1312,7 +1508,7 @@ build here. They remain conditional for systems without GTK4 development files.
   no package.
 - Exact `xbps-query.static -R -M --repository=https://repo-default.voidlinux.org/current -p pkgver`
   checks passed for the remaining remote runtime packages: `linux`, `qemu-ga`,
-  `dbus`, `elogind`, `seatd`, `foot`, `adwaita-icon-theme`,
+  `dbus`, `elogind`, `seatd`, `ghostty`, `adwaita-icon-theme`,
   `hicolor-icon-theme`, `dejavu-fonts-ttf`, `gdm`, `polkit`, and `mesa-dri`.
 - Void current provides `gdm-48.0_2`, while queries for `gdm3` returned no
   package. `xbps-query --files gdm` showed `/etc/sv/gdm/run`, and the cached
@@ -1365,22 +1561,22 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Validation
 
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ninja -C build-wlroots-0.20 -t clean`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ninja -C build -t clean`
   cleaned the local wlroots 0.20 build outputs.
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin .venv-wlroots-build/bin/meson setup build-wlroots-0.20 --reconfigure`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin .venv-wlroots-build/bin/meson setup build --reconfigure`
   passed and repaired stale Meson metadata. The reconfigure was rerun with
   absolute `.local/wlroots-0.20/bin` in `PATH` so Ninja records an executable
   absolute `wayland-scanner` path.
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ninja -C build-wlroots-0.20`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ninja -C build`
   passed from a clean rebuild with no compiler warnings.
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin .venv-wlroots-build/bin/meson test -C build --print-errorlogs`
   passed (9/9 tests).
 - `git diff --check -- src/compositor.c` passed.
 - `rg -n 'strcpy\(|strcat\(|sprintf\(|gets\(|wlr_xdg_surface_schedule_configure|wl_container_of\([^\n]*(outputs|views|keyboards)\.next' src include tests tools`
   found no unsafe string-copy calls or direct xdg-surface schedule calls. The
   remaining `outputs.next` matches are guarded by `wl_list_empty()` checks.
 - A manual headless xdg-shell smoke test launched Orange with wlroots 0.20.1,
-  connected two `foot` clients to the generated `WAYLAND_DISPLAY`, waited for
+  connected two Wayland terminal clients to the generated `WAYLAND_DISPLAY`, waited for
   both to map/exit, and found no assertion, abort, `surface->initialized`, or
   failure markers in `/tmp/orange-xdg-smoke.log`. The first run was blocked by
   sandbox socket restrictions, then passed outside the sandbox.
@@ -1416,14 +1612,14 @@ build here. They remain conditional for systems without GTK4 development files.
   through `com.canonical.dbusmenu.Event`.
 - GTK/GMenu probing remains as a secondary exporter path, with a few additional
   conventional object paths checked from the application bus name.
-- Added a no-appmenu-module fallback through AT-SPI DBus probing. When no
+- Added a no-module fallback through AT-SPI DBus probing. When no
   DBusMenu/GMenu exporter is found, Orange connects to the accessibility bus,
   matches the focused Wayland client PID to an AT-SPI application, scans a
   bounded accessible subtree, and exposes named actionable controls as an
   `Actions` tab. Clicking those items dispatches `org.a11y.atspi.Action.DoAction`.
-- Ubuntu appmenu GTK packages are installed locally, and Orange now appends
-  `appmenu-gtk-module` to `GTK_MODULES` for exported client activation and
-  directly launched client processes when a GTK appmenu module is present.
+- Current Orange app-menu discovery does not install or inject GTK exporter
+  modules. It uses DBusMenu/GMenu/GAction exporters that clients expose
+  themselves, then AT-SPI and built-in fallback profiles.
 - Orange now falls back from AppMenu registrar entries to PID-matched GMenu
   discovery: it lists well-known session bus names owned by the focused Wayland
   client process and probes their `org.gtk.Menus`/`org.gtk.Actions` exports.
@@ -1442,63 +1638,46 @@ build here. They remain conditional for systems without GTK4 development files.
   App, File, Edit, View, Window, and Help tabs. Browser and Files profiles keep
   their specialized History/Bookmarks/Go labels. The macOS-style system menu
   remains unchanged; no separate Display Settings row was added.
-- User-scoped sandbox support was installed on the local Ubuntu machine:
-  Flatpak has an appmenu GTK3 bundle under
-  `~/.local/share/orange/appmenu-gtk3` plus user overrides for the module
-  environment, compiled `org.appmenu.gtk-module` GSettings schema, and
-  `com.canonical.AppMenu.Registrar` DBus access; Firefox Snap has a bundle
-  under `~/snap/firefox/common/orange-appmenu-gtk3` with the same compiled
-  schema and a user desktop override that launches `~/.local/bin/firefox-appmenu`.
+- Earlier local sandbox bridge experiments were removed from the repository.
+  Sandboxed apps now participate only when their permissions allow DBusMenu,
+  GMenu, GAction, or AT-SPI access to the relevant session services.
 
 #### Validation
 
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" ninja -C build-wlroots-0.20`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" ninja -C build`
   passed with no compiler warnings after the app-menu changes.
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" ninja -C build-wlroots-0.20`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" ninja -C build`
   passed after the click focus/raise fix.
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 app-menu shell-layout headless-custom-startup --print-errorlogs`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build app-menu shell-layout headless-custom-startup --print-errorlogs`
   passed (3/3 tests).
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH="/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build --print-errorlogs`
   passed (10/10 tests).
 - A private `dbus-run-session` smoke test launched Orange headless, introspected
   `com.canonical.AppMenu.Registrar`, called `RegisterWindow 42 /com/example/Menu`,
   and verified `GetMenus` returned `/com/example/Menu`. The sandbox blocked the
   private DBus socket on the first run; the same smoke passed outside the
   sandbox.
-- `meson compile -C build-wlroots-0.20` passed after reconfiguring the build
+- `meson compile -C build` passed after reconfiguring the build
   with the repo-local wlroots 0.20 pkg-config path.
-- `meson test -C build-wlroots-0.20 app-menu shell-layout headless-custom-startup --print-errorlogs`
+- `meson test -C build app-menu shell-layout headless-custom-startup --print-errorlogs`
   passed (3/3 tests).
 - A temporary headless Orange instance on the real session bus owned
   `com.canonical.AppMenu.Registrar`; host and Flatpak `gdbus` calls to
   `org.freedesktop.DBus.Peer.Ping` and `GetMenus` succeeded.
-- Flatpak validation showed the installed override sets `GTK_MODULES`,
-  `GTK_PATH`, and `LD_LIBRARY_PATH`, can reach Orange's registrar, and loads
-  `appmenu-gtk-module` without GTK reporting a module load failure.
-- Firefox Snap validation showed the wrapper-accessible bundle resolves
-  `libappmenu-gtk-module.so` and its helper libraries against Snap's GNOME
-  runtime after prepending the bundle path inside the Snap shell.
-- After Firefox reported `Settings schema 'org.appmenu.gtk-module' is not
-  installed`, the appmenu GSettings schema was copied and compiled into both
-  sandbox bundles. `snap run --shell firefox` can now list
-  `org.appmenu.gtk-module`, `gsettings get org.appmenu.gtk-module blacklist`
-  succeeds, and `firefox.launcher --version` exits successfully with the
-  appmenu module, schema, and helper library environment injected.
 - Live diagnosis against the running Orange registrar showed
-  `GetMenus` returning an empty map even though `GTK_MODULES` was set. A
+  `GetMenus` returning an empty map without a direct registration. A
   temporary GTK3 `GtkApplication` exported `org.gtk.Menus` at
   `/org/orange/MenuTest/menus/menubar`, confirming that direct GMenu discovery
   is needed on Wayland when `RegisterWindow` is not emitted.
-- The Void package template no longer hard-depends on `appmenu-gtk3-module`.
-  The module remains optional compatibility for old GTK3 menu-shell apps rather
-  than the baseline Orange app-menu mechanism.
+- The Void package template does not depend on GTK menu exporter modules; the
+  baseline Orange app-menu mechanism is Wayland/client-exporter focused.
 - `env -u GTK_THEME -u GTK_ICON_THEME XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu XDG_SESSION_DESKTOP=gnome DESKTOP_SESSION=gnome GNOME_DESKTOP_SESSION_ID=this-is-deprecated gnome-control-center --list`
   succeeds locally and lists the `display` panel on GNOME Control Center 46.7;
   Orange's settings commands keep using that wrapper when launching GNOME
   Control Center under Orange.
-- `meson compile -C build-wlroots-0.20` passed after the fallback-menu and
+- `meson compile -C build` passed after the fallback-menu and
   discovery-throttle changes.
-- `meson test -C build-wlroots-0.20 --print-errorlogs` passed (10/10 tests)
+- `meson test -C build --print-errorlogs` passed (10/10 tests)
   after the fallback-menu and discovery-throttle changes.
 
 #### Known Limits
@@ -1514,10 +1693,8 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Implemented
 
-- Removed the stale hidden `build/` workflow in favor of the 0.20-only
-  `build-wlroots-0.20` development build. README and requirements/research docs
-  now describe `wlroots-0.20`; `.gitignore` no longer hides an unversioned
-  `build/` directory.
+- The development build directory is named `build` while the dependency target
+  stays pinned to the versioned `wlroots-0.20` pkg-config package.
 - The compositor now pumps the default GLib context from a 10ms Wayland timer
   and drains all pending work each tick. GNOME Settings DisplayConfig calls no
   longer wait for Orange's 1-second clock timer, which was the source of the
@@ -1558,9 +1735,9 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Validation
 
-- `ninja -C build-wlroots-0.20` passed after the DisplayConfig type fixes and
+- `ninja -C build` passed after the DisplayConfig type fixes and
   again after enabling `wp_viewporter`/`wp_fractional_scale_manager_v1`.
-- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+- `env PKG_CONFIG_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:/home/samuel/orange-wlroots/.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=/home/samuel/orange-wlroots/.local/wlroots-0.20/bin:/home/samuel/orange-wlroots/.venv-wlroots-build/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin .venv-wlroots-build/bin/meson test -C build --print-errorlogs`
   passed (10/10 tests).
 - A private `dbus-run-session` headless smoke called
   `org.gnome.Mutter.DisplayConfig.GetCurrentState`; the returned payload
@@ -1576,18 +1753,18 @@ build here. They remain conditional for systems without GTK4 development files.
   six seconds. GNOME Control Center stayed open until timeout and Orange logs
   contained no `wlr_xdg_surface_schedule_configure`, `surface->initialized`,
   `Assertion`, or `Aborted` markers.
-- The popup lifecycle fix was rebuilt with `ninja -C build-wlroots-0.20`;
-  `meson test -C build-wlroots-0.20 --print-errorlogs` passed (10/10 tests).
+- The popup lifecycle fix was rebuilt with `ninja -C build`;
+  `meson test -C build --print-errorlogs` passed (10/10 tests).
   A second private `dbus-run-session` real-client smoke launched
   `gnome-control-center display` against Orange's headless Wayland socket for
   six seconds with no `wlr_xdg_surface_schedule_configure`,
   `surface->initialized`, `Assertion`, or `Aborted` markers. This sandbox has
   no Wayland input automation tool installed, so physically clicking the
   orientation dropdown still needs interactive validation in the live session.
-- After the popup-grab outside-click guard, `ninja -C build-wlroots-0.20` and
+- After the popup-grab outside-click guard, `ninja -C build` and
   `git diff --check -- src/compositor.c` passed.
 - After the popup-grab outside-click guard, the full test suite passed:
-  `meson test -C build-wlroots-0.20 --print-errorlogs` reported 10/10 tests.
+  `meson test -C build --print-errorlogs` reported 10/10 tests.
 - A corrected private `dbus-run-session` headless DisplayConfig smoke applied
   all transform values `0..7` through `ApplyMonitorsConfig`; Orange stayed
   alive and the log contained no `Assertion`, `Aborted`,
@@ -1609,11 +1786,11 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Validation
 
-- `.venv-wlroots-build/bin/meson compile -C build-wlroots-0.20` passed.
+- `.venv-wlroots-build/bin/meson compile -C build` passed.
 - An isolated headless run with copied config and temporary `HOME`,
   `XDG_CONFIG_HOME`, and `XDG_RUNTIME_DIR` wrote
   `gtk-icon-theme-name=Adwaita` to both GTK 4 and GTK 3 settings files.
-- `.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+- `.venv-wlroots-build/bin/meson test -C build --print-errorlogs`
   passed (10/10 tests).
 
 ### Dock Auto-Hide, GNOME Apps Settings, And Icon Alpha
@@ -1644,14 +1821,14 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Validation
 
-- `ninja -C build-wlroots-0.20 test-config test-shell-layout` passed.
-- `./build-wlroots-0.20/test-config` passed.
-- `./build-wlroots-0.20/test-shell-layout` passed.
-- `ninja -C build-wlroots-0.20 orange` passed.
-- `ninja -C build-wlroots-0.20 test-shell-visual` passed.
-- `./build-wlroots-0.20/test-shell-visual` passed.
-- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig ninja -C build-wlroots-0.20` passed after the fullscreen Dock auto-hide fix.
-- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs` passed (11/11 tests).
+- `ninja -C build test-config test-shell-layout` passed.
+- `./build/test-config` passed.
+- `./build/test-shell-layout` passed.
+- `ninja -C build orange` passed.
+- `ninja -C build test-shell-visual` passed.
+- `./build/test-shell-visual` passed.
+- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig ninja -C build` passed after the fullscreen Dock auto-hide fix.
+- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig .venv-wlroots-build/bin/meson test -C build --print-errorlogs` passed (11/11 tests).
 
 ### Dock Keep In Dock And Context Menu Cleanup
 
@@ -1707,11 +1884,11 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Validation
 
-- `.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 shell-layout --print-errorlogs`
+- `.venv-wlroots-build/bin/meson test -C build shell-layout --print-errorlogs`
   passed.
-- `.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 shell-visual --print-errorlogs`
+- `.venv-wlroots-build/bin/meson test -C build shell-visual --print-errorlogs`
   passed.
-- `.venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+- `.venv-wlroots-build/bin/meson test -C build --print-errorlogs`
   passed (11/11 tests). The build still reports existing unused-helper warnings
   for `cycle_dock_size` and `cycle_dock_magnification_size`.
 - `git diff --check -- include/orange/dock.h include/orange/launcher.h include/orange/shell.h src/dock.c src/launcher.c src/compositor.c tests/test_shell_layout.c`
@@ -1740,11 +1917,11 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Validation
 
-- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson setup --reconfigure build-wlroots-0.20`
+- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson setup --reconfigure build`
   passed.
-- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson compile -C build-wlroots-0.20`
+- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson compile -C build`
   passed without project warnings.
-- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson test -C build-wlroots-0.20`
+- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson test -C build`
   passed (11/11 tests).
 - `git diff --check -- include/orange/shell.h src/shell.c src/compositor.c tests/test_shell_layout.c`
   passed.
@@ -1756,7 +1933,7 @@ build here. They remain conditional for systems without GTK4 development files.
 - Firefox Dock aliases now resolve stale snap IDs such as `firefox_firefox`
   through the built-in Firefox command before consulting desktop entries, so a
   leftover `~/.local/share/applications/firefox_firefox.desktop` that points at
-  `firefox-appmenu` no longer blocks a non-snap Firefox install.
+  `firefox-snap-wrapper` no longer blocks a non-snap Firefox install.
 - Desktop entries now parse `Hidden`, `NoDisplay`, `OnlyShowIn`, `NotShowIn`,
   `TryExec`, `StartupWMClass`, `X-SnapInstanceName`, `X-SnapAppName`, and
   `X-Flatpak`.
@@ -1772,9 +1949,9 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Validation
 
-- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson compile -C build-wlroots-0.20`
+- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson compile -C build`
   passed.
-- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson test -C build-wlroots-0.20`
+- `PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig meson test -C build`
   passed (11/11 tests).
 - `git diff --check -- include/orange/desktop_entry.h src/desktop_entry.c src/launcher.c src/dock.c tests/test_desktop_entry.c tests/test_shell_layout.c`
   passed.
@@ -1801,12 +1978,12 @@ build here. They remain conditional for systems without GTK4 development files.
 
 #### Validation
 
-- `ninja -C build-wlroots-0.20 test-shell-layout` passed.
-- `./build-wlroots-0.20/test-shell-layout` passed.
-- `ninja -C build-wlroots-0.20 test-shell-visual` passed.
-- `./build-wlroots-0.20/test-shell-visual` passed.
-- `ninja -C build-wlroots-0.20` passed.
-- `meson test -C build-wlroots-0.20 --print-errorlogs` did not run because
+- `ninja -C build test-shell-layout` passed.
+- `./build/test-shell-layout` passed.
+- `ninja -C build test-shell-visual` passed.
+- `./build/test-shell-visual` passed.
+- `ninja -C build` passed.
+- `meson test -C build --print-errorlogs` did not run because
   the build directory's Meson metadata was generated by an older Meson and
   requires `meson setup --reconfigure`.
 
@@ -1832,7 +2009,7 @@ Continue from the current implementation. Target wlroots 0.20.1 directly, keep
 private wallpapers and local theme experiments ignored, and validate the 0.20
 dev build with the repo-local prefix:
 
-`env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build-wlroots-0.20 --print-errorlogs`
+`env PKG_CONFIG_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu/pkgconfig:.local/wlroots-0.20/share/pkgconfig LD_LIBRARY_PATH=.local/wlroots-0.20/lib/x86_64-linux-gnu PATH=".local/wlroots-0.20/bin:$PATH" .venv-wlroots-build/bin/meson test -C build --print-errorlogs`
 
 To build and run the Void VM, first enable WSL2 nested virtualization and make
 sure `/dev/kvm` and loop devices are visible in the distro. Then run

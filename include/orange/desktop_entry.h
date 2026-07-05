@@ -30,6 +30,11 @@ bool orange_desktop_entry_is_available(
 bool orange_desktop_entry_should_show(
 	const struct orange_desktop_entry *entry,
 	const char *desktop_env);
+bool orange_desktop_entry_has_category(
+	const struct orange_desktop_entry *entry,
+	const char *category);
+bool orange_desktop_entry_is_game(
+	const struct orange_desktop_entry *entry);
 int orange_desktop_entry_match_score(
 	const struct orange_desktop_entry *entry,
 	const char *id);

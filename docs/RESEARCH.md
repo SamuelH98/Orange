@@ -348,21 +348,13 @@ Orange therefore keeps the implementation original and GTK4-only while using
 GNOME's broad categories as inspiration for sidebar grouping.
 
 macOS Tahoe 26 changes Spotlight from a narrow search launcher into a broader
-command and browsing surface. Apple's June 9, 2025 Tahoe preview describes it
-as the biggest Spotlight update, with intelligently ranked results for apps,
-files, folders, events, messages, and more; browse views for apps, files,
-clipboard history, and related content; direct actions such as sending email or
-creating notes; App Intents integration for third-party actions; and quick keys
-for action shortcuts. Hands-on reports from the Tahoe beta describe the visible
-interaction model as a glass Spotlight bar that exposes command-number browse
-modes: Ctrl+1 for Apps, Ctrl+2 for Files, Ctrl+3 for Shortcuts/Actions, and Ctrl+4
-for Clipboard. The Apps browse mode behaves like a compact Launchpad/App
-Library replacement, while Spotlight still begins from a lightweight search
-entry with nearby browse-mode buttons. Orange should model that by opening
-menu-bar Search as a centered glass pill that remains compact while the user
-types, then transforms into the Apps launcher only when the first adjacent mode
-button is clicked. Dock launcher and Super+Space can open the centered Apps
-overlay directly.
+command and browsing surface. Apple's current Tahoe Mac User Guide describes
+Spotlight results from apps, files, actions, the internet, and Clipboard, plus
+browse modes for Applications, Files, Actions, and Clipboard. Orange models
+that with a centered glass Search pill that expands into the launcher when the
+user types, four browse-mode buttons, and unified result rows for apps,
+Desktop files, built-in actions, and web search. Dock launcher and Super+Space
+can still open the centered Apps overlay directly.
 
 Apple's Tahoe Mac User Guide keeps the long-standing Dock customization model:
 apps are added by dragging them into the app side of the Dock, removing a Dock
@@ -374,8 +366,7 @@ Orange should therefore make Dock removal a drag-off alias operation, keep
 Trash and the launcher available as permanent shell affordances, and let app
 icons from the launcher become Dock aliases when dropped on the Dock.
 
-Fildem's global menu has two relevant discovery paths. Its README requires
-GTK clients to load `appmenu-gtk-module`, and its Python service owns
+Fildem's global menu has two relevant discovery paths. Its Python service owns
 `com.canonical.AppMenu.Registrar` at `/com/canonical/AppMenu/Registrar`.
 Exporter modules call `RegisterWindow(windowId, menuObjectPath)`, Fildem stores
 the DBus sender and object path, and then asks `GetMenuForWindow(xid)` before
@@ -383,8 +374,9 @@ reading the `com.canonical.dbusmenu` tree with `GetLayout`. Fildem also has a
 GTK-specific fallback that reads `_GTK_UNIQUE_BUS_NAME`,
 `_GTK_MENUBAR_OBJECT_PATH`, and related X11 window properties before querying
 `org.gtk.Menus`/`org.gtk.Actions`. Orange cannot depend on those X11
-properties for native Wayland clients, so the compositor-owned registrar uses
-DBus sender PID plus Wayland client PID matching as the Wayland equivalent.
+properties or legacy GTK exporter modules for native Wayland clients, so the
+compositor-owned registrar uses DBus sender PID plus Wayland client PID
+matching as the Wayland equivalent.
 
 The AT-SPI DBus interfaces provide a no-appmenu-module fallback for controls
 that applications expose to accessibility tools: `org.a11y.Bus.GetAddress`
@@ -475,7 +467,10 @@ pointer is not over a child icon or text item.
   fails during renderer creation with `no DRM FD available`, and Pixman is the
   expected WSLg fallback.
 - Running a real compositor outside headless mode may require a nested Wayland
-  or X11 session, or a TTY with seat permissions.
+  session or a TTY with seat permissions. Orange does not currently host
+  Xwayland; `Game` desktop entries are merely exempted from forced toolkit
+  Wayland variables and may keep inherited nested-session display and session
+  bus state so native game launchers can choose their supported path.
 - Exact proprietary vendor assets cannot be redistributed in this repository.
 - The native GTK Settings and About apps are implemented conditionally so the
   compositor can still build on systems without GTK development headers.

@@ -16,7 +16,7 @@
 #define ORANGE_GNOME_APP_ENV "env -u GTK_THEME -u GTK_ICON_THEME NO_AT_BRIDGE=1 GSK_RENDERER=cairo XDG_CURRENT_DESKTOP=" ORANGE_GNOME_SETTINGS_DESKTOP " XDG_SESSION_DESKTOP=gnome DESKTOP_SESSION=gnome GNOME_DESKTOP_SESSION_ID=this-is-deprecated "
 #define ORANGE_GNOME_SETTINGS_ENV ORANGE_GNOME_APP_ENV
 #define ORANGE_GNOME_SETTINGS_FAST_ENV ORANGE_GNOME_SETTINGS_ENV
-#define ORANGE_SETTINGS_COMMAND "if command -v gnome-control-center >/dev/null 2>&1; then " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center applications || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center display || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center system; elif command -v systemsettings >/dev/null 2>&1; then systemsettings; elif command -v xfce4-settings-manager >/dev/null 2>&1; then xfce4-settings-manager; fi; true"
+#define ORANGE_SETTINGS_COMMAND "if command -v gnome-control-center >/dev/null 2>&1; then " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center applications || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center multitasking || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center display || " ORANGE_GNOME_SETTINGS_FAST_ENV "gnome-control-center system; elif command -v systemsettings >/dev/null 2>&1; then systemsettings; elif command -v xfce4-settings-manager >/dev/null 2>&1; then xfce4-settings-manager; fi; true"
 #define ORANGE_TRASH_COMMAND "if command -v nautilus >/dev/null 2>&1; then " ORANGE_GNOME_APP_ENV "nautilus trash:///; elif command -v gio >/dev/null 2>&1; then gio open trash:///; else xdg-open trash:///; fi; true"
 
 /* Built-in dock entries (not from .desktop files) */
@@ -30,12 +30,12 @@ static const char *builtin_label(const char *app_id) {
 	return NULL;
 }
 
-static const char *builtin_icon(const char *app_id) {
+static const char *builtin_icon(const char *app_id, bool trash_full) {
 	if (strcmp(app_id, "__launcher__") == 0) {
 		return "view-app-grid";
 	}
 	if (strcmp(app_id, "__trash__") == 0) {
-		return "user-trash";
+		return trash_full ? "user-trash-full" : "user-trash";
 	}
 	return NULL;
 }
@@ -94,7 +94,8 @@ static const char *dock_fallback_label(const char *app_id) {
 		return "Software";
 	}
 	if (app_id_matches(app_id, "org.gnome.Terminal") ||
-			app_id_matches(app_id, "terminal")) {
+			app_id_matches(app_id, "terminal") ||
+			app_id_matches(app_id, "ghostty")) {
 		return "Terminal";
 	}
 	if (app_id_matches(app_id, "org.gnome.Weather") ||
@@ -151,7 +152,8 @@ static const char *dock_fallback_icon(const char *app_id) {
 		return "system-software-install";
 	}
 	if (app_id_matches(app_id, "org.gnome.Terminal") ||
-			app_id_matches(app_id, "terminal")) {
+			app_id_matches(app_id, "terminal") ||
+			app_id_matches(app_id, "ghostty")) {
 		return "utilities-terminal";
 	}
 	if (app_id_matches(app_id, "org.gnome.Weather") ||
@@ -199,7 +201,7 @@ static const char *dock_fallback_command(const char *app_id) {
 	}
 	if (app_id_matches(app_id, "firefox") ||
 			app_id_matches(app_id, "browser")) {
-		return "firefox || firefox-esr || brave-browser || chromium || xdg-open \"https://duckduckgo.com\"";
+		return "firefox || firefox-esr || brave-browser --enable-features=UseOzonePlatform --ozone-platform=wayland || chromium --enable-features=UseOzonePlatform --ozone-platform=wayland || xdg-open \"https://duckduckgo.com\"";
 	}
 	if (app_id_matches(app_id, "org.gnome.Calculator") ||
 			app_id_matches(app_id, "calculator")) {
@@ -207,7 +209,7 @@ static const char *dock_fallback_command(const char *app_id) {
 	}
 	if (app_id_matches(app_id, "org.gnome.TextEditor") ||
 			app_id_matches(app_id, "gedit")) {
-		return "gnome-text-editor || gedit || mousepad || kate || ${ORANGE_TERMINAL:-xterm} -e nano";
+		return "gnome-text-editor || gedit || mousepad || kate || ${ORANGE_TERMINAL:-ghostty} -e nano";
 	}
 	if (app_id_matches(app_id, "org.gnome.Settings") ||
 			app_id_matches(app_id, "control-center")) {
@@ -218,8 +220,9 @@ static const char *dock_fallback_command(const char *app_id) {
 		return "gnome-software || plasma-discover || true";
 	}
 	if (app_id_matches(app_id, "org.gnome.Terminal") ||
-			app_id_matches(app_id, "terminal")) {
-		return "foot || alacritty || kitty || gnome-terminal || konsole || weston-terminal || xterm";
+			app_id_matches(app_id, "terminal") ||
+			app_id_matches(app_id, "ghostty")) {
+		return "ghostty || foot || alacritty || kitty || gnome-terminal || konsole || weston-terminal || xterm";
 	}
 	if (app_id_matches(app_id, "org.gnome.Weather") ||
 			app_id_matches(app_id, "weather")) {
@@ -790,18 +793,22 @@ bool orange_dock_config_insert_app(
 }
 
 static const char *dock_icon_name(int launcher_idx,
-		const struct orange_desktop_entry *entries, int entry_count,
+		const struct orange_shell_state *state,
 		const struct orange_config *config) {
 	const char *app_id = config != NULL && launcher_idx >= 0 &&
 		launcher_idx < ORANGE_DOCK_MAX ? config->dock_apps[launcher_idx] : NULL;
 	if (app_id == NULL || app_id[0] == '\0') {
 		return NULL;
 	}
-	const char *bi = builtin_icon(app_id);
+	const char *bi = builtin_icon(app_id, state != NULL && state->trash_full);
 	if (bi != NULL) {
 		return bi;
 	}
-	const struct orange_desktop_entry *entry = lookup_entry(app_id, entries, entry_count);
+	const struct orange_desktop_entry *entries =
+		state != NULL ? state->desktop_entries : NULL;
+	int entry_count = state != NULL ? state->desktop_entry_count : 0;
+	const struct orange_desktop_entry *entry =
+		lookup_entry(app_id, entries, entry_count);
 	if (entry != NULL && entry->icon[0] != '\0') {
 		return entry->icon;
 	}
@@ -1335,8 +1342,7 @@ static void draw_dock_drag_ghost(cairo_t *cr,
 	int variant = dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT;
 	bool grid_icon = dock_launcher_is_grid(config, launcher_idx);
 	if (state->assets != NULL && launcher_idx >= 0) {
-		const char *icon_name = dock_icon_name(launcher_idx,
-			state->desktop_entries, state->desktop_entry_count, config);
+		const char *icon_name = dock_icon_name(launcher_idx, state, config);
 		cairo_surface_t *icon_surface = icon_name != NULL ?
 			orange_assets_icon(state->assets, variant, icon_name) : NULL;
 		if (icon_surface != NULL) {
@@ -1496,8 +1502,7 @@ static void draw_dock(cairo_t *cr, const struct orange_shell_layout *layout,
 		int variant = dark ? ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT;
 		if (state->assets != NULL && launcher_idx >= 0) {
 			bool grid_icon = dock_launcher_is_grid(config, launcher_idx);
-			const char *icon_name = dock_icon_name(launcher_idx,
-				state->desktop_entries, state->desktop_entry_count, config);
+			const char *icon_name = dock_icon_name(launcher_idx, state, config);
 			cairo_surface_t *icon_surface = icon_name != NULL ?
 				orange_assets_icon(state->assets, variant, icon_name) : NULL;
 			if (icon_surface != NULL) {

@@ -8,7 +8,7 @@ makedepends="cairo-devel libdrm-devel pixman-devel wayland-devel
  wlroots0.20-devel libxkbcommon-devel librsvg-devel gdk-pixbuf-devel
  glib-devel elogind-devel wayland-protocols"
 depends="dbus elogind seatd polkit gdm gnome-core gnome-apps
- foot firefox nautilus hicolor-icon-theme
+ ghostty firefox nautilus hicolor-icon-theme
  adwaita-icon-theme adwaita-fonts gnome-themes-extra gnome-themes-extra-gtk
  gnome-backgrounds gvfs ModemManager wl-clipboard"
 short_desc="macOS-like wlroots compositor"

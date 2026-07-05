@@ -276,6 +276,21 @@ bool orange_desktop_entry_should_show(
 	return entry_show_in_desktop(entry, desktop_env);
 }
 
+bool orange_desktop_entry_has_category(
+		const struct orange_desktop_entry *entry,
+		const char *category) {
+	if (entry == NULL || category == NULL || category[0] == '\0') {
+		return false;
+	}
+	return desktop_list_contains_token(entry->categories, category,
+		strlen(category));
+}
+
+bool orange_desktop_entry_is_game(
+		const struct orange_desktop_entry *entry) {
+	return orange_desktop_entry_has_category(entry, "Game");
+}
+
 int orange_desktop_entry_match_score(
 		const struct orange_desktop_entry *entry,
 		const char *id) {

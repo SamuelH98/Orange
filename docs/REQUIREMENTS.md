@@ -87,9 +87,11 @@ shell.
 - Individual status items expose distinct actions: Wi-Fi, Sound, and Battery
   open item-specific status menus with settings actions; Search opens a
   centered compact Spotlight-style glass pill with adjacent round mode buttons;
-  typing stays in the pill; the first adjacent button transforms it into the
-  app-launcher overlay; Control Center opens quick controls; and the clock/date
-  opens Notification Center.
+  typing expands into the launcher overlay with unified Spotlight-style rows
+  for applications, desktop files, built-in actions, and a web-search result;
+  the adjacent buttons narrow the overlay to Applications, Files, Actions, or
+  Clipboard-style actions. Control Center opens quick controls; and the
+  clock/date opens Notification Center.
 - The Search pill and launcher overlay must be draggable by the search/header
   area. The Dock launcher and Super/Logo+Space open a smaller centered
   app-launcher overlay; the menu-bar Search item starts in compact search mode.
@@ -242,17 +244,26 @@ shell.
   The compositor must export its client launch environment, including
   `WAYLAND_DISPLAY` and session/theme variables, to direct child processes and
   DBus activation so single-instance desktop apps can open under Orange. When
-  Orange is launched from inside another graphical session, child clients must
-  not inherit the parent `DISPLAY` or parent session-bus single-instance
-  activation path. Launched clients must also start with normal child-process
-  signal handling instead of inheriting the compositor's `SIGCHLD` ignore state.
-  Ozone-capable Chromium/Electron clients must receive Wayland-forcing launch
-  hints, including `ELECTRON_OZONE_PLATFORM_HINT=wayland`,
-  `NIXOS_OZONE_WL=1`, and the compositor must avoid injecting raw global
-  Chromium wrapper flags into every app command when those flags are known to
-  destabilize packaged Electron apps. Packaged Discord still needs the
-  Electron Wayland hint because Orange intentionally does not export an X11
-  `DISPLAY`.
+  Orange is launched from inside another graphical session, non-game child
+  clients must not inherit the parent `DISPLAY` or parent session-bus
+  single-instance activation path. Launched clients must also start with normal
+  child-process signal handling instead of inheriting the compositor's
+  `SIGCHLD` ignore state.
+  Non-game clients must receive Wayland toolkit launch hints for GTK, Qt, SDL,
+  Clutter, Firefox, Chromium/Ozone, and Electron, including
+  `ELECTRON_OZONE_PLATFORM_HINT=wayland` and `NIXOS_OZONE_WL=1`. Browser
+  commands that launch Chromium-family browsers such as Chromium, Chrome,
+  Brave, Vivaldi, or Edge must also receive scoped
+  `--enable-features=UseOzonePlatform --ozone-platform=wayland` wrapper flags
+  through the Chromium/Chrome flag environment. Those browser flags must not be
+  injected globally into every app command because packaged Electron apps can be
+  destabilized by them. Packaged Discord still needs the Electron Wayland hint
+  because Orange intentionally does not export an X11 `DISPLAY`. Desktop
+  entries categorized as `Game` are not forced onto toolkit Wayland backends
+  because many games still expect an Xorg path; when Orange is started nested,
+  game entries may inherit the parent `DISPLAY` and session-bus state until
+  Orange hosts Xwayland itself. Orange must not inject the legacy GTK AppMenu
+  module.
 - The left side of the menu bar must be active-app driven, matching macOS'
   single-menu-bar model: the title next to the system menu reflects the focused
   application, and imported native app menu tabs sit to its right. Files may use
@@ -305,13 +316,13 @@ shell.
 
 ## Acceptance Criteria
 
-- `meson setup build-wlroots-0.20` succeeds with `wlroots-0.20` available in
+- `meson setup build` succeeds with `wlroots-0.20` available in
   `PKG_CONFIG_PATH`.
-- `ninja -C build-wlroots-0.20` succeeds.
+- `ninja -C build` succeeds.
 - Unit tests pass.
-- `WLR_BACKENDS=headless ./build-wlroots-0.20/orange --headless --once` renders and
+- `WLR_BACKENDS=headless ./build/orange --headless --once` renders and
   exits successfully.
-- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build-wlroots-0.20/orange --headless --once --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf`
+- `WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf`
   renders and exits successfully.
 - Runtime logs include selected renderer type information.
 - A user can launch configured apps from the Dock/desktop and interact with

@@ -38,10 +38,21 @@
 #define ORANGE_LAUNCHER_CATEGORY_MAX 16
 #define ORANGE_LAUNCHER_CATEGORY_NAME_MAX 64
 #define ORANGE_LAUNCHER_SECTION_MAX 4
+#define ORANGE_LAUNCHER_RESULT_MAX 64
+#define ORANGE_LAUNCHER_RESULT_LABEL_MAX 128
+#define ORANGE_LAUNCHER_RESULT_SUBTITLE_MAX 192
+#define ORANGE_LAUNCHER_RESULT_ACTION_MAX 128
 
 enum orange_launcher_mode {
 	ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY,
 	ORANGE_LAUNCHER_DISPLAY_FULL,
+};
+
+enum orange_launcher_result_kind {
+	ORANGE_LAUNCHER_RESULT_APP,
+	ORANGE_LAUNCHER_RESULT_FILE,
+	ORANGE_LAUNCHER_RESULT_ACTION,
+	ORANGE_LAUNCHER_RESULT_WEB,
 };
 
 struct orange_rect {
@@ -204,6 +215,15 @@ struct orange_file_info {
 	bool is_image;
 };
 
+struct orange_launcher_result {
+	enum orange_launcher_result_kind kind;
+	int source_index;
+	char label[ORANGE_LAUNCHER_RESULT_LABEL_MAX];
+	char subtitle[ORANGE_LAUNCHER_RESULT_SUBTITLE_MAX];
+	char icon_name[ORANGE_ASSET_ICON_NAME_MAX];
+	char action[ORANGE_LAUNCHER_RESULT_ACTION_MAX];
+};
+
 struct orange_desktop_item_info {
 	enum orange_desktop_item_kind kind;
 	int index;
@@ -308,6 +328,7 @@ struct orange_shell_layout {
 	int launcher_scroll_row;
 	int launcher_max_scroll;
 	bool launcher_searching;
+	bool launcher_list_results;
 	int launcher_current_mode;
 };
 
@@ -324,6 +345,7 @@ struct orange_shell_state {
 	time_t now;
 	struct orange_assets *assets;
 	const struct orange_config *config;
+	bool trash_full;
 	struct orange_status_state status;
 	struct orange_status_notifier_item status_notifier_items[
 		ORANGE_STATUS_NOTIFIER_ITEM_MAX];
@@ -375,6 +397,8 @@ struct orange_shell_state {
 	int launcher_hot_app;
 	int launcher_app_indices[ORANGE_LAUNCHER_APP_MAX];
 	int launcher_app_count;
+	struct orange_launcher_result launcher_results[ORANGE_LAUNCHER_RESULT_MAX];
+	int launcher_result_count;
 	int launcher_scroll;
 	int launcher_scroll_row;
 	int launcher_current_mode;
@@ -475,6 +499,12 @@ struct orange_rect orange_shell_minimize_animation_rect(
 	struct orange_rect start,
 	struct orange_rect target,
 	double progress);
+double orange_shell_workspace_animation_ease(double progress);
+int orange_shell_workspace_animation_offset(
+	int span,
+	int direction,
+	double progress,
+	bool incoming);
 void orange_shell_layout_sort_by(
 	struct orange_shell_layout *layout,
 	enum orange_desktop_sort_by sort_by,

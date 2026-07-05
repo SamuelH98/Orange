@@ -269,11 +269,12 @@ Spec responsibilities:
 - xdg-decoration/KDE server decoration: prefer client-side decorations and do
   not force proprietary server decorations.
 - AppMenu/DBusMenu: own `com.canonical.AppMenu.Registrar` on the session bus,
-  collect `RegisterWindow(windowId, menuObjectPath)` calls from appmenu
-  exporters, resolve the DBus sender PID through `org.freedesktop.DBus`, and
-  match registered menu exporters to the focused Wayland client PID. Imported
-  DBusMenu trees populate the active app tabs and dispatch item clicks through
-  `com.canonical.dbusmenu.Event`.
+  collect `RegisterWindow(windowId, menuObjectPath)` calls from clients that
+  export DBusMenu themselves, resolve the DBus sender PID through
+  `org.freedesktop.DBus`, and match registered menu exporters to the focused
+  Wayland client PID. Imported DBusMenu trees populate the active app tabs and
+  dispatch item clicks through `com.canonical.dbusmenu.Event`. Orange does not
+  install or inject the legacy GTK AppMenu exporter module.
 - AT-SPI fallback: when no DBusMenu/GMenu exporter is found, connect to the
   accessibility bus through `org.a11y.Bus`, match the focused Wayland client PID
   to an AT-SPI application bus name, scan a bounded accessible subtree, and
@@ -305,6 +306,11 @@ Responsibilities:
 - prefer user-configured environment variables for terminal/app picker,
 - export `GTK_THEME`, `GTK_ICON_THEME`, and `ORANGE_APPEARANCE` for launched
   GTK clients,
+- force Wayland toolkit backends and Chromium/Electron Ozone hints for
+  non-game launches, while letting `Categories=Game` desktop entries avoid
+  forced toolkit Wayland variables and keep an inherited nested-session
+  `DISPLAY` and session-bus state until Orange has its own Xwayland host,
+- clear inherited GTK module injection from client launch environments,
 - wrap `gnome-control-center` launches with `XDG_CURRENT_DESKTOP=GNOME:Unity:ubuntu`
   and GNOME session identity variables, unsetting forced GTK theme variables
   so GNOME Settings and panel desktop entries use system appearance settings,
@@ -380,12 +386,14 @@ Responsibilities:
     Search, Control Center, and Clock each have their own hit rectangle and
     action. Wi-Fi, Sound, and Battery open item-specific status menus; Search
     opens a centered compact glass search pill with four adjacent circular mode
-    buttons. Typing remains in the pill. Clicking the first mode button
-    transforms the pill into the smaller app launcher panel anchored to the same
-    search/header position. The Dock launcher and Super+Space open the centered
-    app launcher panel directly. Both launcher surfaces can be dragged by their
-    search/header area. Control Center opens quick controls; Clock toggles
-    Notification Center.
+    buttons. Typing expands the pill into the smaller launcher panel anchored
+    to the same search/header position, and the result model switches from the
+    app grid to Spotlight-style rows that can represent apps, desktop files,
+    built-in actions, and web search. The mode buttons narrow the same surface
+    to Applications, Files, Actions, or Clipboard-style actions. The Dock
+    launcher and Super+Space open the centered app launcher panel directly.
+    Both launcher surfaces can be dragged by their search/header area. Control
+    Center opens quick controls; Clock toggles Notification Center.
 13. Layout computes a right-edge Notification Center overlay after the base
     shell geometry, hit testing treats the overlay and Edit Widgets button as
     top-level shell targets, and the compositor maps Edit Widgets to Orange
