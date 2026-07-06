@@ -8,7 +8,6 @@ struct orange_options {
 	bool once;
 	int width;
 	int height;
-	const char *asset_root;
 	const char *config_path;
 };
 

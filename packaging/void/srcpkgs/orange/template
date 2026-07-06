@@ -27,8 +27,5 @@ do_install() {
 	vinstall "${FILESDIR}/orange-session" 0755 usr/bin
 	vinstall "${FILESDIR}/orange.desktop" 0644 usr/share/wayland-sessions
 	vinstall orange.conf 0644 usr/share/orange
-	vcopy assets usr/share/orange
-	vinstall assets/wallpaper.png 0644 usr/share/backgrounds/orange orange-wallpaper.png
-	vinstall assets/wallpaper-dark.png 0644 usr/share/backgrounds/orange orange-wallpaper-dark.png
 	vlicense "${FILESDIR}/LICENSE"
 }

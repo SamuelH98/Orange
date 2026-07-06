@@ -6,10 +6,4 @@ build/
 private/
 *.o
 *.png.tmp
-assets/private/
-assets/icons/
-assets/status/
-assets/context-menu/
-assets/context-menu-white/
-assets/orange-menu.png
 orange.conf

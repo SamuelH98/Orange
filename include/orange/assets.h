@@ -32,22 +32,12 @@ struct orange_image_preview {
 };
 
 struct orange_assets {
-	cairo_surface_t *wallpaper;
-	cairo_surface_t *wallpaper_dark;
-	cairo_surface_t *wallpaper_scaled;
-	cairo_surface_t *wallpaper_dark_scaled;
 	cairo_surface_t *wallpaper_custom;
 	cairo_surface_t *wallpaper_custom_dark;
 	cairo_surface_t *wallpaper_custom_scaled;
 	cairo_surface_t *wallpaper_custom_dark_scaled;
-	bool wallpaper_checked;
-	bool wallpaper_dark_checked;
 	bool wallpaper_custom_checked;
 	bool wallpaper_custom_dark_checked;
-	int wallpaper_scaled_width;
-	int wallpaper_scaled_height;
-	int wallpaper_dark_scaled_width;
-	int wallpaper_dark_scaled_height;
 	int wallpaper_custom_scaled_width;
 	int wallpaper_custom_scaled_height;
 	int wallpaper_custom_dark_scaled_width;
@@ -58,7 +48,6 @@ struct orange_assets {
 	struct orange_image_preview previews[ORANGE_ASSET_PREVIEW_MAX];
 	int preview_count;
 	int preview_next_evict;
-	char asset_root[4096];
 	char icon_theme[ORANGE_THEME_NAME_MAX];
 	bool wallpaper_configured;
 	char wallpaper_path[4096];
@@ -73,7 +62,6 @@ struct orange_assets {
 void orange_assets_init(struct orange_assets *assets);
 bool orange_assets_load(
 	struct orange_assets *assets,
-	const char *asset_root,
 	const char *icon_theme);
 void orange_assets_finish(struct orange_assets *assets);
 cairo_surface_t *orange_assets_wallpaper(

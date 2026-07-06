@@ -108,7 +108,6 @@ static void write_long_hicolor_index(const char *path) {
 }
 
 int main(void) {
-	mkdir_p("/tmp/orange-assets-test/assets");
 	mkdir_p("/tmp/orange-assets-test/data/icons/TestTheme/128x128/apps");
 	mkdir_p("/tmp/orange-assets-test/data/icons/TestTheme/places/scalable");
 	mkdir_p("/tmp/orange-assets-test/data/icons/hicolor/128x128/apps");
@@ -158,7 +157,7 @@ int main(void) {
 
 	struct orange_assets assets;
 	orange_assets_init(&assets);
-	orange_assets_load(&assets, "/tmp/orange-assets-test/assets", "TestTheme");
+	orange_assets_load(&assets, "TestTheme");
 	assert(assets.icon_count == 0);
 
 	assert(orange_assets_set_wallpaper_settings(&assets,

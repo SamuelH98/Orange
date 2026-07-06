@@ -78,7 +78,7 @@ On WSLg, run it nested inside the existing WSLg Wayland session:
 
 ```sh
 cd ~/orange-wlroots
-WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build/orange --assets assets --config orange.conf
+WLR_BACKENDS=wayland WLR_RENDERER=pixman ./build/orange --config orange.conf
 ```
 
 When this command logs `running on Wayland display wayland-N`, startup
@@ -99,19 +99,17 @@ WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once
 For a custom-size startup smoke test that exits on its own:
 
 ```sh
-WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once --width 1440 --height 900 --assets assets --config /tmp/orange-custom.conf
+WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/orange --headless --once --width 1440 --height 900 --config /tmp/orange-custom.conf
 ```
 
-## Assets
+## Wallpaper
 
-Tracked assets are limited to:
+Wallpaper is sourced from GNOME GSettings (`org.gnome.desktop.background`
+`picture-uri` / `picture-uri-dark`), matching the system background set in
+GNOME Settings. If GNOME is not installed or no wallpaper is configured, a
+procedural fallback is drawn.
 
-- `assets/wallpaper.png`
-- `assets/wallpaper-dark.png`
-
-Optional private wallpapers can live in `assets/private/`, which is ignored by
-Git. To make a run use only that private wallpaper root, pass
-`--assets assets/private`.
+## Icons
 
 Icons are looked up by name from the configured installed icon theme using
 freedesktop theme directories, inherited themes, and `hicolor` fallback. Orange

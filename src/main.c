@@ -6,7 +6,7 @@
 
 static void usage(const char *argv0) {
 	fprintf(stderr,
-		"usage: %s [--headless] [--once] [--width N] [--height N] [--assets PATH] [--config PATH]\n",
+		"usage: %s [--headless] [--once] [--width N] [--height N] [--config PATH]\n",
 		argv0);
 }
 
@@ -16,7 +16,6 @@ int main(int argc, char **argv) {
 		.once = false,
 		.width = 1920,
 		.height = 1080,
-		.asset_root = "assets",
 		.config_path = "orange.conf",
 	};
 
@@ -29,8 +28,6 @@ int main(int argc, char **argv) {
 			options.width = atoi(argv[++i]);
 		} else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
 			options.height = atoi(argv[++i]);
-		} else if (strcmp(argv[i], "--assets") == 0 && i + 1 < argc) {
-			options.asset_root = argv[++i];
 		} else if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
 			options.config_path = argv[++i];
 		} else if (strcmp(argv[i], "--help") == 0) {

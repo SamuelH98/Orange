@@ -24,7 +24,7 @@ shell.
   - right-side desktop items,
   - translucent bottom dock with app icons, divider, running indicators, and
     trash.
-- Keep tracked `assets/` wallpaper-only; shell icons, Dock icons, desktop
+- Wallpaper comes from GNOME GSettings; shell icons, Dock icons, desktop
   shortcut icons, menu icons, and status icons must come from configured icon
   themes.
 - Scale menu bar, widgets, desktop items, and Dock geometry from the output
@@ -32,11 +32,10 @@ shell.
 - Match the reference Dock measurements with resolution-scaled constants for
   icon size, icon gaps, glass padding, indicator lane, and bottom edge
   alignment.
-- Provide tracked high-resolution Orange light/dark wallpapers plus a
-  procedural background fallback.
+- Source wallpapers from GNOME GSettings (`org.gnome.desktop.background`
+  `picture-uri` / `picture-uri-dark`) with a procedural background fallback.
 - Resolve all shell icon imagery through freedesktop icon-theme names, including
-  inherited themes and `hicolor` fallback, without storing icons under
-  `assets/`.
+  inherited themes and `hicolor` fallback.
 - Provide a persistent desktop configuration model:
   - global light/dark appearance,
   - desktop shortcut visibility, grid spacing, text label size, and icon scale,
@@ -307,7 +306,7 @@ shell.
   Continuity, and system settings backends are out of scope.
 - Exact proprietary fonts, shipped wallpapers, official icons, and trademarks
   are only loaded if the user provides or installs licensed local files. The
-  runtime is designed to source wallpapers from `./assets/` and icons from
+  runtime is designed to source wallpapers from GNOME GSettings and icons from
   installed icon themes.
 - "All freedesktop specs" is out of scope as a blanket claim. Orange documents
   and tests the subset it implements; protocols such as full global-menu DBus

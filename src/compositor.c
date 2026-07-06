@@ -2310,14 +2310,9 @@ static void server_apply_cursor_config(struct orange_server *server) {
 }
 
 static void server_reload_assets_if_ready(struct orange_server *server) {
-	if (server->assets.asset_root[0] == '\0') {
-		return;
-	}
-	char asset_root[4096];
-	snprintf(asset_root, sizeof(asset_root), "%s", server->assets.asset_root);
 	orange_assets_finish(&server->assets);
 	orange_assets_init(&server->assets);
-	orange_assets_load(&server->assets, asset_root, server->config.icon_theme);
+	orange_assets_load(&server->assets, server->config.icon_theme);
 	server_refresh_background_settings(server);
 }
 
@@ -13436,8 +13431,7 @@ static bool server_init(struct orange_server *server,
 	update_desktop_files(server);
 	server_update_trash_state(server);
 	orange_assets_init(&server->assets);
-	orange_assets_load(&server->assets, options->asset_root,
-		server->config.icon_theme);
+	orange_assets_load(&server->assets, server->config.icon_theme);
 	server_setup_gnome_interface_settings(server);
 	server_setup_multitasking_settings(server);
 	server_setup_background_settings(server);

@@ -121,7 +121,6 @@ test(
     '--once',
     '--width', '1440',
     '--height', '900',
-    '--assets', meson.current_source_dir() / 'assets',
     '--config', meson.current_build_dir() / 'headless-custom-startup.conf',
   ],
   env: headless_startup_env,

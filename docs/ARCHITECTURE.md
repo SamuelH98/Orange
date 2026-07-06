@@ -26,7 +26,7 @@ Responsibilities:
 - draw wallpaper,
 - draw a transparent menu bar, widgets, desktop items, dock, and icons,
 - apply persistent appearance, desktop, and Dock configuration,
-- load wallpapers from `./assets/` and ask the asset layer for themed icons,
+- load wallpapers from GNOME GSettings and ask the asset layer for themed icons,
 - place desktop icons from persisted coordinates when the user drags them,
   using a Dock-aware grid that spans the usable desktop work area, snaps both
   axes, reserves scaled edge/Dock clearance, and resolves duplicate saved cells
@@ -149,7 +149,7 @@ Responsibilities:
 
 ### Asset Loader
 
-Loads bundled wallpapers from local `./assets/` roots, accepts runtime GNOME
+Loads wallpapers from GNOME GSettings, accepts runtime GNOME
 Background settings from the compositor, and resolves PNG/SVG icons from
 freedesktop-style icon theme directories. The loader maps specific Dock,
 desktop, weather, and status icon names so shell code asks for semantic icon
