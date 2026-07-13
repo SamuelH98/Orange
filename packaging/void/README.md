@@ -12,7 +12,11 @@ scripts/run-void-vm.sh
 ```
 
 For an installed Void system using this repository as a local package source,
-copy the overlay into a `void-packages` checkout, build it, index the generated
+install your GPU drivers first. NVIDIA users must enable the nonfree
+repository (`sudo xbps-install -S void-repo-nonfree`) and install the correct
+driver package for their GPU before proceeding. See the main README for
+driver details. Then copy the overlay into a `void-packages` checkout, build
+it, index the generated
 local repository, and install `orange`:
 
 ```sh
@@ -36,15 +40,27 @@ sudo xbps-install -S -R "$PWD/hostdir/binpkgs" orange
 
 The package depends on GDM, `gnome-core`, `gnome-apps`, Nautilus/GVFS,
 Firefox, Ghostty, Adwaita icons/fonts/backgrounds, Adwaita GTK light/dark theme
-support, ModemManager, and wl-clipboard. Void packages do not enable runit
-services automatically; enable the login/session services once after install:
+support, gnome-backgrounds, ModemManager, and wl-clipboard. Void packages do
+not enable runit services automatically and GDM needs post-install
+configuration to default to the Orange session. Run the setup script once
+after installing:
 
 ```sh
-for svc in dbus elogind seatd polkitd gdm; do
-	if [ ! -e "/var/service/$svc" ]; then
-		sudo ln -s "/etc/sv/$svc" /var/service/
-	fi
-done
+sudo orange-setup
+```
+
+This configures:
+- GDM to use the Orange Wayland session by default
+- The dconf profile and database required by GDM
+- AccountsService to launch Orange for the user
+- PAM session tracking for elogind
+- The GDM runit service with seat support
+- Enables dbus, elogind, seatd, polkitd, and gdm services
+
+Then reboot or start GDM manually:
+
+```sh
+sudo reboot
 ```
 
 GDM then offers the packaged Orange Wayland session from

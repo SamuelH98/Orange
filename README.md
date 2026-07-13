@@ -18,6 +18,91 @@ Orange targets wlroots 0.20 through the versioned `wlroots-0.20` pkg-config
 dependency. The older unversioned `wlroots` package is not a supported build
 target.
 
+## Prerequisites
+
+Install your GPU drivers **before** installing Orange and GDM. Without a
+working DRM driver, GDM will fail to start and wlroots cannot create a
+renderer.
+
+### Intel / AMD
+
+```sh
+# Intel
+sudo xbps-install -S mesa-dri-intel
+
+# AMD
+sudo xbps-install -S mesa-dri-amdgpu
+```
+
+### NVIDIA
+
+NVIDIA drivers live in the `nonfree` repository, which is not enabled by
+default. Enable it first, then identify your GPU family:
+
+```sh
+sudo xbps-install -S void-repo-nonfree
+sudo xbps-install -S void-repo-multilib-nonfree   # for 32-bit support (Steam, etc.)
+sudo xbps-install -S nvidia-driver                 # pull the latest driver index
+
+# Find your GPU family:
+lspci -k -d ::03xx
+```
+
+Match the reported model to the [NVIDIA GPU codenames](https://nouveau.freedesktop.org/CodeNames.html)
+and install the correct driver package:
+
+| GPU Family | Driver Package | Notes |
+|---|---|---|
+| Turing (GTX 16xx, RTX 20xx) and newer | `nvidia` | Open kernel modules (595.xx) |
+| Maxwell (GTX 9xx) to Volta (Titan V) | `nvidia580` | Proprietary kernel modules |
+| Kepler (GTX 6xx–7xx) | `nvidia470` | Proprietary kernel modules |
+| Fermi (GTX 4xx–5xx) and older | `nvidia390` | Proprietary, legacy |
+
+```sh
+# Example for Turing+ :
+sudo xbps-install -S nvidia
+
+# Example for Maxwell–Volta:
+sudo xbps-install -S nvidia580
+```
+
+After installing, reboot so the DKMS kernel module is built and loaded.
+
+### NVIDIA Optimus (Ryzen/Intel + NVIDIA)
+
+Laptops with both an integrated GPU and a discrete NVIDIA GPU need **both**
+drivers installed. The internal display is wired to the iGPU; the NVIDIA
+card only drives external monitors or offloads rendering.
+
+```sh
+# Install both:
+sudo xbps-install -S mesa-dri-amdgpu   # iGPU (internal display)
+sudo xbps-install -S nvidia             # dGPU (external monitors, offload)
+```
+
+wlroots compositors select the first DRM device by default, which is often
+the NVIDIA card on Optimus systems. Set `WLR_DRM_DEVICES` to point at the
+iGPU so Orange renders on the correct card:
+
+```sh
+# Find your iGPU PCI address:
+lspci | grep -i 'VGA.*AMD\|VGA.*ATI'
+# e.g. 0000:c5:00.0
+
+# The session script defaults WLR_DRM_DEVICES to this automatically.
+# If it picks the wrong card, override it:
+export WLR_DRM_DEVICES=/dev/dri/by-path/pci-0000:c5:00.0-card
+```
+
+To run an application on the NVIDIA GPU, use `prime-run` (from the `nvidia`
+package) or set the environment variables directly:
+
+```sh
+prime-run glxinfo | grep "OpenGL renderer"
+# or:
+__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia <app>
+```
+
 ## Void Package Install
 
 The repo includes a local Void Linux `srcpkgs/orange` overlay. To add it to a
@@ -48,15 +133,19 @@ The installed package provides the Orange Wayland session at
 wallpapers, pulls Ghostty as the default terminal, and starts Orange through
 `orange-session`.
 
-Void does not enable runit services just because a package was installed. Enable
-the display/session services once:
+Void does not enable runit services just because a package was installed, and
+GDM needs configuration to default to Orange. Run the setup script once after
+installing:
 
 ```sh
-for svc in dbus elogind seatd polkitd gdm; do
-  if [ ! -e "/var/service/$svc" ]; then
-    sudo ln -s "/etc/sv/$svc" /var/service/
-  fi
-done
+sudo orange-setup
+```
+
+This configures GDM, dconf, PAM/elogind session tracking, AccountsService,
+and enables the required runit services. Then reboot:
+
+```sh
+sudo reboot
 ```
 
 For a full VM image build using the same package overlay, run

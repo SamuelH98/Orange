@@ -18,6 +18,24 @@ export XDG_SESSION_DESKTOP=${XDG_SESSION_DESKTOP:-orange}
 export DESKTOP_SESSION=${DESKTOP_SESSION:-orange}
 export WLR_RENDERER=${WLR_RENDERER:-gles2} #gles2 or vulkan on bare metal, pixman on qemu or virtualbox
 export WLR_BACKENDS=${WLR_BACKENDS:-drm,libinput}
+
+# On Optimus laptops, prefer the iGPU (AMD/Intel) over the NVIDIA dGPU.
+# The NVIDIA card often appears as card0 but does not drive the internal display.
+if [ -z "${WLR_DRM_DEVICES:-}" ]; then
+	for dev in /dev/dri/card*; do
+		[ -e "$dev" ] || continue
+		syspath=$(readlink -f "/sys/class/drm/$(basename "$dev")/device" 2>/dev/null) || continue
+		vendor=$(cat "$syspath/vendor" 2>/dev/null) || continue
+		# AMD=0x1002, Intel=0x8086 — prefer these over NVIDIA (0x10de)
+		case "$vendor" in
+			0x1002|0x8086)
+				WLR_DRM_DEVICES="$dev"
+				break
+				;;
+		esac
+	done
+	export WLR_DRM_DEVICES
+fi
 export ORANGE_TERMINAL=${ORANGE_TERMINAL:-ghostty}
 export GTK_THEME=${GTK_THEME:-Adwaita}
 export GTK_ICON_THEME=${GTK_ICON_THEME:-Adwaita}

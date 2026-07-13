@@ -27,5 +27,6 @@ do_install() {
 	vinstall "${FILESDIR}/orange-session" 0755 usr/bin
 	vinstall "${FILESDIR}/orange.desktop" 0644 usr/share/wayland-sessions
 	vinstall orange.conf 0644 usr/share/orange
+	vinstall scripts/orange-setup.sh 0755 usr/share/orange orange-setup
 	vlicense "${FILESDIR}/LICENSE"
 }

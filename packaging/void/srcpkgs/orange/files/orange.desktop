@@ -3,5 +3,5 @@ Name=Orange
 Comment=Orange Wayland Compositor
 Exec=/usr/bin/orange-session
 Type=Application
-DesktopNames=orange
+DesktopNames=orange;
 
