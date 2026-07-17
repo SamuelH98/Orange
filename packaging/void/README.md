@@ -20,6 +20,12 @@ it, index the generated
 local repository, and install `orange`:
 
 ```sh
+scripts/build-orange-package.sh --install
+```
+
+Or manually:
+
+```sh
 git clone https://github.com/void-linux/void-packages.git
 cd void-packages
 ./xbps-src binary-bootstrap
@@ -38,8 +44,9 @@ xbps-rindex -a hostdir/binpkgs/*.xbps
 sudo xbps-install -S -R "$PWD/hostdir/binpkgs" orange
 ```
 
-The package depends on GDM, `gnome-core`, `gnome-apps`, Nautilus/GVFS,
-Firefox, Ghostty, Adwaita icons/fonts/backgrounds, Adwaita GTK light/dark theme
+The package depends on GDM, `gnome-session`, `gnome-settings-daemon`,
+`gnome-apps`, Nautilus/GVFS, Firefox, Ghostty, GNOME Software,
+Adwaita icons/fonts/backgrounds, Adwaita GTK light/dark theme
 support, gnome-backgrounds, ModemManager, and wl-clipboard. Void packages do
 not enable runit services automatically and GDM needs post-install
 configuration to default to the Orange session. Run the setup script once
@@ -55,7 +62,7 @@ This configures:
 - AccountsService to launch Orange for the user
 - PAM session tracking for elogind
 - The GDM runit service with seat support
-- Enables dbus, elogind, seatd, polkitd, and gdm services
+- Enables dbus, elogind, polkitd, and gdm services
 
 Then reboot or start GDM manually:
 

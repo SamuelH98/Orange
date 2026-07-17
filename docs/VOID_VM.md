@@ -17,7 +17,7 @@ Orange package-first:
    generic dracut initramfs is generated for QEMU virtio boot devices.
 8. The guest installs GRUB for BIOS boot and writes a GRUB menu entry using the
    root filesystem UUID.
-9. The guest enables `dbus`, `elogind`, `seatd`, `polkitd`, and `gdm`; GDM
+9. The guest enables `dbus`, `elogind`, `polkitd`, and `gdm`; GDM
    autologins as the `orange` user and starts the packaged Orange Wayland
    session.
 10. `scripts/run-void-vm.sh` starts QEMU with KVM and a GTK display for WSLg.
