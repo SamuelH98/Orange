@@ -450,7 +450,7 @@ while ! sv check dbus >/dev/null 2>&1; do
 	sleep 0.5
 done
 
-exec elogind-daemon
+exec /usr/libexec/elogind/elogind
 RUN
 	chmod +x /etc/sv/elogind/run
 fi
