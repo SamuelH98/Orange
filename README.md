@@ -133,18 +133,11 @@ The installed package provides the Orange Wayland session at
 wallpapers, pulls Ghostty as the default terminal, and starts Orange through
 `orange-session`.
 
-Void does not enable runit services just because a package was installed, and
-GDM needs configuration to default to Orange. Run the setup script once after
-installing:
+Void does not enable runit services just because a package was installed, but
+the Orange package handles all configuration automatically. Install and reboot:
 
 ```sh
-sudo orange-setup
-```
-
-This configures GDM, dconf, PAM/elogind session tracking, AccountsService,
-and enables the required runit services. Then reboot:
-
-```sh
+sudo xbps-install -S -R /path/to/hostdir/binpkgs orange
 sudo reboot
 ```
 
