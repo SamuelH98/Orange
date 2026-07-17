@@ -195,6 +195,21 @@ if [ ! -f /etc/orange/orange.conf ] && [ -f /usr/share/orange/orange.conf ]; the
 	info "  copied default config to /etc/orange/orange.conf"
 fi
 
+# ── 8. Enable runit services ────────────────────────────────────────
+
+info "enabling runit services"
+
+for svc in dbus elogind polkitd gdm; do
+	if [ -d "/etc/sv/${svc}" ] && [ ! -e "/var/service/${svc}" ]; then
+		ln -sf "/etc/sv/${svc}" "/var/service/${svc}"
+		info "  enabled ${svc}"
+	elif [ -e "/var/service/${svc}" ]; then
+		info "  ${svc} already enabled"
+	else
+		warn "  /etc/sv/${svc} not found; skipping"
+	fi
+done
+
 # ── Done ─────────────────────────────────────────────────────────────
 
 echo ""
@@ -203,12 +218,11 @@ echo ""
 echo "  dconf database is ready for GDM."
 echo "  AccountsService will launch Orange by default."
 echo "  GDM runit service is configured."
-echo ""
-echo "  Services are NOT auto-enabled. Enable them manually:"
-echo "    # ln -s /etc/sv/dbus /var/service/"
-echo "    # ln -s /etc/sv/elogind /var/service/"
-echo "    # ln -s /etc/sv/gdm /var/service/"
+echo "  Services enabled: dbus, elogind, polkitd, gdm"
 echo ""
 echo "  IMPORTANT: Do NOT enable seatd alongside elogind."
 echo "    Only elogind is needed for GDM."
+echo ""
+echo "  Reboot or restart services to apply:"
+echo "    sudo reboot"
 echo ""

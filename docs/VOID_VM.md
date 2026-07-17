@@ -34,28 +34,19 @@ session wrapper that exports toolkit Wayland defaults, Chromium/Electron Ozone
 hints, Firefox Wayland mode, and `ORANGE_TERMINAL=ghostty`.
 
 Void still leaves runit service activation to the administrator. After
-installing Orange on a real Void system, enable the session services once:
+installing Orange on a real Void system, run:
 
 ```sh
 sudo orange-setup
 ```
 
 This configures dconf, AccountsService, GDM, and PAM for Void Linux
-(with elogind). It is safe to re-run; existing configuration is preserved.
-
-Alternatively, enable services manually:
+(with elogind), and enables the required runit services. It is safe to
+re-run; existing configuration is preserved. Then reboot:
 
 ```sh
-for svc in dbus elogind polkitd gdm; do
-	if [ ! -e "/var/service/$svc" ]; then
-		sudo ln -s "/etc/sv/$svc" /var/service/
-	fi
-done
+sudo reboot
 ```
-
-> **Note:** Do NOT enable `seatd` alongside `elogind`. They conflict and
-> will prevent GDM and your compositor from starting. Only `elogind` is
-> needed.
 
 The VM build needs network access, `sudo`, `qemu-img`, `sfdisk`, `losetup`,
 `mkfs.ext4`, `blkid`, and a host that can mount loopback images. The build
