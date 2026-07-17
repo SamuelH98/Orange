@@ -156,9 +156,6 @@ if [ "${do_install:-}" = "1" ]; then
 	info "installing orange..."
 	sudo xbps-install -S -R "$void_packages/hostdir/binpkgs" orange
 
-	info "running orange-setup..."
-	sudo orange-setup || warn "orange-setup failed; run manually after install"
-
 	echo ""
 	info "installation complete"
 	echo ""
@@ -173,7 +170,6 @@ else
 	echo "  To install:"
 	echo "    xbps-rindex -a $void_packages/hostdir/binpkgs/*.xbps"
 	echo "    sudo xbps-install -S -R $void_packages/hostdir/binpkgs orange"
-	echo "    sudo orange-setup"
 	echo "    sudo reboot"
 	echo ""
 	echo "  Or re-run with --install:"

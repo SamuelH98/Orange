@@ -47,26 +47,12 @@ sudo xbps-install -S -R "$PWD/hostdir/binpkgs" orange
 The package depends on GDM, `gnome-session`, `gnome-settings-daemon`,
 `gnome-apps`, Nautilus/GVFS, Firefox, Ghostty, GNOME Software,
 Adwaita icons/fonts/backgrounds, Adwaita GTK light/dark theme
-support, gnome-backgrounds, ModemManager, and wl-clipboard. Void packages do
-not enable runit services automatically and GDM needs post-install
-configuration to default to the Orange session. Run the setup script once
-after installing:
+support, gnome-backgrounds, ModemManager, and wl-clipboard. All
+configuration (dconf, GDM, PAM, runit services) is handled by the
+package automatically. Install and reboot:
 
 ```sh
-sudo orange-setup
-```
-
-This configures:
-- GDM to use the Orange Wayland session by default
-- The dconf profile and database required by GDM
-- AccountsService to launch Orange for the user
-- PAM session tracking for elogind
-- The GDM runit service with seat support
-- Enables dbus, elogind, polkitd, and gdm services
-
-Then reboot or start GDM manually:
-
-```sh
+sudo xbps-install -S -R "$PWD/hostdir/binpkgs" orange
 sudo reboot
 ```
 

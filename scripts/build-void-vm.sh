@@ -483,11 +483,6 @@ if [ "$(id -u messagebus)" != "22" ]; then
 fi
 usermod -aG video gdm
 
-install -d -m 0755 /etc/orange
-cp /usr/share/orange/orange.conf /etc/orange/orange.conf
-
-orange-setup
-
 install -d -m 0755 /etc/dracut.conf.d
 cat > /etc/dracut.conf.d/orange-vm.conf <<'DRACUT'
 hostonly="no"

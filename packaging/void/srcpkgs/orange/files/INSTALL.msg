@@ -1,8 +1,8 @@
 Orange has been installed.
 
-Run the setup helper to configure GDM, dconf, AccountsService,
-PAM, and enable the required runit services:
+All configuration (dconf, GDM, PAM, runit services) is handled by
+the package automatically. Simply reboot to start GDM with Orange:
 
-  # orange-setup
+  # reboot
 
-Then reboot. Select "Orange" from the GDM session menu.
+Select "Orange" from the GDM session menu.
