@@ -1,7 +1,7 @@
 # Template file for 'orange'
 pkgname=orange
 version=0.1.0
-revision=4
+revision=5
 build_style=meson
 hostmakedepends="pkg-config wayland-devel wayland-protocols"
 makedepends="cairo-devel libdrm-devel pixman-devel wayland-devel
@@ -42,36 +42,6 @@ post_install() {
 	vmkdir etc/dconf/db 0755
 	touch $DESTDIR/etc/dconf/db/local
 
-	# ── GDM custom.conf ──
-	vmkdir etc/gdm 0755
-	cat > $DESTDIR/etc/gdm/custom.conf <<'GDMCONF'
-[daemon]
-WaylandEnable=true
-InitialSetupEnable=false
-
-[security]
-
-[xdmcp]
-
-[chooser]
-
-[debug]
-GDMCONF
-
-	# ── PAM config for GDM (elogind) ──
-	vmkdir etc/pam.d 0755
-	cat > $DESTDIR/etc/pam.d/gdm <<'GDMPAM'
-#%PAM-1.0
-
-auth       required     pam_securetty.so
-auth       requisite    pam_nologin.so
-auth       include      system-login
-account    include      system-login
-password   include      system-login
-session    include      system-login
--session   optional     pam_elogind.so
-GDMPAM
-
 	# ── D-Bus launch helper setuid (required by GDM/AccountsService) ──
 	vmkdir usr/libexec 0755
 	if [ -f $DESTDIR/usr/libexec/dbus-daemon-launch-helper ]; then
@@ -80,26 +50,6 @@ GDMPAM
 
 	# ── GDM greeter directory ──
 	vmkdir var/lib/gdm/greeter 0755
-
-	# ── GDM runit service ──
-	vmkdir etc/sv/gdm 0755
-	cat > $DESTDIR/etc/sv/gdm/run <<'GDMRUN'
-#!/bin/sh
-exec 2>&1
-
-# Create elogind seat file so sd_seat_can_graphical() returns true.
-mkdir -p /run/systemd/seats
-cat > /run/systemd/seats/seat0 <<'SEAT'
-# This is private data. Do not parse.
-CAN_GRAPHICAL=yes
-CAN_TTY=yes
-SEAT
-
-[ ! -d /run/gdm ] && mkdir -m0711 -p /run/gdm && chown root:gdm /run/gdm
-[ ! -d /var/lib/gdm/greeter ] && mkdir -m0755 -p /var/lib/gdm/greeter && chown gdm:gdm /var/lib/gdm/greeter
-exec gdm
-GDMRUN
-	chmod +x $DESTDIR/etc/sv/gdm/run
 
 	# ── XDG_RUNTIME_DIR base ──
 	vmkdir run/user 0755
