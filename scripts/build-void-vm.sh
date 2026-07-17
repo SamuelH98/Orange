@@ -483,6 +483,10 @@ if [ "$(id -u messagebus)" != "22" ]; then
 fi
 usermod -aG video gdm
 
+cat > /etc/environment <<'ENVEOF'
+WLR_RENDERER=pixman
+ENVEOF
+
 install -d -m 0755 /etc/dracut.conf.d
 cat > /etc/dracut.conf.d/orange-vm.conf <<'DRACUT'
 hostonly="no"
