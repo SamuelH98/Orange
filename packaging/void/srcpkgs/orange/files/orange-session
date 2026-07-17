@@ -51,5 +51,4 @@ export NIXOS_OZONE_WL=${NIXOS_OZONE_WL:-1}
 
 
 exec /usr/bin/orange \
-	--config "$config_file" \
-	--assets /usr/share/orange/assets
+	--config "$config_file"

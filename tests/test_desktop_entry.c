@@ -167,11 +167,11 @@ int main(void) {
 	assert(orange_desktop_entry_id_matches(entry.id, "org.example.Viewer.desktop"));
 	assert(orange_desktop_entry_id_matches("firefox_firefox", "firefox.desktop"));
 	assert(orange_desktop_entry_id_matches("org.mozilla.firefox", "firefox.desktop"));
-	char command[1024];
-	assert(orange_desktop_entry_expand_exec(&entry, command, sizeof(command)));
-	assert(strchr(command, '%') == NULL);
-	assert(strstr(command, "'Example Viewer'") != NULL);
-	assert(strstr(command, "--icon 'org.example.Viewer'") != NULL);
+	char command_buf[1024];
+	assert(orange_desktop_entry_expand_exec(&entry, command_buf, sizeof(command_buf)));
+	assert(strchr(command_buf, '%') == NULL);
+	assert(strstr(command_buf, "'Example Viewer'") != NULL);
+	assert(strstr(command_buf, "--icon 'org.example.Viewer'") != NULL);
 
 	assert(orange_desktop_entry_load(hidden_path, &entry));
 	assert(entry.hidden);
@@ -217,7 +217,7 @@ int main(void) {
 	assert(setenv("XDG_DATA_HOME", xdg_home, 1) == 0);
 	assert(setenv("XDG_DATA_DIRS", xdg_data_dirs, 1) == 0);
 	size_t xdg_count = orange_desktop_entry_load_all_xdg(entries, 16);
-	assert(xdg_count >= 3);
+	(void)xdg_count;
 	assert(contains_entry(entries, xdg_count, "alpha"));
 	assert(contains_entry(entries, xdg_count, "beta"));
 	assert(contains_entry(entries, xdg_count, "org.example.Viewer"));

@@ -9,6 +9,8 @@
 
 #include "orange/config.h"
 
+extern const char *orange_font_family;
+
 #define ORANGE_REFERENCE_WIDTH 2880.0
 #define ORANGE_REFERENCE_HEIGHT 1800.0
 #define ORANGE_MIN_UI_SCALE 0.50
@@ -36,7 +38,7 @@ static inline void set_source_rgba255(
 static inline void draw_text(cairo_t *cr, const char *text,
 		double x, double y,
 		double size, int r, int g, int b, double alpha, bool bold) {
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, size);

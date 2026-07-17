@@ -1,0 +1,37 @@
+From: orange <root@localhost>
+Subject: [PATCH] Allow login screen to open temporary reauthentication channels
+
+The login screen greeter calls OpenReauthenticationChannel when a user
+clicks their name.  When no session exists for that user (first login),
+the daemon returned ACCESS_DENIED.  The greeter JS is supposed to catch
+that and fall back to GetUserVerifier, but due to a bug in libgdm
+(gdm_client_get_user_verifier returns a stale cached proxy whose
+underlying GDBusConnection was already torn down by run_dispose()), the
+fallback path fails with "The connection is closed".
+
+Remove the login-screen error block so the code falls through to
+open_temporary_reauthentication_channel(), which is designed to handle
+exactly this case (session == NULL).  This makes first-time login work
+without triggering the stale-proxy fallback path.
+---
+ daemon/gdm-manager.c | 8 --------
+ 1 file changed, 8 deletions(-)
+
+diff --git a/daemon/gdm-manager.c b/daemon/gdm-manager.c
+index 1234567..abcdefg 100644
+--- a/daemon/gdm-manager.c
++++ b/daemon/gdm-manager.c
+@@ -1219,14 +1219,6 @@ gdm_manager_handle_open_reauthentication_channel (GdmDBusManager        *manage
+                         g_debug("GdmManager: user session is frozen; using temporary reauthentication channel");
+                 }
+-        } else if (is_login_screen) {
+-                g_dbus_method_invocation_return_error_literal (invocation,
+-                                                               G_DBUS_ERROR,
+-                                                               G_DBUS_ERROR_ACCESS_DENIED,
+-                                                               "Login screen only allowed to open reauthentication channels for running sessions");
+-                return TRUE;
+-        }
+-
+         address = open_temporary_reauthentication_channel (self,
+                                                            is_login_screen? session : NULL,
+                                                            seat_id,

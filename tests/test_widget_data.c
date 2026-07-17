@@ -31,6 +31,7 @@ static void write_temp_file(char path[64], const char *contents) {
 	assert(fd >= 0);
 	size_t len = strlen(contents);
 	assert(write(fd, contents, len) == (ssize_t)len);
+	(void)len;
 	close(fd);
 }
 

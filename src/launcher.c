@@ -125,7 +125,7 @@ static void draw_round_mode_button(cairo_t *cr,
 	if (fallback_label != NULL && fallback_label[0] != '\0') {
 		double font_size = fmax(12.0, 18.0 * s);
 		cairo_text_extents_t te;
-		cairo_select_font_face(cr, "Sans",
+		cairo_select_font_face(cr, orange_font_family,
 			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
 		cairo_set_font_size(cr, font_size);
 		cairo_text_extents(cr, fallback_label, &te);
@@ -288,7 +288,7 @@ static void draw_mode_chip(cairo_t *cr,
 	}
 
 	double font_size = fmax(11.0, 18.0 * s);
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		active ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, font_size);
@@ -367,11 +367,11 @@ static void draw_launcher_result_row(cairo_t *cr,
 	double text_w = bg.x + bg.width - text_x - fmax(12.0, 18.0 * s);
 	char title[ORANGE_LAUNCHER_RESULT_LABEL_MAX];
 	char subtitle[ORANGE_LAUNCHER_RESULT_SUBTITLE_MAX];
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
 	cairo_set_font_size(cr, title_size);
 	ellipsize_to_width(cr, result->label, text_w, title, sizeof(title));
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, subtitle_size);
 	ellipsize_to_width(cr, result->subtitle, text_w,
@@ -425,7 +425,7 @@ void orange_launcher_draw(cairo_t *cr,
 
 		double font_size = clamp(30.0 * s, 17.0,
 			(double)field.height * 0.50);
-		cairo_select_font_face(cr, "Sans",
+		cairo_select_font_face(cr, orange_font_family,
 			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 		cairo_set_font_size(cr, font_size);
 		double text_x = field.x + fmax(42.0, 58.0 * s);
@@ -509,7 +509,7 @@ void orange_launcher_draw(cairo_t *cr,
 
 			const char *label = state->launcher_categories[i];
 			double tab_font = fmax(11.0, 20.0 * s);
-			cairo_select_font_face(cr, "Sans",
+			cairo_select_font_face(cr, orange_font_family,
 				CAIRO_FONT_SLANT_NORMAL,
 				active ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 			cairo_set_font_size(cr, tab_font);
@@ -636,7 +636,7 @@ void orange_launcher_draw(cairo_t *cr,
 
 			if (label != NULL) {
 				double label_font = fmax(11.0, 20.0 * s);
-				cairo_select_font_face(cr, "Sans",
+				cairo_select_font_face(cr, orange_font_family,
 					CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
 				cairo_set_font_size(cr, label_font);
 				char line1[128];
@@ -715,7 +715,7 @@ void orange_launcher_draw(cairo_t *cr,
 
 	double font_size = clamp(30.0 * s, 17.0,
 		(double)field.height * 0.50);
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, font_size);
 	double text_x = field.x + fmax(42.0, 58.0 * s);

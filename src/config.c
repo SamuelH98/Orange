@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+const char *orange_font_family = "Cantarell";
+
 static double clamp_double(double value, double min_value, double max_value) {
 	if (value < min_value) {
 		return min_value;
@@ -443,6 +445,9 @@ static void apply_pair(struct orange_config *config,
 	} else if (strcmp(key, "gtk_theme_dark") == 0) {
 		copy_theme_name(config->gtk_theme_dark,
 			sizeof(config->gtk_theme_dark), value);
+	} else if (strcmp(key, "font_family") == 0) {
+		copy_theme_name(config->font_family,
+			sizeof(config->font_family), value);
 	} else if (strcmp(key, "dock_apps") == 0) {
 		const char *p = value;
 		int idx = 0;
@@ -519,6 +524,8 @@ void orange_config_set_defaults(struct orange_config *config) {
 		"%s", "Adwaita");
 	snprintf(config->gtk_theme_dark, sizeof(config->gtk_theme_dark),
 		"%s", "Adwaita-dark");
+	snprintf(config->font_family, sizeof(config->font_family),
+		"%s", "Cantarell");
 	/* Default dock — macOS Golden Gate order hybridized with GNOME core apps */
 	const char *default_dock[] = {
 		"org.gnome.Nautilus.desktop",
@@ -675,6 +682,7 @@ bool orange_config_save(const struct orange_config *config, const char *path) {
 	fprintf(file, "icon_theme=%s\n", config->icon_theme);
 	fprintf(file, "gtk_theme_light=%s\n", config->gtk_theme_light);
 	fprintf(file, "gtk_theme_dark=%s\n", config->gtk_theme_dark);
+	fprintf(file, "font_family=%s\n", config->font_family);
 	fprintf(file, "dock_apps=");
 	bool first = true;
 	for (int i = 0; i < ORANGE_DOCK_MAX && config->dock_apps[i][0] != '\0'; i++) {

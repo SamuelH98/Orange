@@ -43,11 +43,10 @@ int main(void) {
 	snprintf(config.dock_apps[0], 128, "%s", "test-app.desktop");
 	snprintf(config.dock_apps[1], 128, "%s", "__trash__");
 
-	const char *path = "/tmp/orange-config-test.conf";
-	assert(orange_config_save(&config, path));
+	assert(orange_config_save(&config, "/tmp/orange-config-test.conf"));
 
 	struct orange_config loaded;
-	assert(orange_config_load(&loaded, path));
+	assert(orange_config_load(&loaded, "/tmp/orange-config-test.conf"));
 	assert(loaded.appearance == ORANGE_APPEARANCE_DARK);
 	assert(loaded.accent_color == ORANGE_ACCENT_GREEN);
 	assert(!loaded.text_highlight_automatic);

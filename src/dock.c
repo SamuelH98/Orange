@@ -1198,7 +1198,7 @@ static void draw_dock_hover_label(cairo_t *cr,
 	double bubble_h = fmax(24.0, 34.0 * s);
 	double gap = fmax(7.0, 10.0 * s);
 
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		CAIRO_FONT_WEIGHT_BOLD);
 	cairo_set_font_size(cr, font_size);
@@ -1289,7 +1289,7 @@ static void draw_dock_remove_bubble(cairo_t *cr,
 	double pad_x = fmax(8.0, 12.0 * s);
 	double bubble_h = fmax(24.0, 32.0 * s);
 	double gap = fmax(8.0, 12.0 * s);
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		CAIRO_FONT_WEIGHT_BOLD);
 	cairo_set_font_size(cr, font_size);

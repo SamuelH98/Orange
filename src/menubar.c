@@ -575,7 +575,7 @@ static void draw_menu_bar_text(cairo_t *cr,
 	}
 
 	double font_size = 28.0 * s;
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, font_size);
 	cairo_font_extents_t fe;
@@ -586,7 +586,7 @@ static void draw_menu_bar_text(cairo_t *cr,
 	double baseline = item.y +
 		((double)item.height - fe.ascent - fe.descent) * 0.5 + fe.ascent;
 	if (bold) {
-		cairo_select_font_face(cr, "Sans",
+		cairo_select_font_face(cr, orange_font_family,
 			CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
 	}
 
@@ -1215,7 +1215,7 @@ static double text_advance(cairo_t *cr,
 	if (text == NULL || text[0] == '\0') {
 		return 0.0;
 	}
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, font_size);
@@ -1228,7 +1228,7 @@ static double menu_item_baseline(cairo_t *cr,
 		struct orange_rect item,
 		double font_size,
 		bool bold) {
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, font_size);
@@ -1416,7 +1416,7 @@ static void draw_menu_bar(cairo_t *cr, const struct orange_shell_layout *layout,
 	snprintf(clock_text, sizeof(clock_text), "%s  %s",
 		day_month, trimmed_time);
 
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		CAIRO_FONT_WEIGHT_BOLD);
 	cairo_set_font_size(cr, 28 * s);

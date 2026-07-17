@@ -407,8 +407,9 @@ sud env XBPS_ARCH="$void_arch" XBPS_TARGET_ARCH="$void_arch" "$xbps_install" -Su
 sud env XBPS_ARCH="$void_arch" XBPS_TARGET_ARCH="$void_arch" "$xbps_install" -Sy -y -r "$mount_dir" \
 	-R "$binpkgs" \
 	-R "$void_repo" \
-	runit-void linux grub qemu-ga dbus elogind seatd gdm polkit \
-	orange gnome-core gnome-apps ghostty firefox nautilus \
+	runit-void linux grub qemu-ga dbus elogind gdm polkit \
+	orange gnome-session gnome-settings-daemon gnome-apps ghostty nautilus \
+	firefox gnome-software \
 	adwaita-icon-theme adwaita-fonts hicolor-icon-theme \
 	gnome-themes-extra gnome-themes-extra-gtk gnome-backgrounds gvfs \
 	dejavu-fonts-ttf mesa-dri \
@@ -432,7 +433,7 @@ echo 'HOSTNAME="orange-void"' >> /etc/rc.conf
 mkdir -p /etc/runit/runsvdir/default
 ln -sf /etc/runit/runsvdir/default /etc/runit/runsvdir/current 2>/dev/null || true
 ln -sf /etc/runit/runsvdir/current /var/service 2>/dev/null || true
-for svc in dhcpcd dbus elogind seatd polkitd qemu-ga sshd gdm socklog-unix nanoklogd; do
+for svc in dhcpcd dbus elogind polkitd qemu-ga sshd gdm socklog-unix nanoklogd; do
 	if [ -d "/etc/sv/${svc}" ]; then
 		ln -sf "/etc/sv/${svc}" "/etc/runit/runsvdir/default/${svc}" 2>/dev/null || true
 	fi
@@ -459,9 +460,6 @@ if ! id orange >/dev/null 2>&1; then
 fi
 
 groups="wheel,video,input,audio"
-if getent group _seatd >/dev/null 2>&1; then
-	groups="${groups},_seatd"
-fi
 usermod -aG "$groups" orange
 passwd -d orange
 
@@ -471,7 +469,7 @@ sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_conf
 echo 'orange ALL=(ALL) ALL' > /etc/sudoers.d/orange
 chmod 0440 /etc/sudoers.d/orange
 
-for _user in messagebus _seatd polkitd qemu gdm dbus; do
+for _user in messagebus polkitd qemu gdm dbus; do
 	if ! id "$_user" >/dev/null 2>&1; then
 		useradd -r -s /usr/bin/nologin "$_user"
 	fi
@@ -488,73 +486,7 @@ usermod -aG video gdm
 install -d -m 0755 /etc/orange
 cp /usr/share/orange/orange.conf /etc/orange/orange.conf
 
-# Fix D-Bus launch helper setuid bit (required by GDM for accountsservice)
-chmod u+s /usr/libexec/dbus-daemon-launch-helper
-
-# Compile GSettings schemas and set up dconf for GDM
-glib-compile-schemas /usr/share/glib-2.0/schemas/ >/dev/null 2>&1 || true
-install -d -m 0755 /etc/dconf/profile
-cat > /etc/dconf/profile/gdm <<'DCONF'
-user-db:user
-system-db:local
-DCONF
-
-# Ensure dconf database exists for the system (avoids GDM backend assertion errors)
-if command -v dconf >/dev/null 2>&1; then
-	install -d -m 0755 /etc/dconf/db
-	touch /etc/dconf/db/local
-	dconf update /etc/dconf/db/local 2>/dev/null || true
-fi
-
-install -d -m 0755 /etc/gdm
-cat > /etc/gdm/custom.conf <<'GDM'
-# Orange VM display manager configuration.
-
-[daemon]
-WaylandEnable=true
-InitialSetupEnable=false
-
-[security]
-
-[xdmcp]
-
-[chooser]
-
-[debug]
-GDM
-
-install -d -m 0755 /var/lib/AccountsService/users
-cat > /var/lib/AccountsService/users/orange <<'ACCOUNTS'
-[User]
-Session=orange
-SystemAccount=false
-ACCOUNTS
-chmod 0644 /var/lib/AccountsService/users/orange
-
-# GDM 48 requires /var/lib/gdm/greeter for the greeter session
-install -d -m 0755 -o gdm -g gdm /var/lib/gdm/greeter
-
-if [ -d /etc/sv/gdm ]; then
-	cat > /etc/sv/gdm/run <<'RUN'
-#!/bin/sh
-exec 2>&1
-
-# Create elogind seat file so sd_seat_can_graphical() returns true.
-# Without this, GDM's libelogind client library cannot determine
-# the seat capabilities and refuses to start.
-mkdir -p /run/systemd/seats
-cat > /run/systemd/seats/seat0 <<'SEAT'
-# This is private data. Do not parse.
-CAN_GRAPHICAL=yes
-CAN_TTY=yes
-SEAT
-
-[ ! -d /run/gdm ] && mkdir -m0711 -p /run/gdm && chown root:gdm /run/gdm
-[ ! -d /var/lib/gdm/greeter ] && mkdir -m0755 -p /var/lib/gdm/greeter && chown gdm:gdm /var/lib/gdm/greeter
-exec gdm
-RUN
-	chmod +x /etc/sv/gdm/run
-fi
+orange-setup
 
 install -d -m 0755 /etc/dracut.conf.d
 cat > /etc/dracut.conf.d/orange-vm.conf <<'DRACUT'

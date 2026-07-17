@@ -21,6 +21,7 @@ static void test_display_config_mode_property_types(void) {
 	assert(g_variant_lookup(props, "min-refresh-rate", "d",
 		&min_refresh_rate));
 	assert(min_refresh_rate == 0.0);
+	(void)min_refresh_rate;
 
 	g_variant_unref(props);
 }
@@ -53,6 +54,7 @@ static void test_display_config_monitor_property_types(void) {
 	assert(g_variant_lookup(props, "orientation-requested", "i",
 		&orientation));
 	assert(orientation == 0);
+	(void)orientation;
 
 	g_variant_unref(props);
 }
@@ -79,6 +81,7 @@ static void test_display_config_state_properties_enable_fractional(void) {
 	assert(g_variant_lookup(props, "legacy-ui-scaling-factor", "i",
 		&legacy_ui_scale));
 	assert(legacy_ui_scale == 1);
+	(void)legacy_ui_scale;
 
 	g_variant_unref(props);
 }
@@ -134,6 +137,7 @@ static void test_status_notifier_copy_filters_visible_items(void) {
 		&services, items, 1);
 	assert(count == 1);
 	assert(strcmp(items[0].icon_name, "network-vpn") == 0);
+	(void)count;
 }
 
 int main(void) {

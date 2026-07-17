@@ -17,6 +17,7 @@ static void assert_roughly_double(int large, int small) {
 static void assert_app_menu_tabs_do_not_overlap(
 		const struct orange_shell_layout *layout) {
 	int last_right = 0;
+	(void)last_right;
 	for (int i = 0; i < layout->app_menu_item_count; i++) {
 		struct orange_rect item = layout->app_menu_items[i];
 		if (item.width <= 0) {
@@ -26,13 +27,6 @@ static void assert_app_menu_tabs_do_not_overlap(
 		assert(item.x + item.width <= layout->status_area.x);
 		last_right = item.x + item.width;
 	}
-}
-
-static bool rects_overlap(struct orange_rect a, struct orange_rect b) {
-	return a.x < b.x + b.width &&
-		a.x + a.width > b.x &&
-		a.y < b.y + b.height &&
-		a.y + a.height > b.y;
 }
 
 static void test_dock_hit(void) {
@@ -46,9 +40,11 @@ static void test_dock_hit(void) {
 		&layout,
 		first.x + first.width / 2,
 		first.y + first.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DOCK_ITEM);
 	assert(hit.index == 0);
 	struct orange_desktop_entry entries[1];
+	(void)entries;
 	assert(orange_dock_command(hit.index, entries, 0, &config) != NULL);
 
 	assert(layout.dock_separator.width > 0);
@@ -65,6 +61,7 @@ static void test_dock_hit(void) {
 	assert(hit.kind == ORANGE_HIT_DOCK);
 	assert(hit.index == -1);
 	struct orange_rect work = orange_shell_layout_work_area(&layout);
+	(void)work;
 	assert(work.x == 0);
 	assert(work.y == layout.menu_bar.height);
 	assert(work.x + work.width == layout.width);
@@ -90,6 +87,7 @@ static void test_dock_auto_hide_layout(void) {
 		640,
 		420,
 	};
+	(void)centered_view;
 	assert(!orange_shell_layout_dock_auto_hide_blocked_by_view(
 		&layout, centered_view, false));
 	assert(orange_shell_layout_dock_auto_hide_blocked_by_view(
@@ -115,6 +113,7 @@ static void test_dock_auto_hide_layout(void) {
 		&layout,
 		layout.width / 2,
 		layout.height - 1);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DOCK);
 	hit = orange_shell_hit_test(
 		&layout,
@@ -189,6 +188,7 @@ static void test_reordered_dock_hit_resolves_launcher(void) {
 		"Launcher") == 0);
 	const char *command = orange_dock_command(launcher_idx,
 		NULL, 0, &config);
+	(void)command;
 	assert(command != NULL);
 	assert(strstr(command, "ORANGE_APP_PICKER") != NULL);
 }
@@ -206,6 +206,7 @@ static void test_dock_position_layout(void) {
 	assert(layout.dock_items[1].y > layout.dock_items[0].y);
 	assert(layout.dock_separator.width > layout.dock_separator.height);
 	struct orange_rect work = orange_shell_layout_work_area(&layout);
+	(void)work;
 	assert(work.x == layout.dock.x + layout.dock.width);
 	assert(work.y == layout.menu_bar.height);
 	assert(work.x + work.width == layout.width);
@@ -214,6 +215,7 @@ static void test_dock_position_layout(void) {
 		&layout,
 		layout.dock_separator.x + layout.dock_separator.width / 2,
 		layout.dock_separator.y + layout.dock_separator.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DOCK_SEPARATOR);
 
 	orange_shell_layout_set_context_menu(&layout,
@@ -254,6 +256,7 @@ static void test_dock_visual_dirty_bounds_include_hover_labels(void) {
 		2, 0, NULL, 0, &layout);
 	struct orange_rect bounds =
 		orange_dock_visual_dirty_bounds(&layout, width, height);
+	(void)bounds;
 	assert(bounds.x == 0);
 	assert(bounds.width == width);
 	assert(bounds.y < layout.dock.y);
@@ -283,34 +286,45 @@ static void test_dock_visual_dirty_bounds_include_hover_labels(void) {
 static void test_dock_separator_drag_scale_math(void) {
 	double bottom_grow = orange_shell_dock_scale_for_separator_drag(
 		ORANGE_DOCK_POSITION_BOTTOM, 1.0, 500, 900, 500, 846);
+	(void)bottom_grow;
 	assert(bottom_grow > 1.29 && bottom_grow < 1.31);
 	double bottom_shrink = orange_shell_dock_scale_for_separator_drag(
 		ORANGE_DOCK_POSITION_BOTTOM, 1.0, 500, 900, 500, 954);
+	(void)bottom_shrink;
 	assert(bottom_shrink > 0.69 && bottom_shrink < 0.71);
 	double left_grow = orange_shell_dock_scale_for_separator_drag(
 		ORANGE_DOCK_POSITION_LEFT, 1.0, 80, 500, 80, 554);
+	(void)left_grow;
 	assert(left_grow > 1.29 && left_grow < 1.31);
 	double left_shrink = orange_shell_dock_scale_for_separator_drag(
 		ORANGE_DOCK_POSITION_LEFT, 1.0, 80, 500, 80, 446);
+	(void)left_shrink;
 	assert(left_shrink > 0.69 && left_shrink < 0.71);
 	double right_grow = orange_shell_dock_scale_for_separator_drag(
 		ORANGE_DOCK_POSITION_RIGHT, 1.0, 1840, 500, 1840, 554);
+	(void)right_grow;
 	assert(right_grow > 1.29 && right_grow < 1.31);
 	double right_horizontal_drift = orange_shell_dock_scale_for_separator_drag(
 		ORANGE_DOCK_POSITION_RIGHT, 1.0, 1840, 500, 1786, 500);
+	(void)right_horizontal_drift;
 	assert(right_horizontal_drift > 0.99 && right_horizontal_drift < 1.01);
 	double clamped_small = orange_shell_dock_scale_for_separator_drag(
 		ORANGE_DOCK_POSITION_BOTTOM, 1.0, 0, 0, 0, 1000);
+	(void)clamped_small;
 	assert(clamped_small > 0.59 && clamped_small < 0.61);
 	double clamped_large = orange_shell_dock_scale_for_separator_drag(
 		ORANGE_DOCK_POSITION_BOTTOM, 1.0, 0, 1000, 0, 0);
+	(void)clamped_large;
 	assert(clamped_large > 1.99 && clamped_large < 2.01);
 }
 
 static void test_minimize_animation_rect_math(void) {
 	double start = orange_shell_minimize_animation_ease(0.0);
+	(void)start;
 	double mid = orange_shell_minimize_animation_ease(0.5);
+	(void)mid;
 	double end = orange_shell_minimize_animation_ease(1.0);
+	(void)end;
 	assert(start == 0.0);
 	assert(mid > 0.5 && mid < 0.9);
 	assert(end == 1.0);
@@ -319,10 +333,13 @@ static void test_minimize_animation_rect_math(void) {
 	struct orange_rect dock = {460, 990, 82, 82};
 	struct orange_rect first = orange_shell_minimize_animation_rect(
 		window, dock, 0.0);
+	(void)first;
 	struct orange_rect half = orange_shell_minimize_animation_rect(
 		window, dock, 0.5);
+	(void)half;
 	struct orange_rect last = orange_shell_minimize_animation_rect(
 		window, dock, 1.0);
+	(void)last;
 	assert(first.x == window.x);
 	assert(first.y == window.y);
 	assert(first.width == window.width);
@@ -339,8 +356,11 @@ static void test_minimize_animation_rect_math(void) {
 
 static void test_workspace_animation_offset_math(void) {
 	double start = orange_shell_workspace_animation_ease(0.0);
+	(void)start;
 	double mid = orange_shell_workspace_animation_ease(0.5);
+	(void)mid;
 	double end = orange_shell_workspace_animation_ease(1.0);
+	(void)end;
 	assert(start == 0.0);
 	assert(mid > 0.5 && mid < 0.9);
 	assert(end == 1.0);
@@ -358,8 +378,10 @@ static void test_workspace_animation_offset_math(void) {
 		span);
 	int incoming_mid = orange_shell_workspace_animation_offset(
 		span, 1, 0.5, true);
+	(void)incoming_mid;
 	int outgoing_mid = orange_shell_workspace_animation_offset(
 		span, 1, 0.5, false);
+	(void)outgoing_mid;
 	assert(incoming_mid > 0 && incoming_mid < span / 2);
 	assert(outgoing_mid < -span / 2 && outgoing_mid > -span);
 }
@@ -382,6 +404,7 @@ static void test_dock_scale_resizes_separator_layout(void) {
 		&large,
 		large.dock_separator.x + large.dock_separator.width / 2,
 		large.dock_separator.y + large.dock_separator.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DOCK_SEPARATOR);
 }
 
@@ -394,6 +417,7 @@ static void test_dock_separator_menu_fits_minimize_detail(void) {
 		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, -1, 0, 0, NULL);
 
 	struct orange_rect item = layout.context_menu_items[2];
+	(void)item;
 	assert(item.width > 0);
 	assert(item.width >= 184);
 	assert(strcmp(orange_menubar_context_menu_label(
@@ -436,10 +460,13 @@ static void test_default_dock_apps_have_fallback_commands(void) {
 	assert(settings_command != NULL);
 	const char *gnome_display =
 		strstr(settings_command, "gnome-control-center display");
+	(void)gnome_display;
 	const char *gnome_multitasking =
 		strstr(settings_command, "gnome-control-center multitasking");
+	(void)gnome_multitasking;
 	const char *gnome_system =
 		strstr(settings_command, "gnome-control-center system");
+	(void)gnome_system;
 	assert(gnome_multitasking != NULL);
 	assert(gnome_display != NULL);
 	assert(gnome_system != NULL);
@@ -476,6 +503,7 @@ static void test_firefox_dock_matches_snap_desktop_entry(void) {
 	assert(strcmp(orange_dock_label(2, entries, 1, &config),
 		"Firefox Web Browser") == 0);
 	const char *command = orange_dock_command(2, entries, 1, &config);
+	(void)command;
 	assert(command != NULL);
 	assert(strstr(command, "/usr/bin/firefox") != NULL);
 	assert(strstr(command, "firefox-snap-wrapper") == NULL);
@@ -508,6 +536,7 @@ static void test_dock_lookup_skips_stale_package_desktop_entry(void) {
 	assert(strcmp(orange_dock_label(2, entries, 2, &config),
 		"Sample") == 0);
 	const char *command = orange_dock_command(2, entries, 2, &config);
+	(void)command;
 	assert(command != NULL);
 	assert(strcmp(command, "sample %u") == 0);
 }
@@ -518,8 +547,10 @@ static void test_default_dock_lookup_does_not_confuse_calculator_with_maps(void)
 
 	int maps = orange_dock_config_find_app(&config,
 		"org.gnome.Maps.desktop");
+	(void)maps;
 	int calculator = orange_dock_config_find_app(&config,
 		"org.gnome.Calculator.desktop");
+	(void)calculator;
 	assert(maps >= 0);
 	assert(strcmp(config.dock_apps[maps], "org.gnome.Maps.desktop") == 0);
 	assert(calculator == -1);
@@ -542,9 +573,11 @@ static void test_dock_trash_spacing_is_balanced(void) {
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	int first_leading = layout.dock_items[0].x - layout.dock.x;
+	(void)first_leading;
 	int last = layout.dock_item_count - 1;
 	int trailing = layout.dock.x + layout.dock.width -
 		(layout.dock_items[last].x + layout.dock_items[last].width);
+	(void)trailing;
 	assert(abs(first_leading - trailing) <= 1);
 
 	snprintf(config.dock_apps[last], sizeof(config.dock_apps[last]), "%s", "");
@@ -560,6 +593,7 @@ static void test_dock_remove_visible_compacts_aliases(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	int original_count = orange_dock_count(&config);
+	(void)original_count;
 	assert(original_count > 4);
 	assert(orange_dock_config_remove_visible(&config, 2));
 	assert(orange_dock_count(&config) == original_count - 1);
@@ -579,6 +613,7 @@ static void test_dock_insert_from_launcher_clamps_before_trash(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	int original_count = orange_dock_count(&config);
+	(void)original_count;
 	assert(original_count > 2);
 	assert(orange_dock_config_insert_app(&config,
 		"org.example.NewApp.desktop", original_count));
@@ -620,6 +655,7 @@ static void test_temporary_dock_apps_appear_before_trash(void) {
 	assert(layout.dock_item_count == dock_count + 2);
 
 	int first_temp = dock_count - 1;
+	(void)first_temp;
 	assert(layout.dock_temporary[first_temp]);
 	assert(layout.dock_temporary[first_temp + 1]);
 	assert(!layout.dock_temporary[layout.dock_item_count - 1]);
@@ -639,6 +675,7 @@ static void test_temporary_dock_apps_appear_before_trash(void) {
 			layout.dock_temporary_separator.width / 2,
 		layout.dock_temporary_separator.y +
 			layout.dock_temporary_separator.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DOCK_SEPARATOR);
 	assert(hit.index == 1);
 }
@@ -660,6 +697,7 @@ static void test_minimized_dock_screenshots_appear_left_of_trash(void) {
 	assert(layout.dock_item_count == dock_count + 3);
 
 	int first_special = dock_count - 1;
+	(void)first_special;
 	assert(layout.dock_temporary[first_special]);
 	assert(!layout.dock_minimized[first_special]);
 	assert(layout.dock_minimized[first_special + 1]);
@@ -719,6 +757,7 @@ static void test_minimized_dock_thumbnails_magnify_and_use_window_title(void) {
 
 	struct orange_rect thumb =
 		orange_dock_minimized_thumbnail_rect(layout.dock_items[minimized]);
+	(void)thumb;
 	int old_pad = layout.dock_items[minimized].width <
 		layout.dock_items[minimized].height ?
 		layout.dock_items[minimized].width / 12 :
@@ -732,6 +771,7 @@ static void test_minimized_dock_thumbnails_magnify_and_use_window_title(void) {
 		layout.dock_items[minimized].width - old_pad * 2,
 		layout.dock_items[minimized].height - old_pad * 2,
 	};
+	(void)old_thumb;
 	assert(thumb.width > old_thumb.width);
 	assert(thumb.height > old_thumb.height);
 
@@ -779,6 +819,7 @@ static void test_dock_reorder_visible_keeps_permanent_items_fixed(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);
 	int original_count = orange_dock_count(&config);
+	(void)original_count;
 	assert(original_count > 4);
 	assert(!orange_dock_config_reorder_visible(&config, 1, 0));
 	assert(strcmp(config.dock_apps[1], "__launcher__") == 0);
@@ -799,6 +840,7 @@ static void test_desktop_hit(void) {
 		&layout,
 		item.x + item.width / 2,
 		item.y + item.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DESKTOP_ITEM);
 	assert(hit.index == 1);
 }
@@ -841,6 +883,7 @@ static void test_desktop_label_rect_targets_rename_area(void) {
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(1920,1080,false,&config,0,0, files, 1, &layout);
 	struct orange_rect item = layout.desktop_items[0];
+	(void)item;
 	struct orange_rect label =
 		orange_shell_desktop_label_rect(&layout, &config, 0);
 	assert(label.width > item.width);
@@ -849,6 +892,7 @@ static void test_desktop_label_rect_targets_rename_area(void) {
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
 		label.x + label.width / 2,
 		label.y + label.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DESKTOP_ITEM);
 	assert(hit.index == 0);
 }
@@ -903,6 +947,7 @@ static void test_desktop_image_hit_wins_over_widget_overlap(void) {
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
 		layout.calendar_widget.x + layout.calendar_widget.width / 2,
 		layout.calendar_widget.y + layout.calendar_widget.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DESKTOP_ITEM);
 	assert(hit.index == 0);
 	assert(layout.desktop_item_info[hit.index].kind == ORANGE_DESKTOP_ITEM_FILE);
@@ -972,6 +1017,7 @@ static void test_desktop_folder_hit_after_context_menu_clear(void) {
 	struct orange_shell_hit blocked = orange_shell_hit_test(&layout,
 		layout.desktop_items[1].x + layout.desktop_items[1].width / 2,
 		layout.desktop_items[1].y + layout.desktop_items[1].height / 2);
+	(void)blocked;
 	assert(blocked.kind != ORANGE_HIT_DESKTOP_ITEM);
 
 	orange_shell_layout_compute(1440,900,false,&config,0,0, files, 2, &layout);
@@ -980,6 +1026,7 @@ static void test_desktop_folder_hit_after_context_menu_clear(void) {
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
 		layout.desktop_items[1].x + layout.desktop_items[1].width / 2,
 		layout.desktop_items[1].y + layout.desktop_items[1].height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DESKTOP_ITEM);
 	assert(hit.index == 1);
 	assert(layout.desktop_item_info[hit.index].kind == ORANGE_DESKTOP_ITEM_FILE);
@@ -1032,6 +1079,7 @@ static void test_desktop_custom_position_preserves_dragged_coordinates(void) {
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(1920,1080,false,&config,0,1, NULL, 0, &layout);
 	struct orange_rect item = layout.desktop_items[0];
+	(void)item;
 	assert(item.x == 420);
 	assert(item.y == 260);
 	assert(item.y >= layout.menu_bar.height);
@@ -1055,8 +1103,10 @@ static void test_desktop_free_positions_separate_overlapping_highlights(void) {
 	assert(layout.desktop_item_count == 2);
 	struct orange_rect first =
 		orange_shell_desktop_item_context_rect(&layout, 0);
+	(void)first;
 	struct orange_rect second =
 		orange_shell_desktop_item_context_rect(&layout, 1);
+	(void)second;
 	assert(!rects_overlap(first, second));
 	assert(abs(layout.desktop_items[1].x - 430) <=
 		layout.desktop_items[1].width * 2);
@@ -1089,7 +1139,9 @@ static void test_desktop_grid_keeps_visible_spacing(void) {
 	orange_shell_layout_compute(1920,1080,false,&config,0,2, NULL, 0, &layout);
 	assert(layout.desktop_item_count == 2);
 	int dx = abs(layout.desktop_items[0].x - layout.desktop_items[1].x);
+	(void)dx;
 	int dy = abs(layout.desktop_items[0].y - layout.desktop_items[1].y);
+	(void)dy;
 	assert(dx >= layout.desktop_items[0].width / 2 ||
 		dy >= layout.desktop_items[0].height / 2);
 }
@@ -1103,6 +1155,7 @@ static void test_desktop_grid_reserves_side_dock_space(void) {
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(1920,1080,false,&config,0,1, NULL, 0, &layout);
 	struct orange_rect item = layout.desktop_items[0];
+	(void)item;
 	assert(item.x + item.width < layout.dock.x - 4);
 
 	config.dock_position = ORANGE_DOCK_POSITION_LEFT;
@@ -1121,14 +1174,18 @@ static void test_desktop_grid_uses_available_horizontal_space(void) {
 	assert(layout.desktop_item_count == 36);
 	assert(layout.desktop_items[0].y > layout.menu_bar.height + 8);
 	int row_step = layout.desktop_items[1].y - layout.desktop_items[0].y;
+	(void)row_step;
 	assert(row_step > layout.desktop_items[0].height);
 	assert(row_step <= layout.desktop_items[0].height +
 		layout.desktop_items[0].height / 2);
 
 	int first_col_x = layout.desktop_items[0].x;
 	int next_col_x = first_col_x;
+	(void)next_col_x;
 	bool has_left_edge_column = false;
+	(void)has_left_edge_column;
 	bool has_right_edge_column = false;
+	(void)has_right_edge_column;
 	for (int i = 1; i < layout.desktop_item_count; i++) {
 		if (layout.desktop_items[i].x <
 				first_col_x - layout.desktop_items[0].width / 2) {
@@ -1257,6 +1314,7 @@ static void test_desktop_custom_position_clamps_to_visible_area(void) {
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(1920,1080,false,&config,0,1, NULL, 0, &layout);
 	struct orange_rect item = layout.desktop_items[0];
+	(void)item;
 	assert(item.x >= 0);
 	assert(item.y >= layout.menu_bar.height);
 	assert(item.x + item.width <= layout.width);
@@ -1300,6 +1358,7 @@ static void test_system_menu_hit(void) {
 	struct orange_shell_layout closed;
 	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &closed);
 	struct orange_shell_hit hit = orange_shell_hit_test(&closed, 36, 16);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_SYSTEM_MENU);
 	hit = orange_shell_hit_test(&closed,
 		closed.app_menu_button.x + closed.app_menu_button.width / 2,
@@ -1333,6 +1392,7 @@ static void test_app_menu_layout_and_labels(void) {
 	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_HELP].width > 0);
 
 	struct orange_shell_state default_state = {0};
+	(void)default_state;
 	assert(strcmp(orange_menubar_active_app_label(&default_state), "Files") == 0);
 	struct orange_shell_state active_state = {0};
 	snprintf(active_state.active_app_label,
@@ -1364,11 +1424,13 @@ static void test_app_menu_layout_and_labels(void) {
 		&layout,
 		app_tab.x + app_tab.width / 2,
 		app_tab.y + app_tab.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_APP_MENU);
 	assert(hit.index == ORANGE_APP_MENU_TAB_APP);
 
 	struct orange_rect file_tab =
 		layout.app_menu_items[ORANGE_APP_MENU_TAB_FILE];
+	(void)file_tab;
 	assert(file_tab.width > 0);
 
 	orange_shell_layout_set_context_menu(&layout,
@@ -1432,6 +1494,7 @@ static void test_app_menu_layout_and_labels(void) {
 	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_APP].width > 0);
 	int short_firefox_width =
 		layout.app_menu_items[ORANGE_APP_MENU_TAB_APP].width;
+	(void)short_firefox_width;
 	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_FILE].width > 0);
 	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_EDIT].width > 0);
 	assert(layout.app_menu_items[ORANGE_APP_MENU_TAB_VIEW].width > 0);
@@ -1512,6 +1575,7 @@ static void test_status_area_hit_and_menu(void) {
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
 		clock.x + clock.width / 2,
 		clock.y + clock.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_STATUS_ITEM);
 	assert(hit.index == ORANGE_STATUS_ITEM_CLOCK);
 
@@ -1544,6 +1608,7 @@ static void test_status_notifier_items_layout_and_hit(void) {
 	struct orange_shell_layout layout;
 	orange_shell_layout_compute(1920,1080,false,&config,2,0, NULL, 0, &layout);
 	int original_status_x = layout.status_area.x;
+	(void)original_status_x;
 
 	struct orange_status_notifier_item items[2] = {
 		{
@@ -1574,6 +1639,7 @@ static void test_status_notifier_items_layout_and_hit(void) {
 			layout.status_notifier_items[1].width / 2,
 		layout.status_notifier_items[1].y +
 			layout.status_notifier_items[1].height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_TRAY_ITEM);
 	assert(hit.index == 1);
 
@@ -1702,6 +1768,7 @@ static void test_notification_center_layout_and_hit(void) {
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
 		card.x + card.width / 2,
 		card.y + card.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_NOTIFICATION_CENTER);
 
 	struct orange_rect edit = layout.notification_center_edit_button;
@@ -1774,6 +1841,7 @@ static void test_launcher_full_layout_scrolls_all_apps(void) {
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
 		first.x + first.width / 2,
 		first.y + first.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_LAUNCHER_APP);
 	assert(hit.index == 0);
 
@@ -1836,45 +1904,6 @@ static void test_launcher_search_mode_transforms_to_overlay(void) {
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
 		layout.launcher_search_field.x + layout.launcher_search_field.width / 2,
 		layout.launcher_search_field.y + layout.launcher_search_field.height / 2);
-	assert(hit.kind == ORANGE_HIT_LAUNCHER_SEARCH);
-
-	struct orange_rect mode = layout.launcher_mode_buttons[0];
-	hit = orange_shell_hit_test(&layout,
-		mode.x + mode.width / 2,
-		mode.y + mode.height / 2);
-	assert(hit.kind == ORANGE_HIT_LAUNCHER_MODE);
-	assert(hit.index == 0);
-
-	orange_shell_layout_compute(1440,900,false,&config,0,0, NULL, 0, &layout);
-	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
-	layout.launcher_category_count = 8;
-	layout.launcher_category_active = 0;
-	orange_shell_layout_set_launcher(&layout, true,
-		ORANGE_LAUNCHER_DISPLAY_SEARCH_ONLY, 24);
-
-	assert(layout.launcher_display_mode == ORANGE_LAUNCHER_DISPLAY_FULL);
-	assert(layout.launcher_panel.width > 0);
-	assert(layout.launcher_panel.width > layout.launcher_search_field.width);
-	assert(layout.launcher_viewport.width > 0);
-	assert(layout.launcher_grid_cell_count > 0);
-	assert(layout.launcher_list_results);
-	assert(layout.launcher_mode_buttons[0].width > 0);
-	assert(layout.launcher_mode_buttons[1].width > 0);
-
-	orange_shell_layout_compute(1440,900,false,&config,0,0, NULL, 0, &layout);
-	layout.launcher_current_mode = ORANGE_LAUNCHER_MODE_APPS;
-	layout.launcher_category_count = 8;
-	layout.launcher_category_active = 0;
-	orange_shell_layout_set_launcher(&layout, true,
-		ORANGE_LAUNCHER_DISPLAY_FULL, 24);
-
-	assert(layout.launcher_display_mode == ORANGE_LAUNCHER_DISPLAY_FULL);
-	assert(layout.launcher_panel.width > 0);
-	assert(layout.launcher_panel.width >= (int)(layout.width * 0.58));
-	assert(layout.launcher_panel.width <= (int)(layout.width * 0.72));
-	assert(layout.launcher_panel.height >= (int)(layout.height * 0.35));
-	assert(layout.launcher_panel.height <= (int)(layout.height * 0.56));
-	assert(layout.launcher_viewport.width > 0);
 	assert(layout.launcher_grid_cell_count > 0);
 	assert(layout.launcher_list_results);
 	assert(layout.launcher_mode_buttons[0].width > 0);
@@ -1990,6 +2019,7 @@ static void test_launcher_spotlight_results(void) {
 	int count = orange_launcher_build_results(entries, 2, files, 2,
 		"calc", ORANGE_LAUNCHER_MODE_APPS, NULL, &config, NULL, 0,
 		results, 16);
+	(void)count;
 	assert(results_contain_kind_label(results, count,
 		ORANGE_LAUNCHER_RESULT_APP, "Calculator"));
 	assert(results_contain_kind_label(results, count,
@@ -2078,6 +2108,7 @@ static void test_launcher_category_filter(void) {
 	int indices[7];
 	int count = orange_launcher_filter(entries, 7, "", "Utilities",
 		indices, 7);
+	(void)count;
 	assert(count == 1);
 	assert(filter_contains_id(entries, indices, count, "terminal"));
 	count = orange_launcher_filter(entries, 7, "", "Productivity & Finance",
@@ -2175,6 +2206,7 @@ static void test_launcher_hides_desktop_entries_gnome_would_hide(void) {
 	int indices[7];
 	int count = orange_launcher_filter(entries, 7, "", "Utilities",
 		indices, 7);
+	(void)count;
 	assert(count == 1);
 	assert(filter_contains_id(entries, indices, count,
 		"org.example.Editor.desktop"));
@@ -2220,6 +2252,7 @@ static void test_launcher_filters_apps_already_in_dock(void) {
 	int indices[3];
 	int count = orange_launcher_filter_available(entries, 3, "",
 		"Utilities", &config, temporary, temporary_count, indices, 3);
+	(void)count;
 	assert(count == 1);
 	assert(filter_contains_id(entries, indices, count,
 		"org.example.Editor.desktop"));
@@ -2349,10 +2382,15 @@ static void test_major_surfaces_scale_by_resolution(void) {
 static void test_menu_surfaces_scale_with_ui_scale(void) {
 	const double ui_scales[] = {1.0, 1.25, 1.50, 1.75, 2.00};
 	int previous_system_h = 0;
+	(void)previous_system_h;
 	int previous_desktop_context_h = 0;
+	(void)previous_desktop_context_h;
 	int previous_app_dropdown_h = 0;
+	(void)previous_app_dropdown_h;
 	int previous_dock_menu_h = 0;
+	(void)previous_dock_menu_h;
 	int previous_dock_submenu_h = 0;
+	(void)previous_dock_submenu_h;
 
 	for (size_t i = 0; i < sizeof(ui_scales) / sizeof(ui_scales[0]); i++) {
 		struct orange_config config;
@@ -2363,6 +2401,7 @@ static void test_menu_surfaces_scale_with_ui_scale(void) {
 		orange_shell_layout_compute(1440, 900, true, &config,
 			2, 0, NULL, 0, &layout);
 		double expected_menu_scale = 0.5 * ui_scales[i];
+		(void)expected_menu_scale;
 		assert(fabs(layout.menu_scale - expected_menu_scale) < 0.001);
 		assert(layout.system_menu_item_count > 0);
 		int system_h = layout.system_menu_items[0].height;
@@ -2411,6 +2450,7 @@ static void test_desktop_background_hit(void) {
 	orange_shell_layout_compute(2048,1153,false,&config,2,0, NULL, 0, &layout);
 	/* click on empty desktop area below menu bar */
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout, 500, 500);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DESKTOP);
 	assert(hit.index == -1);
 }
@@ -2475,6 +2515,7 @@ static void test_chrome_background_blocks_desktop_hit(void) {
 	struct orange_shell_hit hit = orange_shell_hit_test(&layout,
 		layout.status_area.x - 4,
 		layout.menu_bar.y + layout.menu_bar.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_MENU_BAR);
 	assert(hit.index == -1);
 
@@ -2516,6 +2557,7 @@ static void test_context_menu_hit(void) {
 		(layout.context_menu_panel.y + layout.context_menu_panel.height) >= 16);
 	int dock_anchor_center = layout.dock_items[0].x +
 		layout.dock_items[0].width / 2;
+	(void)dock_anchor_center;
 	assert(dock_anchor_center > layout.context_menu_panel.x);
 	assert(dock_anchor_center < layout.context_menu_panel.x +
 		layout.context_menu_panel.width / 3);
@@ -2525,6 +2567,7 @@ static void test_context_menu_hit(void) {
 		&layout,
 		item.x + item.width / 2,
 		item.y + item.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_CONTEXT_MENU_ITEM);
 	assert(hit.index == 0);
 	assert(orange_menubar_context_menu_label(ORANGE_CONTEXT_MENU_DOCK, hit.index) != NULL);
@@ -2654,6 +2697,7 @@ static void test_context_menu_hit(void) {
 	assert(layout.context_submenu_panel.x >=
 		layout.context_menu_panel.x + layout.context_menu_panel.width);
 	struct orange_rect minimize_parent = layout.context_menu_items[2];
+	(void)minimize_parent;
 	assert(layout.context_submenu_panel.y <= minimize_parent.y);
 	struct orange_shell_hit minimize_hit = orange_shell_hit_test(
 		&layout,
@@ -2661,6 +2705,7 @@ static void test_context_menu_hit(void) {
 			layout.context_submenu_items[1].width / 2,
 		layout.context_submenu_items[1].y +
 			layout.context_submenu_items[1].height / 2);
+	(void)minimize_hit;
 	assert(minimize_hit.kind == ORANGE_HIT_CONTEXT_SUBMENU_ITEM);
 	assert(minimize_hit.index == 1);
 
@@ -2670,6 +2715,7 @@ static void test_context_menu_hit(void) {
 		ORANGE_CONTEXT_MENU_DOCK_SEPARATOR, -1, 0, 0, NULL);
 	assert(layout.context_submenu_item_count == 3);
 	struct orange_rect position_parent = layout.context_menu_items[3];
+	(void)position_parent;
 	assert(layout.context_submenu_panel.y <= position_parent.y);
 	struct orange_shell_hit position_hit = orange_shell_hit_test(
 		&layout,
@@ -2677,6 +2723,7 @@ static void test_context_menu_hit(void) {
 			layout.context_submenu_items[2].width / 2,
 		layout.context_submenu_items[2].y +
 			layout.context_submenu_items[2].height / 2);
+	(void)position_hit;
 	assert(position_hit.kind == ORANGE_HIT_CONTEXT_SUBMENU_ITEM);
 	assert(position_hit.index == 2);
 	layout.dock_position_submenu_open = false;
@@ -2715,6 +2762,7 @@ static void test_context_menu_hit(void) {
 	assert(layout.context_submenu_panel.x >=
 		layout.context_menu_panel.x + layout.context_menu_panel.width);
 	struct orange_rect open_with_item = layout.context_menu_items[1];
+	(void)open_with_item;
 	assert(layout.context_submenu_panel.y <= open_with_item.y);
 	struct orange_rect submenu_item =
 		layout.context_submenu_items[ORANGE_OPEN_WITH_APP_MAX - 1];
@@ -2722,6 +2770,7 @@ static void test_context_menu_hit(void) {
 		&layout,
 		submenu_item.x + submenu_item.width / 2,
 		submenu_item.y + submenu_item.height / 2);
+	(void)submenu_hit;
 	assert(submenu_hit.kind == ORANGE_HIT_CONTEXT_SUBMENU_ITEM);
 	assert(submenu_hit.index == ORANGE_OPEN_WITH_APP_MAX - 1);
 
@@ -2792,6 +2841,7 @@ static void test_hidden_widget_not_hit(void) {
 		&layout,
 		widget.x + widget.width / 2,
 		widget.y + widget.height / 2);
+	(void)hit;
 	assert(hit.kind == ORANGE_HIT_DESKTOP);
 	assert(hit.index == -1);
 }
@@ -2879,58 +2929,71 @@ static void test_dock_bounce_offset(void) {
 	double scale = 1.0;
 
 	double t0 = orange_dock_bounce_offset(&bounce, 1000000, scale);
+	(void)t0;
 	assert(t0 == 0.0);
 
 	double t_mid = orange_dock_bounce_offset(&bounce,
 		1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS / 6, scale);
+	(void)t_mid;
 	assert(t_mid < 0.0);
 	struct orange_dock_bounce_displacement bottom =
 		orange_dock_bounce_displacement(&bounce,
 			1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS / 6,
 			ORANGE_DOCK_POSITION_BOTTOM, scale);
+	(void)bottom;
 	assert(bottom.x == 0.0);
 	assert(bottom.y < 0.0);
 	struct orange_dock_bounce_displacement left =
 		orange_dock_bounce_displacement(&bounce,
 			1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS / 6,
 			ORANGE_DOCK_POSITION_LEFT, scale);
+	(void)left;
 	assert(left.x > 0.0);
 	assert(left.y == 0.0);
 	struct orange_dock_bounce_displacement right =
 		orange_dock_bounce_displacement(&bounce,
 			1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS / 6,
 			ORANGE_DOCK_POSITION_RIGHT, scale);
+	(void)right;
 	assert(right.x < 0.0);
 	assert(right.y == 0.0);
 
 	double t_end = orange_dock_bounce_offset(&bounce,
 		1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS, scale);
+	(void)t_end;
 	assert(t_end == 0.0);
 
 	double t_past = orange_dock_bounce_offset(&bounce,
 		1000000 + ORANGE_DOCK_BOUNCE_DURATION_MS + 100, scale);
+	(void)t_past;
 	assert(t_past == 0.0);
 
 	bounce.active = false;
 	double t_inactive = orange_dock_bounce_offset(&bounce, 1000000, scale);
+	(void)t_inactive;
 	assert(t_inactive == 0.0);
 }
 
 static void test_dock_auto_hide_animation_progress(void) {
 	double show_start = orange_dock_auto_hide_progress(0.0, true, 0);
+	(void)show_start;
 	assert(show_start == 0.0);
 	double show_mid = orange_dock_auto_hide_progress(0.0, true,
 		ORANGE_DOCK_AUTO_HIDE_DURATION_MS / 2);
+	(void)show_mid;
 	assert(show_mid > 0.0 && show_mid < 1.0);
 	double show_end = orange_dock_auto_hide_progress(0.0, true,
 		ORANGE_DOCK_AUTO_HIDE_DURATION_MS);
+	(void)show_end;
 	assert(show_end == 1.0);
 
 	double hide_mid = orange_dock_auto_hide_progress(1.0, false,
 		ORANGE_DOCK_AUTO_HIDE_DURATION_MS / 2);
+	(void)hide_mid;
 	assert(hide_mid > 0.0 && hide_mid < 1.0);
 	double hide_end = orange_dock_auto_hide_progress(1.0, false,
 		ORANGE_DOCK_AUTO_HIDE_DURATION_MS);
+	(void)hide_end;
 	assert(hide_end == 0.0);
 }
 

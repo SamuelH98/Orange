@@ -437,7 +437,7 @@ static int measure_text_width(
 	cairo_surface_t *tmp = cairo_image_surface_create(
 		CAIRO_FORMAT_ARGB32, 1, 1);
 	cairo_t *cr = cairo_create(tmp);
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, font_size);
@@ -485,7 +485,7 @@ static int app_menu_tab_text_width(
 	cairo_surface_t *tmp = cairo_image_surface_create(
 		CAIRO_FORMAT_ARGB32, 1, 1);
 	cairo_t *cr = cairo_create(tmp);
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, 28.0 * s);
@@ -931,7 +931,7 @@ static void draw_calendar_widget(cairo_t *cr,
 		char day_text[16];
 		snprintf(day_text, sizeof(day_text), "%d", d);
 		cairo_text_extents_t extents;
-		cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
+		cairo_select_font_face(cr, orange_font_family, CAIRO_FONT_SLANT_NORMAL,
 			CAIRO_FONT_WEIGHT_BOLD);
 		cairo_set_font_size(cr, 22 * s);
 		cairo_text_extents(cr, day_text, &extents);
@@ -1031,7 +1031,7 @@ static void draw_centered_label(cairo_t *cr,
 		snprintf(first, sizeof(first), "%s", label);
 	}
 
-	cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
+	cairo_select_font_face(cr, orange_font_family, CAIRO_FONT_SLANT_NORMAL,
 		CAIRO_FONT_WEIGHT_BOLD);
 	cairo_set_font_size(cr, size);
 	const char *lines[] = {first, second};
@@ -1117,7 +1117,7 @@ static void draw_desktop_placeholder_icon(cairo_t *cr,
 	}
 
 	double font_size = r.height * 0.46;
-	cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
+	cairo_select_font_face(cr, orange_font_family, CAIRO_FONT_SLANT_NORMAL,
 		CAIRO_FONT_WEIGHT_BOLD);
 	cairo_set_font_size(cr, font_size);
 	cairo_text_extents_t extents;
@@ -1492,7 +1492,7 @@ static void draw_notification_app_icon(cairo_t *cr,
 	}
 
 	cairo_text_extents_t extents;
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
 	cairo_set_font_size(cr, rect.height * 0.48);
 	cairo_text_extents(cr, fallback_letter, &extents);

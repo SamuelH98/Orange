@@ -112,7 +112,7 @@ static double widget_text_width(cairo_t *cr,
 	if (text == NULL || text[0] == '\0') {
 		return 0.0;
 	}
-	cairo_select_font_face(cr, "Sans",
+	cairo_select_font_face(cr, orange_font_family,
 		CAIRO_FONT_SLANT_NORMAL,
 		bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 	cairo_set_font_size(cr, size);
@@ -238,7 +238,7 @@ static void draw_calendar_widget(cairo_t *cr,
 		char day_text[16];
 		snprintf(day_text, sizeof(day_text), "%d", d);
 		cairo_text_extents_t extents;
-		cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
+		cairo_select_font_face(cr, orange_font_family, CAIRO_FONT_SLANT_NORMAL,
 			CAIRO_FONT_WEIGHT_BOLD);
 		cairo_set_font_size(cr, 22 * s);
 		cairo_text_extents(cr, day_text, &extents);

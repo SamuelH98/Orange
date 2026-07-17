@@ -4,11 +4,11 @@
 #include <string.h>
 
 static void type_ascii(
-		struct orange_desktop_rename_state *rename,
+		struct orange_desktop_rename_state *state,
 		const char *text) {
 	for (const char *p = text; *p != '\0'; p++) {
 		assert(orange_desktop_rename_insert_codepoint(
-			rename, (unsigned char)*p));
+			state, (unsigned char)*p));
 	}
 }
 

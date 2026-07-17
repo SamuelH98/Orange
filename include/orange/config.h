@@ -140,6 +140,7 @@ struct orange_config {
 	char icon_theme[ORANGE_CONFIG_STRING_MAX];
 	char gtk_theme_light[ORANGE_CONFIG_STRING_MAX];
 	char gtk_theme_dark[ORANGE_CONFIG_STRING_MAX];
+	char font_family[ORANGE_CONFIG_STRING_MAX];
 	char dock_apps[ORANGE_DOCK_MAX][128];
 };
 

@@ -2331,6 +2331,8 @@ static void server_load_config(struct orange_server *server, bool force_dirty) {
 			config_resolved_cursor_theme(&next)) ||
 		server->config.cursor_size != next.cursor_size;
 	server->config = next;
+	orange_font_family = server->config.font_family[0] != '\0' ?
+		server->config.font_family : "Cantarell";
 	server_apply_theme_env(server);
 	if (!server->interface_settings_applied || appearance_changed ||
 			icon_theme_changed || cursor_changed || force_dirty) {

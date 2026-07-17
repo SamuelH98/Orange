@@ -24,9 +24,10 @@ Orange package-first:
 
 The `orange` Void package is deliberately desktop-complete for a normal Void
 install. A repository user should be able to add the repo and run
-`xbps-install orange`; the dependency set pulls GDM, `gnome-core`,
-`gnome-apps`, Nautilus/GVFS, Firefox, Ghostty, Adwaita icons/fonts/backgrounds,
-Adwaita GTK light/dark theme support, ModemManager, and `wl-clipboard`. The package
+`xbps-install orange`; the dependency set pulls GDM, `gnome-session`,
+`gnome-settings-daemon`, `gnome-apps`, Nautilus/GVFS, Firefox, Ghostty,
+GNOME Software, Adwaita icons/fonts/backgrounds, Adwaita GTK light/dark
+theme support, ModemManager, and `wl-clipboard`. The package
 installs the Orange session file, default config, bundled wallpapers under both
 `/usr/share/orange/assets` and `/usr/share/backgrounds/orange`, and a Wayland
 session wrapper that exports toolkit Wayland defaults, Chromium/Electron Ozone
@@ -36,12 +37,25 @@ Void still leaves runit service activation to the administrator. After
 installing Orange on a real Void system, enable the session services once:
 
 ```sh
-for svc in dbus elogind seatd polkitd gdm; do
+sudo orange-setup
+```
+
+This configures dconf, AccountsService, GDM, and PAM for Void Linux
+(with elogind). It is safe to re-run; existing configuration is preserved.
+
+Alternatively, enable services manually:
+
+```sh
+for svc in dbus elogind polkitd gdm; do
 	if [ ! -e "/var/service/$svc" ]; then
 		sudo ln -s "/etc/sv/$svc" /var/service/
 	fi
 done
 ```
+
+> **Note:** Do NOT enable `seatd` alongside `elogind`. They conflict and
+> will prevent GDM and your compositor from starting. Only `elogind` is
+> needed.
 
 The VM build needs network access, `sudo`, `qemu-img`, `sfdisk`, `losetup`,
 `mkfs.ext4`, `blkid`, and a host that can mount loopback images. The build
