@@ -10,7 +10,7 @@ makedepends="cairo-devel libdrm-devel pixman-devel wayland-devel
 depends="dbus elogind polkit gdm xorg-server-xwayland
  gnome-session gnome-settings-daemon
  gnome-apps ghostty nautilus gvfs
- firefox gnome-software
+ firefox gnome-software gnome-contacts loupe
  hicolor-icon-theme adwaita-icon-theme adwaita-fonts
  gnome-themes-extra gnome-themes-extra-gtk gnome-backgrounds
  dejavu-fonts-ttf mesa-dri ModemManager wl-clipboard"
@@ -42,20 +42,23 @@ post_install() {
 	vmkdir etc/dconf/db 0755
 	touch $DESTDIR/etc/dconf/db/local
 
-	# ── D-Bus launch helper setuid (required by GDM/AccountsService) ──
-	vmkdir usr/libexec 0755
-	if [ -f $DESTDIR/usr/libexec/dbus-daemon-launch-helper ]; then
-		chmod u+s $DESTDIR/usr/libexec/dbus-daemon-launch-helper
-	fi
-
 	# ── GDM greeter directory ──
 	vmkdir var/lib/gdm/greeter 0755
 
 	# ── XDG_RUNTIME_DIR base ──
 	vmkdir run/user 0755
 
+	# ── Default session for new users via /etc/skel ──
+	vmkdir etc/skel 0755
+	echo '[Desktop]
+Session=orange' > $DESTDIR/etc/skel/.dmrc
+
 	# ── Enable runit services ──
-	for svc in dbus elogind polkitd gdm; do
+	# elogind is NOT enabled as a runit service: it is activated on-demand
+	# by dbus via org.freedesktop.login1.service (shipped by the elogind
+	# package).  Enabling both the runit service and dbus activation causes
+	# a conflict, so we rely on dbus activation only.
+	for svc in dbus polkitd gdm; do
 		if [ -d "$DESTDIR/etc/sv/${svc}" ] && [ ! -e "$DESTDIR/var/service/${svc}" ]; then
 			vmkdir var/service 0755
 			ln -sf "/etc/sv/${svc}" "$DESTDIR/var/service/${svc}"

@@ -409,12 +409,22 @@ sud env XBPS_ARCH="$void_arch" XBPS_TARGET_ARCH="$void_arch" "$xbps_install" -Sy
 	-R "$void_repo" \
 	runit-void linux grub qemu-ga dbus elogind gdm polkit \
 	orange gnome-session gnome-settings-daemon gnome-apps ghostty nautilus \
-	firefox gnome-software \
+	firefox gnome-software gnome-contacts loupe \
 	adwaita-icon-theme adwaita-fonts hicolor-icon-theme \
 	gnome-themes-extra gnome-themes-extra-gtk gnome-backgrounds gvfs \
 	dejavu-fonts-ttf mesa-dri \
 	ModemManager wl-clipboard \
 	socklog socklog-void
+
+# Guard: mutter and gnome-shell must NOT be installed (they conflict with Orange)
+if xbps-query -r "$mount_dir" mutter >/dev/null 2>&1; then
+	echo "ERROR: mutter is installed in VM image — removing it will break gnome-shell. Check dependencies." >&2
+	exit 1
+fi
+if xbps-query -r "$mount_dir" gnome-shell >/dev/null 2>&1; then
+	echo "ERROR: gnome-shell is installed in VM image — removing it will break gnome-shell. Check dependencies." >&2
+	exit 1
+fi
 
 say "Configuring guest"
 printf 'orange-void\n' | sud tee "${mount_dir}/etc/hostname" >/dev/null
@@ -430,34 +440,40 @@ sud mount -t sysfs sys "${mount_dir}/sys"
 sud env ORANGE_GRUB_DISK="$loopdev" ORANGE_ROOT_UUID="$root_uuid" chroot "$mount_dir" /bin/sh -eux <<'EOF'
 echo 'HOSTNAME="orange-void"' >> /etc/rc.conf
 
+# ── Compile GSettings schemas for GDM/GNOME session ──
+glib-compile-schemas /usr/share/glib-2.0/schemas/ 2>/dev/null || true
+
 mkdir -p /etc/runit/runsvdir/default
 ln -sf /etc/runit/runsvdir/default /etc/runit/runsvdir/current 2>/dev/null || true
 ln -sf /etc/runit/runsvdir/current /var/service 2>/dev/null || true
-for svc in dhcpcd dbus elogind polkitd qemu-ga sshd gdm socklog-unix nanoklogd; do
+for svc in dhcpcd dbus polkitd qemu-ga sshd gdm socklog-unix nanoklogd; do
 	if [ -d "/etc/sv/${svc}" ]; then
 		ln -sf "/etc/sv/${svc}" "/etc/runit/runsvdir/default/${svc}" 2>/dev/null || true
 	fi
 done
-
-# elogind must not start before dbus is up
-if [ -d /etc/sv/elogind ]; then
-	cat > /etc/sv/elogind/run <<'RUN'
-#!/bin/sh
-exec 2>&1
-
-# Wait for dbus to be available before starting elogind
-while ! sv check dbus >/dev/null 2>&1; do
-	sleep 0.5
-done
-
-exec /usr/libexec/elogind/elogind
-RUN
-	chmod +x /etc/sv/elogind/run
-fi
+# elogind is NOT enabled as a runit service — it is activated on-demand by
+# dbus via /usr/share/dbus-1/system-services/org.freedesktop.login1.service
+# (shipped by the elogind package).  Enabling both the runit service AND
+# dbus activation causes a conflict, so we rely on dbus activation only.
 
 if ! id orange >/dev/null 2>&1; then
 	useradd -m -s /bin/bash orange
 fi
+
+# Set orange.desktop as the default session for the orange user (AccountsService)
+mkdir -p /var/lib/AccountsService/users
+cat > /var/lib/AccountsService/users/orange <<'ACCTEOF'
+[User]
+Session=orange
+XSession=orange
+Icon=
+SystemAccount=false
+ACCTEOF
+
+# Also set .dmrc as fallback
+echo '[Desktop]
+Session=orange' > /home/orange/.dmrc
+chown orange:orange /home/orange/.dmrc
 
 groups="wheel,video,input,audio"
 usermod -aG "$groups" orange
@@ -482,6 +498,30 @@ if [ "$(id -u messagebus)" != "22" ]; then
 	find / -user messagebus -exec chown -h 22 {} + 2>/dev/null || true
 fi
 usermod -aG video gdm
+
+# ── dbus-daemon-launch-helper must be setuid (for elogind/dbus activation) ──
+if [ -f /usr/libexec/dbus-daemon-launch-helper ]; then
+	chown root:messagebus /usr/libexec/dbus-daemon-launch-helper
+	chmod u+s /usr/libexec/dbus-daemon-launch-helper
+fi
+
+# ── GDM configuration: Wayland, autologin, default session ──
+mkdir -p /etc/gdm
+cat > /etc/gdm/custom.conf <<'GDMEOF'
+[daemon]
+WaylandEnable=true
+AutomaticLoginEnable=true
+AutomaticLogin=orange
+DefaultSession=orange.desktop
+
+[security]
+
+[xdmcp]
+
+[chooser]
+
+[debug]
+GDMEOF
 
 cat > /etc/environment <<'ENVEOF'
 WLR_RENDERER=pixman

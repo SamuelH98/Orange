@@ -119,6 +119,20 @@ static void assert_clear_source(struct color color) {
 	assert(color.a == 0);
 }
 
+static bool is_solid_icon_pixel(struct color c) {
+	return c.a > 200 && (c.r > 20 || c.g > 20 || c.b > 20);
+}
+
+static bool colors_near(struct color a, struct color b, int tolerance) {
+	return abs(a.r - b.r) <= tolerance &&
+		abs(a.g - b.g) <= tolerance &&
+		abs(a.b - b.b) <= tolerance;
+}
+
+static bool color_close(struct color c, int r, int g, int b) {
+	return abs(c.r - r) <= 3 && abs(c.g - g) <= 3 && abs(c.b - b) <= 3;
+}
+
 static void test_context_menu_glass_and_scaling(void) {
 	struct orange_config config;
 	orange_config_set_defaults(&config);

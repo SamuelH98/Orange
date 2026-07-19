@@ -6,7 +6,7 @@
 
 static void usage(const char *argv0) {
 	fprintf(stderr,
-		"usage: %s [--headless] [--once] [--width N] [--height N] [--config PATH]\n",
+		"usage: %s [--headless] [--once] [--num-outputs N] [--width N] [--height N] [--config PATH]\n",
 		argv0);
 }
 
@@ -16,6 +16,7 @@ int main(int argc, char **argv) {
 		.once = false,
 		.width = 1920,
 		.height = 1080,
+		.num_outputs = 1,
 		.config_path = "orange.conf",
 	};
 
@@ -24,6 +25,8 @@ int main(int argc, char **argv) {
 			options.headless = true;
 		} else if (strcmp(argv[i], "--once") == 0) {
 			options.once = true;
+		} else if (strcmp(argv[i], "--num-outputs") == 0 && i + 1 < argc) {
+			options.num_outputs = atoi(argv[++i]);
 		} else if (strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
 			options.width = atoi(argv[++i]);
 		} else if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {

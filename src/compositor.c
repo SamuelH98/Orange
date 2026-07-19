@@ -127,6 +127,7 @@ struct orange_output {
 	struct orange_rect overlay_bounds;
 	bool commit_pending;
 	bool commit_failed;
+	int current_workspace;
 };
 
 struct orange_view {
@@ -188,6 +189,7 @@ struct orange_workspace_animation {
 	int to_workspace;
 	int direction;
 	int span;
+	struct orange_output *output;
 };
 
 struct orange_popup {
@@ -416,6 +418,7 @@ struct orange_server {
 	GSettings *gnome_mutter_settings;
 	GSettings *gnome_wm_settings;
 	GSettings *gnome_app_switcher_settings;
+	GSettings *gnome_window_switcher_settings;
 	int interface_poll_ticks;
 	int multitasking_poll_ticks;
 	GSettings *background_settings;
@@ -427,6 +430,7 @@ struct orange_server {
 	bool dynamic_workspaces_enabled;
 	bool workspaces_only_on_primary;
 	bool app_switcher_current_workspace_only;
+	bool window_switcher_current_workspace_only;
 	int workspace_count;
 	int current_workspace;
 
@@ -486,6 +490,7 @@ static void server_mark_dock_visual_dirty(struct orange_server *server);
 static void server_mark_dock_dirty(struct orange_server *server);
 static void server_refresh_dock_state(struct orange_server *server);
 static void server_apply_cursor_config(struct orange_server *server);
+static void server_reload_cursor_scales(struct orange_server *server);
 static void process_desktop_drag(struct orange_server *server);
 static void process_desktop_selection(struct orange_server *server);
 static struct orange_rect normalized_rect_from_points(
@@ -1580,6 +1585,18 @@ static bool server_normalize_workspaces(struct orange_server *server) {
 	server->workspace_count = next_count;
 	server->current_workspace = next_current;
 
+	if (!server->workspaces_only_on_primary) {
+		struct orange_output *output;
+		wl_list_for_each(output, &server->outputs, link) {
+			int oc = clamp_workspace_index(
+				output->current_workspace, next_count);
+			if (oc != output->current_workspace) {
+				output->current_workspace = oc;
+				changed = true;
+			}
+		}
+	}
+
 	struct orange_view *view;
 	wl_list_for_each(view, &server->views, link) {
 		int next = clamp_workspace_index(view->workspace, next_count);
@@ -1602,6 +1619,7 @@ static bool server_sync_multitasking_settings(struct orange_server *server) {
 	bool dynamic_workspaces = true;
 	bool workspaces_only_on_primary = false;
 	bool app_switch_current_workspace_only = false;
+	bool window_switch_current_workspace_only = false;
 	int workspace_count = 4;
 
 	if (server->gnome_interface_settings != NULL) {
@@ -1628,6 +1646,11 @@ static bool server_sync_multitasking_settings(struct orange_server *server) {
 			server->gnome_app_switcher_settings,
 			"current-workspace-only");
 	}
+	if (server->gnome_window_switcher_settings != NULL) {
+		window_switch_current_workspace_only = g_settings_get_boolean(
+			server->gnome_window_switcher_settings,
+			"current-workspace-only");
+	}
 	workspace_count = clamp_workspace_count(workspace_count);
 
 	bool changed =
@@ -1638,6 +1661,8 @@ static bool server_sync_multitasking_settings(struct orange_server *server) {
 		server->workspaces_only_on_primary != workspaces_only_on_primary ||
 		server->app_switcher_current_workspace_only !=
 			app_switch_current_workspace_only ||
+		server->window_switcher_current_workspace_only !=
+			window_switch_current_workspace_only ||
 		(!dynamic_workspaces &&
 		 server->workspace_count != workspace_count);
 
@@ -1648,6 +1673,8 @@ static bool server_sync_multitasking_settings(struct orange_server *server) {
 	server->workspaces_only_on_primary = workspaces_only_on_primary;
 	server->app_switcher_current_workspace_only =
 		app_switch_current_workspace_only;
+	server->window_switcher_current_workspace_only =
+		window_switch_current_workspace_only;
 	if (!dynamic_workspaces) {
 		server->workspace_count = workspace_count;
 	}
@@ -1668,6 +1695,8 @@ static void server_setup_multitasking_settings(struct orange_server *server) {
 		server_new_gsettings("org.gnome.desktop.wm.preferences");
 	server->gnome_app_switcher_settings =
 		server_new_gsettings("org.gnome.shell.app-switcher");
+	server->gnome_window_switcher_settings =
+		server_new_gsettings("org.gnome.shell.window-switcher");
 	server->multitasking_poll_ticks = 0;
 	server_sync_multitasking_settings(server);
 }
@@ -1878,6 +1907,17 @@ static double server_display_config_output_refresh(
 	return (double)wlr_output->refresh / 1000.0;
 }
 
+static void server_display_config_mode_id_from_mode(
+		const struct wlr_output_mode *mode,
+		char *buffer,
+		size_t buffer_size) {
+	if (buffer == NULL || buffer_size == 0 || mode == NULL) {
+		return;
+	}
+	double refresh = (double)mode->refresh / 1000.0;
+	snprintf(buffer, buffer_size, "%dx%d@%.3f", mode->width, mode->height, refresh);
+}
+
 static void server_display_config_mode_id(
 		struct orange_output *output,
 		char *buffer,
@@ -1889,6 +1929,23 @@ static void server_display_config_mode_id(
 	int height = server_display_config_output_height(output);
 	double refresh = server_display_config_output_refresh(output->wlr_output);
 	snprintf(buffer, buffer_size, "%dx%d@%.3f", width, height, refresh);
+}
+
+static struct wlr_output_mode *server_display_config_find_mode(
+		struct wlr_output *wlr_output,
+		const char *mode_id) {
+	if (wlr_output == NULL || mode_id == NULL || mode_id[0] == '\0') {
+		return NULL;
+	}
+	struct wlr_output_mode *mode;
+	wl_list_for_each(mode, &wlr_output->modes, link) {
+		char id[64];
+		server_display_config_mode_id_from_mode(mode, id, sizeof(id));
+		if (strcmp(id, mode_id) == 0) {
+			return mode;
+		}
+	}
+	return NULL;
 }
 
 static GVariant *server_display_config_supported_scales(double current_scale) {
@@ -1933,20 +1990,61 @@ static void server_display_config_add_output(
 	const char *serial = server_display_config_output_string(
 		output->wlr_output->serial, "");
 	double scale = server_display_config_output_scale(output->wlr_output);
-	char mode_id[64];
-	server_display_config_mode_id(output, mode_id, sizeof(mode_id));
 
 	GVariantBuilder modes;
 	g_variant_builder_init(&modes, G_VARIANT_TYPE("a(siiddada{sv})"));
-	g_variant_builder_add_value(&modes,
-		g_variant_new("(siidd@ad@a{sv})",
-			mode_id,
-			server_display_config_output_width(output),
-			server_display_config_output_height(output),
-			server_display_config_output_refresh(output->wlr_output),
-			scale,
-			server_display_config_supported_scales(scale),
-			orange_session_services_display_config_mode_properties()));
+	if (!wl_list_empty(&output->wlr_output->modes)) {
+		struct wlr_output_mode *mode;
+		wl_list_for_each(mode, &output->wlr_output->modes, link) {
+			char mode_id[64];
+			server_display_config_mode_id_from_mode(mode, mode_id, sizeof(mode_id));
+			double mode_refresh = (double)mode->refresh / 1000.0;
+			int current_width = 0, current_height = 0, current_refresh = 0;
+			if (output->wlr_output->current_mode) {
+				current_width = output->wlr_output->current_mode->width;
+				current_height = output->wlr_output->current_mode->height;
+				current_refresh = output->wlr_output->current_mode->refresh;
+			}
+			bool is_current = mode->width == current_width
+				&& mode->height == current_height
+				&& mode->refresh == current_refresh;
+			double mode_scale = is_current ? scale : 1.0;
+			int mode_properties = 0;
+			if (is_current)
+				mode_properties |= (1 << 0);
+			if (mode->preferred)
+				mode_properties |= (1 << 1);
+
+			GVariantBuilder mode_props;
+			g_variant_builder_init(&mode_props, G_VARIANT_TYPE("a{sv}"));
+			g_variant_builder_add(&mode_props, "{sv}", "is-current",
+				g_variant_new_boolean(is_current));
+			g_variant_builder_add(&mode_props, "{sv}", "is-preferred",
+				g_variant_new_boolean(mode->preferred));
+
+			g_variant_builder_add_value(&modes,
+				g_variant_new("(siidd@ad@a{sv})",
+					mode_id,
+					mode->width,
+					mode->height,
+					mode_refresh,
+					mode_scale,
+					server_display_config_supported_scales(mode_scale),
+					g_variant_builder_end(&mode_props)));
+		}
+	} else {
+		char mode_id[64];
+		server_display_config_mode_id(output, mode_id, sizeof(mode_id));
+		g_variant_builder_add_value(&modes,
+			g_variant_new("(siidd@ad@a{sv})",
+				mode_id,
+				server_display_config_output_width(output),
+				server_display_config_output_height(output),
+				server_display_config_output_refresh(output->wlr_output),
+				scale,
+				server_display_config_supported_scales(scale),
+				orange_session_services_display_config_mode_properties()));
+	}
 
 	g_variant_builder_add(monitors,
 		"((ssss)@a(siiddada{sv})@a{sv})",
@@ -2054,8 +2152,11 @@ static bool server_apply_display_config_to_output(
 		struct orange_server *server,
 		struct orange_output *output,
 		uint32_t method,
+		int32_t x,
+		int32_t y,
 		double scale,
 		guint32 transform,
+		const char *mode_id,
 		GError **error) {
 	if (output == NULL || output->wlr_output == NULL) {
 		g_set_error(error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
@@ -2078,9 +2179,29 @@ static bool server_apply_display_config_to_output(
 
 	struct wlr_output_state state;
 	wlr_output_state_init(&state);
+
 	wlr_output_state_set_scale(&state, (float)scale);
 	wlr_output_state_set_transform(&state,
 		(enum wl_output_transform)transform);
+
+	if (mode_id != NULL && mode_id[0] != '\0') {
+		struct wlr_output_mode *mode = server_display_config_find_mode(
+			output->wlr_output, mode_id);
+		if (mode != NULL) {
+			wlr_output_state_set_mode(&state, mode);
+		} else {
+			// Try custom mode: parse "WxH@R"
+			int w = 0, h = 0;
+			double r = 0.0;
+			if (sscanf(mode_id, "%dx%d@%lf", &w, &h, &r) >= 2) {
+				int refresh_mhz = (int)(r * 1000.0 + 0.5);
+				wlr_output_state_set_custom_mode(&state, w, h, refresh_mhz);
+			}
+		}
+	}
+
+	wlr_output_state_set_enabled(&state, true);
+
 	if (!wlr_output_commit_state(output->wlr_output, &state)) {
 		wlr_output_state_finish(&state);
 		g_set_error(error, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,
@@ -2091,8 +2212,13 @@ static bool server_apply_display_config_to_output(
 	}
 	wlr_output_state_finish(&state);
 
-	output->layout_output = wlr_output_layout_add_auto(
-		server->output_layout, output->wlr_output);
+	// Apply layout position
+	if (output->layout_output != NULL) {
+		wlr_output_layout_remove(server->output_layout, output->wlr_output);
+	}
+	output->layout_output = wlr_output_layout_add(server->output_layout,
+		output->wlr_output, x, y);
+
 	output->shell_dirty = true;
 	output->overlay_dirty = true;
 	wlr_output_schedule_frame(output->wlr_output);
@@ -2135,7 +2261,7 @@ static bool server_process_display_config_apply(
 		const char *connector = NULL;
 		const char *mode_id = NULL;
 		GVariant *monitor_props = NULL;
-		while (g_variant_iter_next(&monitor_iter, "(&s&s@a{sv})",
+		while (g_variant_iter_next(&monitor_iter, "(&s&sa{sv})",
 				&connector, &mode_id, &monitor_props)) {
 			struct orange_output *output =
 				server_output_for_display_config_connector(
@@ -2150,7 +2276,7 @@ static bool server_process_display_config_apply(
 				return false;
 			}
 			bool ok = server_apply_display_config_to_output(
-				server, output, method, scale, transform, error);
+				server, output, method, x, y, scale, transform, mode_id, error);
 			g_variant_unref(monitor_props);
 			if (!ok) {
 				g_variant_unref(monitor_configs);
@@ -2159,12 +2285,8 @@ static bool server_process_display_config_apply(
 			if (touched_output != NULL) {
 				*touched_output = true;
 			}
-			(void)mode_id;
 		}
 		g_variant_unref(monitor_configs);
-		(void)x;
-		(void)y;
-		(void)primary;
 	}
 
 	return true;
@@ -2302,11 +2424,26 @@ static void server_apply_cursor_config(struct orange_server *server) {
 		wlr_log(WLR_ERROR, "%s", "failed to create xcursor manager");
 		return;
 	}
-	if (!wlr_xcursor_manager_load(server->xcursor_manager, 1.0)) {
-		wlr_log(WLR_ERROR, "failed to load cursor theme %s at size %d",
-			theme != NULL ? theme : "(default)", size);
-	}
+	server_reload_cursor_scales(server);
 	wlr_cursor_set_xcursor(server->cursor, server->xcursor_manager, "default");
+}
+
+static void server_reload_cursor_scales(struct orange_server *server) {
+	if (server->xcursor_manager == NULL) {
+		return;
+	}
+	double max_scale = 1.0;
+	struct orange_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		double s = ui_scale_for_size(output->width, output->height);
+		if (s > max_scale) {
+			max_scale = s;
+		}
+	}
+	if (!wlr_xcursor_manager_load(server->xcursor_manager, max_scale)) {
+		wlr_log(WLR_ERROR, "failed to load cursor theme at scale %.2f",
+			max_scale);
+	}
 }
 
 static void server_reload_assets_if_ready(struct orange_server *server) {
@@ -5305,6 +5442,7 @@ static bool output_ensure_shell_buffer(struct orange_output *output) {
 	output->overlay_dirty = true;
 	output->overlay_bounds_valid = false;
 	output->overlay_bounds = (struct orange_rect){0, 0, 0, 0};
+	server_reload_cursor_scales(output->server);
 	return true;
 }
 
@@ -6191,6 +6329,30 @@ static struct orange_output *server_primary_output(
 	return output;
 }
 
+static struct orange_output *output_for_cursor(
+		struct orange_server *server) {
+	if (server == NULL || server->cursor == NULL) {
+		return server_primary_output(server);
+	}
+	double cx = server->cursor->x;
+	double cy = server->cursor->y;
+	struct orange_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		double ox = cx;
+		double oy = cy;
+		wlr_output_layout_output_coords(server->output_layout,
+			output->wlr_output, &ox, &oy);
+		int width = 0;
+		int height = 0;
+		output_effective_size(output, &width, &height);
+		if (ox >= 0.0 && oy >= 0.0 &&
+				ox < (double)width && oy < (double)height) {
+			return output;
+		}
+	}
+	return server_primary_output(server);
+}
+
 static bool view_is_workspace_scoped(const struct orange_view *view) {
 	if (view == NULL || view->server == NULL) {
 		return false;
@@ -6206,6 +6368,32 @@ static bool view_is_workspace_scoped(const struct orange_view *view) {
 	return output_for_view((struct orange_view *)view) == primary;
 }
 
+static int output_current_workspace(struct orange_output *output) {
+	if (output == NULL) {
+		return 0;
+	}
+	return output->current_workspace;
+}
+
+static int server_effective_current_workspace(
+		struct orange_server *server) {
+	if (server == NULL) {
+		return 0;
+	}
+	if (!server->workspaces_only_on_primary) {
+		struct orange_output *focused = server->focused_view != NULL ?
+			output_for_view(server->focused_view) :
+			output_for_cursor(server);
+		if (focused == NULL) {
+			focused = server_primary_output(server);
+		}
+		if (focused != NULL) {
+			return focused->current_workspace;
+		}
+	}
+	return server->current_workspace;
+}
+
 static bool view_is_visible_on_current_workspace(
 		const struct orange_view *view) {
 	if (view == NULL || view->server == NULL || !view->mapped) {
@@ -6213,6 +6401,13 @@ static bool view_is_visible_on_current_workspace(
 	}
 	if (!view_is_workspace_scoped(view)) {
 		return true;
+	}
+	if (!view->server->workspaces_only_on_primary) {
+		struct orange_output *output = output_for_view(
+			(struct orange_view *)view);
+		if (output != NULL) {
+			return view->workspace == output->current_workspace;
+		}
 	}
 	return view->workspace == view->server->current_workspace;
 }
@@ -6232,6 +6427,13 @@ static bool view_is_scene_visible_for_workspace(
 			(view->workspace == anim->from_workspace ||
 			 view->workspace == anim->to_workspace)) {
 		return true;
+	}
+	if (!view->server->workspaces_only_on_primary) {
+		struct orange_output *output = output_for_view(
+			(struct orange_view *)view);
+		if (output != NULL) {
+			return view->workspace == output->current_workspace;
+		}
 	}
 	return view->workspace == view->server->current_workspace;
 }
@@ -6276,6 +6478,16 @@ static int server_workspace_animation_span(struct orange_server *server) {
 			return area.width;
 		}
 	}
+	if (!server->workspaces_only_on_primary) {
+		struct orange_output *focused = output_for_cursor(server);
+		if (focused != NULL) {
+			struct orange_rect area;
+			if (output_area_in_layout(server, focused, &area) &&
+					area.width > 0) {
+				return area.width;
+			}
+		}
+	}
 	struct wlr_box box = {0};
 	wlr_output_layout_get_box(server->output_layout, NULL, &box);
 	if (box.width > 0) {
@@ -6312,6 +6524,13 @@ static void server_apply_workspace_animation_positions(
 		}
 		int offset = 0;
 		if (view_is_workspace_scoped(view)) {
+			if (!server->workspaces_only_on_primary &&
+					anim->output != NULL &&
+					output_for_view(view) != anim->output) {
+				wlr_scene_node_set_position(&view->scene_tree->node,
+					view->x, view->y);
+				continue;
+			}
 			if (view->workspace == anim->from_workspace) {
 				offset = orange_shell_workspace_animation_offset(
 					anim->span, anim->direction, progress, false);
@@ -6355,7 +6574,8 @@ static bool server_update_workspace_animation(struct orange_server *server) {
 static bool server_begin_workspace_animation(
 		struct orange_server *server,
 		int from_workspace,
-		int to_workspace) {
+		int to_workspace,
+		struct orange_output *output) {
 	if (server == NULL || !server->animations_enabled ||
 			from_workspace == to_workspace) {
 		return false;
@@ -6373,6 +6593,7 @@ static bool server_begin_workspace_animation(
 		.to_workspace = to_workspace,
 		.direction = to_workspace > from_workspace ? 1 : -1,
 		.span = span,
+		.output = output,
 	};
 	server_apply_workspace_visibility(server);
 	server_apply_workspace_animation_positions(server, 0.0);
@@ -6407,16 +6628,40 @@ static void server_switch_workspace(struct orange_server *server, int workspace)
 	if (server->workspace_animation.active) {
 		server_finish_workspace_animation(server);
 	}
-	int previous = server->current_workspace;
+	int previous;
 	int next = clamp_workspace_index(workspace, server->workspace_count);
-	if (next == previous) {
-		return;
-	}
-	server->current_workspace = next;
-	server_normalize_workspaces(server);
-	if (!server_begin_workspace_animation(server, previous,
-			server->current_workspace)) {
-		server_apply_workspace_visibility(server);
+	if (!server->workspaces_only_on_primary) {
+		struct orange_output *focused = server->focused_view != NULL ?
+			output_for_view(server->focused_view) :
+			output_for_cursor(server);
+		if (focused == NULL) {
+			focused = server_primary_output(server);
+		}
+		if (focused == NULL) {
+			return;
+		}
+		previous = focused->current_workspace;
+		if (next == previous) {
+			return;
+		}
+		focused->current_workspace = next;
+		server->current_workspace = next;
+		server_normalize_workspaces(server);
+		if (!server_begin_workspace_animation(server, previous,
+				server->current_workspace, focused)) {
+			server_apply_workspace_visibility(server);
+		}
+	} else {
+		previous = server->current_workspace;
+		if (next == previous) {
+			return;
+		}
+		server->current_workspace = next;
+		server_normalize_workspaces(server);
+		if (!server_begin_workspace_animation(server, previous,
+				server->current_workspace, NULL)) {
+			server_apply_workspace_visibility(server);
+		}
 	}
 	struct orange_view *view = server_first_visible_view(server);
 	if (view != NULL && view->xdg_surface != NULL) {
@@ -7381,9 +7626,16 @@ static void focus_view(struct orange_view *view, struct wlr_surface *surface) {
 	}
 
 	struct orange_server *server = view->server;
-	if (view_is_workspace_scoped(view) &&
-			view->workspace != server->current_workspace) {
-		server_switch_workspace(server, view->workspace);
+	if (view_is_workspace_scoped(view)) {
+		if (!server->workspaces_only_on_primary) {
+			struct orange_output *output = output_for_view(view);
+			if (output != NULL &&
+					view->workspace != output->current_workspace) {
+				server_switch_workspace(server, view->workspace);
+			}
+		} else if (view->workspace != server->current_workspace) {
+			server_switch_workspace(server, view->workspace);
+		}
 	}
 	if (!view_is_visible_on_current_workspace(view)) {
 		return;
@@ -8040,7 +8292,8 @@ static void cycle_focus(struct orange_server *server) {
 		if (!view->mapped) {
 			continue;
 		}
-		if (server->app_switcher_current_workspace_only &&
+		if ((server->app_switcher_current_workspace_only ||
+				server->window_switcher_current_workspace_only) &&
 				!view_is_visible_on_current_workspace(view)) {
 			continue;
 		}
@@ -11905,20 +12158,22 @@ static bool handle_keybinding(
 	case XKB_KEY_Left:
 		if (shift) {
 			server_move_focused_view_to_workspace(server,
-				server->current_workspace - 1, true);
+				server_effective_current_workspace(server) - 1,
+				true);
 		} else {
 			server_switch_workspace(server,
-				server->current_workspace - 1);
+				server_effective_current_workspace(server) - 1);
 		}
 		return true;
 	case XKB_KEY_Page_Down:
 	case XKB_KEY_Right:
 		if (shift) {
 			server_move_focused_view_to_workspace(server,
-				server->current_workspace + 1, true);
+				server_effective_current_workspace(server) + 1,
+				true);
 		} else {
 			server_switch_workspace(server,
-				server->current_workspace + 1);
+				server_effective_current_workspace(server) + 1);
 		}
 		return true;
 	case XKB_KEY_m:
@@ -12481,7 +12736,8 @@ static void handle_view_map(struct wl_listener *listener, void *data) {
 	wlr_scene_node_set_enabled(&view->scene_tree->node, true);
 	view->mapped = true;
 	view->minimized = false;
-	view->workspace = clamp_workspace_index(server->current_workspace,
+	view->workspace = clamp_workspace_index(
+		server_effective_current_workspace(server),
 		server->workspace_count);
 	if (toplevel->requested.fullscreen) {
 		view->fullscreen = true;
@@ -13083,6 +13339,7 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 	}
 	output->server = server;
 	output->wlr_output = wlr_output;
+	output->current_workspace = 0;
 	output->layout_output = wlr_output_layout_add_auto(
 		server->output_layout,
 		wlr_output);
@@ -13104,6 +13361,8 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
 	if (output_ensure_shell_buffer(output)) {
 		wlr_output_schedule_frame(wlr_output);
 	}
+
+	server_reload_cursor_scales(server);
 
 	if (server->xcursor_manager != NULL) {
 		wlr_cursor_set_xcursor(server->cursor,
@@ -13206,7 +13465,8 @@ static int handle_clock_timer(void *data) {
 		if (server->gnome_interface_settings != NULL ||
 				server->gnome_mutter_settings != NULL ||
 				server->gnome_wm_settings != NULL ||
-				server->gnome_app_switcher_settings != NULL) {
+				server->gnome_app_switcher_settings != NULL ||
+				server->gnome_window_switcher_settings != NULL) {
 			if (server->multitasking_poll_ticks <= 0) {
 				need_redraw =
 					server_sync_multitasking_settings(server) ||
@@ -13249,7 +13509,8 @@ static int handle_clock_timer(void *data) {
 		if (server->gnome_interface_settings != NULL ||
 				server->gnome_mutter_settings != NULL ||
 				server->gnome_wm_settings != NULL ||
-				server->gnome_app_switcher_settings != NULL) {
+				server->gnome_app_switcher_settings != NULL ||
+				server->gnome_window_switcher_settings != NULL) {
 			if (server->multitasking_poll_ticks <= 0) {
 				server_sync_multitasking_settings(server);
 				server->multitasking_poll_ticks = 1;
@@ -13389,6 +13650,7 @@ static bool server_init(struct orange_server *server,
 	server->dynamic_workspaces_enabled = true;
 	server->workspaces_only_on_primary = false;
 	server->app_switcher_current_workspace_only = false;
+	server->window_switcher_current_workspace_only = false;
 	server->workspace_count = 4;
 	server->current_workspace = 0;
 	server->context_menu_kind = ORANGE_CONTEXT_MENU_NONE;
@@ -13622,15 +13884,21 @@ static bool server_init(struct orange_server *server,
 			"one-shot mode skips Wayland client socket creation");
 	}
 
-	if (options->headless) {
-		wlr_headless_add_output(server->backend,
-			(unsigned int)options->width,
-			(unsigned int)options->height);
-	}
-
 	if (!wlr_backend_start(server->backend)) {
 		wlr_log(WLR_ERROR, "%s", "failed to start backend");
 		return false;
+	}
+
+	if (options->headless) {
+		int count = options->num_outputs;
+		if (count < 1) {
+			count = 1;
+		}
+		for (int i = 0; i < count; i++) {
+			wlr_headless_add_output(server->backend,
+				(unsigned int)options->width,
+				(unsigned int)options->height);
+		}
 	}
 
 	if (server->xcursor_manager != NULL) {
@@ -13678,6 +13946,10 @@ static void server_finish(struct orange_server *server) {
 	if (server->gnome_app_switcher_settings != NULL) {
 		g_object_unref(server->gnome_app_switcher_settings);
 		server->gnome_app_switcher_settings = NULL;
+	}
+	if (server->gnome_window_switcher_settings != NULL) {
+		g_object_unref(server->gnome_window_switcher_settings);
+		server->gnome_window_switcher_settings = NULL;
 	}
 	orange_assets_finish(&server->assets);
 	if (server->backend != NULL) {

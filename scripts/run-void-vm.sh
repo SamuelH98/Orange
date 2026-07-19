@@ -63,7 +63,7 @@ if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
         cpu=max
     fi
 fi
-display_backend=${ORANGE_VM_DISPLAY:-gtk}
+display_backend=${ORANGE_VM_DISPLAY:-sdl}
 gl=${ORANGE_VM_GL:-on}
 display_opts=()
 case "$display_backend" in
@@ -96,7 +96,7 @@ fi
 # ORANGE_VM_POINTER=tablet to restore the old absolute-positioning behavior
 # (e.g. if you fix the calibration_matrix in your compositor config and want
 # seamless cursor sync back).
-pointer=${ORANGE_VM_POINTER:-mouse}
+pointer=${ORANGE_VM_POINTER:-tablet}
 pointer_opts=()
 case "$pointer" in
     mouse)

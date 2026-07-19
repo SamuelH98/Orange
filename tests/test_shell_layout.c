@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,11 @@
 
 static void assert_roughly_double(int large, int small) {
 	assert(abs(large - small * 2) <= 2);
+}
+
+static bool rects_overlap(struct orange_rect a, struct orange_rect b) {
+	return a.x < b.x + b.width && a.x + a.width > b.x &&
+		a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
 static void assert_app_menu_tabs_do_not_overlap(

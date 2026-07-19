@@ -263,6 +263,7 @@ int main(void) {
 	assert(orange_assets_icon(&assets,
 		ORANGE_ASSET_ICON_LIGHT, "missing-app") == NULL);
 
+	int icon_count_before_warm = assets.icon_count;
 	orange_menubar_warm_assets(&assets);
 	assert(assets.icon_count >= icon_count_before_warm);
 	assert(orange_assets_icon(&assets,
