@@ -419,6 +419,12 @@ struct orange_shell_state {
 	bool dock_temporary_open[ORANGE_DOCK_MAX];
 	int dock_minimized_count;
 	char dock_minimized_titles[ORANGE_DOCK_MAX][ORANGE_APP_MENU_LABEL_MAX];
+
+	bool app_switcher_active;
+	int app_switcher_index;
+	int app_switcher_count;
+	char app_switcher_titles[128][ORANGE_APP_MENU_LABEL_MAX];
+	char app_switcher_app_ids[128][128];
 };
 
 struct orange_shell_draw_options {

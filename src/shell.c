@@ -756,6 +756,27 @@ static void draw_image_fit(cairo_t *cr, cairo_surface_t *surface,
 	cairo_restore(cr);
 }
 
+static void draw_image_cover(cairo_t *cr, cairo_surface_t *surface,
+		struct orange_rect r) {
+	int sw = cairo_image_surface_get_width(surface);
+	int sh = cairo_image_surface_get_height(surface);
+	if (sw <= 0 || sh <= 0) {
+		return;
+	}
+	double scale = fmax((double)r.width / (double)sw,
+		(double)r.height / (double)sh);
+	double tx = r.x + ((double)r.width - sw * scale) * 0.5;
+	double ty = r.y + ((double)r.height - sh * scale) * 0.5;
+	cairo_save(cr);
+	rounded_rect(cr, r.x, r.y, r.width, r.height, r.width * 0.22);
+	cairo_clip(cr);
+	cairo_translate(cr, tx, ty);
+	cairo_scale(cr, scale, scale);
+	cairo_set_source_surface(cr, surface, 0, 0);
+	cairo_paint(cr);
+	cairo_restore(cr);
+}
+
 static void draw_liquid_panel(cairo_t *cr, const struct orange_rect *rect,
 		double radius, double alpha, bool dark) {
 	orange_glass_draw(cr, rect, radius, dark);
@@ -4845,11 +4866,141 @@ bool orange_shell_overlay_bounds(
 		};
 		include_overlay_rect(&bounds, &has_bounds, &ghost);
 	}
+	if (state->app_switcher_active && state->app_switcher_count > 0) {
+		double s = 1.0;
+		if (state->config != NULL) {
+			s = ui_scale_for_size(width, height);
+		}
+		int icon_size = scaled_i(72, s);
+		int spacing = scaled_i(12, s);
+		int padding = scaled_i(24, s);
+		int total_w = state->app_switcher_count * icon_size
+			+ (state->app_switcher_count - 1) * spacing
+			+ padding * 2;
+		int total_h = icon_size + padding * 2 + scaled_i(28, s);
+		int x = width / 2 - total_w / 2;
+		int y = height / 2 - total_h / 2;
+		struct orange_rect switcher = {x, y, total_w, total_h};
+		include_overlay_rect(&bounds, &has_bounds, &switcher);
+	}
 	if (!has_bounds) {
 		return false;
 	}
 	*out_bounds = pad_overlay_bounds(bounds, width, height);
 	return rect_has_area(out_bounds);
+}
+
+static void draw_app_switcher(cairo_t *cr,
+		int width,
+		int height,
+		const struct orange_shell_state *state) {
+	if (!state->app_switcher_active || state->app_switcher_count <= 0) {
+		return;
+	}
+
+	bool dark = is_dark_config(state->config);
+	double s = ui_scale_for_size(width, height);
+	int icon_size = scaled_i(72, s);
+	int spacing = scaled_i(12, s);
+	int padding = scaled_i(24, s);
+	int label_h = scaled_i(24, s);
+	int total_w = state->app_switcher_count * icon_size
+		+ (state->app_switcher_count - 1) * spacing
+		+ padding * 2;
+	int total_h = icon_size + padding * 2 + label_h;
+	double panel_x = width / 2.0 - total_w / 2.0;
+	double panel_y = height / 2.0 - total_h / 2.0;
+	double radius = scaled_i(18, s);
+
+	struct orange_rect panel = {
+		(int)panel_x, (int)panel_y, total_w, total_h,
+	};
+	orange_glass_draw(cr, &panel, radius, dark);
+	rounded_rect(cr, panel_x + 0.5, panel_y + 0.5,
+		total_w - 1.0, total_h - 1.0, radius);
+	set_source_rgba255(cr, 255, 255, 255, dark ? 0.12 : 0.15);
+	cairo_set_line_width(cr, 1.0);
+	cairo_stroke(cr);
+
+	int selected = state->app_switcher_index;
+	for (int i = 0; i < state->app_switcher_count; i++) {
+		double ix = panel_x + padding + i * (icon_size + spacing);
+		double iy = panel_y + padding;
+
+		if (i == selected) {
+			rounded_rect(cr, ix - scaled_i(4, s), iy - scaled_i(4, s),
+				icon_size + scaled_i(8, s),
+				icon_size + scaled_i(8, s),
+				scaled_i(12, s));
+			set_source_rgba255(cr, 255, 255, 255, dark ? 0.18 : 0.22);
+			cairo_fill(cr);
+		}
+
+		struct orange_rect icon_rect = {
+			(int)ix, (int)iy, icon_size, icon_size,
+		};
+		const char *app_id = (i < state->app_switcher_count &&
+				state->app_switcher_app_ids[i][0] != '\0') ?
+			state->app_switcher_app_ids[i] : NULL;
+		if (state->assets != NULL && app_id != NULL) {
+			int variant = dark ?
+				ORANGE_ASSET_ICON_DARK : ORANGE_ASSET_ICON_LIGHT;
+			cairo_surface_t *icon = orange_assets_icon(
+				state->assets, variant, app_id);
+			if (icon != NULL) {
+				draw_image_cover(cr, icon, icon_rect);
+			} else {
+				rounded_rect(cr, ix, iy, icon_size, icon_size,
+					scaled_i(14, s));
+				set_source_rgba255(cr, 100, 110, 130, 0.6);
+				cairo_fill(cr);
+				const char *fb = (app_id != NULL &&
+						app_id[0] != '\0') ?
+					app_id : "?";
+				char initial[2] = {0};
+				initial[0] = fb[0];
+				if (initial[0] >= 'a' && initial[0] <= 'z') {
+					initial[0] = initial[0] - 'a' + 'A';
+				}
+				draw_text(cr, initial,
+					ix + icon_size / 2.0 - scaled_i(5, s),
+					iy + icon_size / 2.0 + scaled_i(6, s),
+					scaled_i(28, s), 255, 255, 255, 0.9, true);
+			}
+		} else {
+			rounded_rect(cr, ix, iy, icon_size, icon_size,
+				scaled_i(14, s));
+			set_source_rgba255(cr, 100, 110, 130, 0.6);
+			cairo_fill(cr);
+		}
+
+		const char *label = (i < state->app_switcher_count &&
+				state->app_switcher_titles[i][0] != '\0') ?
+			state->app_switcher_titles[i] : NULL;
+		if (label == NULL) {
+			label = app_id != NULL ? app_id : "";
+		}
+		double label_y = iy + icon_size + scaled_i(6, s);
+		cairo_select_font_face(cr, orange_font_family,
+			CAIRO_FONT_SLANT_NORMAL,
+			i == selected ?
+				CAIRO_FONT_WEIGHT_BOLD :
+				CAIRO_FONT_WEIGHT_NORMAL);
+		cairo_set_font_size(cr, fmax(10.0, 12.0 * s));
+		cairo_text_extents_t ext;
+		cairo_text_extents(cr, label, &ext);
+		double text_x = ix + icon_size / 2.0 - ext.x_advance / 2.0;
+		if (text_x < panel_x + scaled_i(4, s)) {
+			text_x = panel_x + scaled_i(4, s);
+		}
+		if (text_x + ext.x_advance > panel_x + total_w - scaled_i(4, s)) {
+			text_x = panel_x + total_w - scaled_i(4, s) - ext.x_advance;
+		}
+		set_source_rgba255(cr, 255, 255, 255,
+			i == selected ? 0.96 : 0.55);
+		cairo_move_to(cr, text_x, label_y + ext.height);
+		cairo_show_text(cr, label);
+	}
 }
 
 static void draw_overlay_contents(cairo_t *cr,
@@ -4885,6 +5036,9 @@ static void draw_overlay_contents(cairo_t *cr,
 	}
 	if (state->launcher_app_drag_active) {
 		orange_launcher_draw_app_drag_overlay(cr, &layout, state, config);
+	}
+	if (state->app_switcher_active) {
+		draw_app_switcher(cr, width, height, state);
 	}
 }
 

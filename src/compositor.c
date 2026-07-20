@@ -434,6 +434,11 @@ struct orange_server {
 	int workspace_count;
 	int current_workspace;
 
+	bool app_switcher_active;
+	int app_switcher_index;
+	int app_switcher_count;
+	struct orange_view *app_switcher_views[128];
+
 	struct orange_session_services session_services;
 };
 
@@ -5522,7 +5527,36 @@ static void output_redraw_shell(struct orange_output *output) {
 			sizeof(state.desktop_rename_text));
 		server_active_app_label(output->server,
 			state.active_app_label, sizeof(state.active_app_label));
-		state.app_menu = output->server->app_menu;
+	state.app_menu = output->server->app_menu;
+
+	state.app_switcher_active = output->server->app_switcher_active;
+	state.app_switcher_index = output->server->app_switcher_index;
+	state.app_switcher_count = output->server->app_switcher_count;
+	for (int i = 0; i < state.app_switcher_count && i < 128; i++) {
+		struct orange_view *v = output->server->app_switcher_views[i];
+		if (v != NULL && v->mapped && v->xdg_surface != NULL &&
+				v->xdg_surface->toplevel != NULL) {
+			const char *title = v->xdg_surface->toplevel->title;
+			const char *app_id = v->xdg_surface->toplevel->app_id;
+			if (title != NULL) {
+				snprintf(state.app_switcher_titles[i],
+					sizeof(state.app_switcher_titles[i]),
+					"%s", title);
+			} else {
+				state.app_switcher_titles[i][0] = '\0';
+			}
+			if (app_id != NULL) {
+				snprintf(state.app_switcher_app_ids[i],
+					sizeof(state.app_switcher_app_ids[i]),
+					"%s", app_id);
+			} else {
+				state.app_switcher_app_ids[i][0] = '\0';
+			}
+		} else {
+			state.app_switcher_titles[i][0] = '\0';
+			state.app_switcher_app_ids[i][0] = '\0';
+		}
+	}
 		const struct orange_shell_draw_options options = {
 			.draw_wallpaper = true,
 			.skip_transient_overlays = true,
@@ -7318,7 +7352,8 @@ static void output_redraw_overlay(struct orange_output *output) {
 			!server->launcher_app_drag_active &&
 			!dock_auto_hide_overlay &&
 			!minimize_overlay &&
-			server->hot_dock_index < 0) {
+			server->hot_dock_index < 0 &&
+			!server->app_switcher_active) {
 		if (output->overlay_bounds_valid) {
 			output_clear_overlay_region(output, &output->overlay_bounds);
 			output_set_overlay_damage(output, &output->overlay_bounds);
@@ -12136,6 +12171,70 @@ static void handle_cursor_frame(struct wl_listener *listener, void *data) {
 	wlr_seat_pointer_notify_frame(server->seat);
 }
 
+static void app_switcher_activate(struct orange_server *server) {
+	if (server->app_switcher_active) {
+		return;
+	}
+	server->app_switcher_active = true;
+	server->app_switcher_index = 0;
+	server->app_switcher_count = 0;
+
+	struct orange_view *view;
+	wl_list_for_each(view, &server->views, link) {
+		if (!view->mapped) {
+			continue;
+		}
+		if ((server->app_switcher_current_workspace_only ||
+				server->window_switcher_current_workspace_only) &&
+				!view_is_visible_on_current_workspace(view)) {
+			continue;
+		}
+		if (server->app_switcher_count < 128) {
+			server->app_switcher_views[server->app_switcher_count] = view;
+			server->app_switcher_count++;
+		}
+	}
+	if (server->app_switcher_count > 0) {
+		server_mark_overlay_dirty(server);
+	}
+}
+
+static void app_switcher_cycle(struct orange_server *server) {
+	if (!server->app_switcher_active || server->app_switcher_count == 0) {
+		return;
+	}
+	server->app_switcher_index =
+		(server->app_switcher_index + 1) % server->app_switcher_count;
+	server_mark_overlay_dirty(server);
+}
+
+static void app_switcher_commit(struct orange_server *server) {
+	if (!server->app_switcher_active) {
+		return;
+	}
+	server->app_switcher_active = false;
+	if (server->app_switcher_count > 0 &&
+			server->app_switcher_index >= 0 &&
+			server->app_switcher_index < server->app_switcher_count) {
+		struct orange_view *view =
+			server->app_switcher_views[server->app_switcher_index];
+		if (view != NULL && view->mapped) {
+			focus_view(view, view->xdg_surface->surface);
+		}
+	}
+	server->app_switcher_count = 0;
+	server_mark_overlay_dirty(server);
+}
+
+static void app_switcher_cancel(struct orange_server *server) {
+	if (!server->app_switcher_active) {
+		return;
+	}
+	server->app_switcher_active = false;
+	server->app_switcher_count = 0;
+	server_mark_overlay_dirty(server);
+}
+
 static bool handle_keybinding(
 		struct orange_server *server,
 		xkb_keysym_t sym,
@@ -12155,7 +12254,7 @@ static bool handle_keybinding(
 		close_focused_view(server);
 		return true;
 	case XKB_KEY_Tab:
-		cycle_focus(server);
+		app_switcher_activate(server);
 		return true;
 	case XKB_KEY_Page_Up:
 	case XKB_KEY_Left:
@@ -12231,6 +12330,38 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 		&syms);
 	uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->keyboard);
 	bool logo = modifiers & WLR_MODIFIER_LOGO;
+	bool alt = modifiers & WLR_MODIFIER_ALT;
+
+	if (server->app_switcher_active) {
+		if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED) {
+			if (!(modifiers & WLR_MODIFIER_LOGO) &&
+					!(modifiers & WLR_MODIFIER_ALT)) {
+				app_switcher_commit(server);
+				return;
+			}
+			return;
+		}
+		bool consumed = false;
+		for (int i = 0; i < nsyms; i++) {
+			if (syms[i] == XKB_KEY_Tab) {
+				app_switcher_cycle(server);
+				consumed = true;
+				break;
+			}
+			if (syms[i] == XKB_KEY_Escape) {
+				app_switcher_cancel(server);
+				consumed = true;
+				break;
+			}
+		}
+		if (consumed) {
+			return;
+		}
+		if (!logo && !alt) {
+			app_switcher_commit(server);
+		}
+		return;
+	}
 
 	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED &&
 			server->desktop_rename.active) {
@@ -12474,6 +12605,17 @@ static void handle_keyboard_key(struct wl_listener *listener, void *data) {
 		for (int i = 0; i < nsyms; i++) {
 			handled = handle_keybinding(server, syms[i], modifiers);
 			if (handled) {
+				break;
+			}
+		}
+	}
+
+	if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && alt &&
+			!handled) {
+		for (int i = 0; i < nsyms; i++) {
+			if (syms[i] == XKB_KEY_Tab) {
+				app_switcher_activate(server);
+				handled = true;
 				break;
 			}
 		}
@@ -12783,6 +12925,9 @@ static void handle_view_unmap(struct wl_listener *listener, void *data) {
 	view_drop_minimized_snapshot(view);
 	if (view->scene_tree != NULL) {
 		wlr_scene_node_set_enabled(&view->scene_tree->node, false);
+	}
+	if (view->server->app_switcher_active) {
+		app_switcher_cancel(view->server);
 	}
 	if (view->server->focused_view == view) {
 		view->server->focused_view = NULL;
