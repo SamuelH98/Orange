@@ -1,6 +1,7 @@
 #ifndef ORANGE_DOCK_H
 #define ORANGE_DOCK_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "orange/shell.h"
@@ -104,6 +105,16 @@ bool orange_dock_config_insert_app(
 	struct orange_config *config,
 	const char *app_id,
 	int visible_index);
+void orange_dock_draw_hover_label_only(
+	cairo_t *cr,
+	const struct orange_shell_layout *layout,
+	const struct orange_shell_state *state,
+	const struct orange_config *config);
+bool orange_dock_hover_label_rect(
+	const struct orange_shell_layout *layout,
+	const struct orange_shell_state *state,
+	const struct orange_config *config,
+	struct orange_rect *out_rect);
 void orange_dock_draw_drag_overlay(
 	cairo_t *cr,
 	const struct orange_shell_layout *layout,

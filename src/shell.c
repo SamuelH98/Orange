@@ -4774,6 +4774,13 @@ bool orange_shell_overlay_bounds(
 	if (dock_auto_hide_overlay) {
 		include_overlay_rect(&bounds, &has_bounds, &layout.dock);
 	}
+	if (!dock_auto_hide_overlay && state->hot_dock_index >= 0) {
+		struct orange_rect label_rect = {0};
+		if (orange_dock_hover_label_rect(&layout, state, config,
+				&label_rect)) {
+			include_overlay_rect(&bounds, &has_bounds, &label_rect);
+		}
+	}
 	if (state->notification_center_open) {
 		include_overlay_rect(&bounds, &has_bounds,
 			&layout.notification_center_panel);
@@ -4858,6 +4865,9 @@ static void draw_overlay_contents(cairo_t *cr,
 		dock_auto_hide_overlay_active_for_state(config, state);
 	if (dock_auto_hide_overlay) {
 		orange_dock_draw(cr, &layout, state, config);
+	}
+	if (!dock_auto_hide_overlay && state->hot_dock_index >= 0) {
+		orange_dock_draw_hover_label_only(cr, &layout, state, config);
 	}
 	if (state->notification_center_open) {
 		draw_notification_center(cr, &layout, state, config);

@@ -7317,7 +7317,8 @@ static void output_redraw_overlay(struct orange_output *output) {
 			!server->dock_drag_active &&
 			!server->launcher_app_drag_active &&
 			!dock_auto_hide_overlay &&
-			!minimize_overlay) {
+			!minimize_overlay &&
+			server->hot_dock_index < 0) {
 		if (output->overlay_bounds_valid) {
 			output_clear_overlay_region(output, &output->overlay_bounds);
 			output_set_overlay_damage(output, &output->overlay_bounds);
@@ -8174,6 +8175,7 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 			} else {
 				server_mark_dock_visual_dirty(server);
 			}
+			server_mark_overlay_dirty(server);
 		} else if (new_hot >= 0 && server->config.dock_magnification) {
 			int dx = abs(local_x - server->last_dock_pointer_x);
 			int dy = abs(local_y - server->last_dock_pointer_y);
@@ -8188,6 +8190,7 @@ static void process_cursor_motion(struct orange_server *server, uint32_t time_ms
 				} else {
 					server_mark_dock_visual_dirty(server);
 				}
+				server_mark_overlay_dirty(server);
 			}
 		} else if (new_hot < 0) {
 			server->last_dock_pointer_x = INT_MIN;

@@ -1676,6 +1676,95 @@ void orange_dock_draw(
 	draw_dock(cr, layout, state, config);
 }
 
+void orange_dock_draw_hover_label_only(
+		cairo_t *cr,
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		const struct orange_config *config) {
+	struct orange_dock_visual_item visual[ORANGE_DOCK_MAX];
+	orange_dock_compute_visual_items(layout, state, config, visual);
+	draw_dock_hover_label(cr, layout, state, config, visual);
+}
+
+bool orange_dock_hover_label_rect(
+		const struct orange_shell_layout *layout,
+		const struct orange_shell_state *state,
+		const struct orange_config *config,
+		struct orange_rect *out_rect) {
+	if (out_rect == NULL) {
+		return false;
+	}
+	*out_rect = (struct orange_rect){0, 0, 0, 0};
+	if (layout == NULL || state == NULL || config == NULL) {
+		return false;
+	}
+	int hot = state->hot_dock_index;
+	if (state->dock_drag_insert_before >= 0 ||
+			hot < 0 || hot >= layout->dock_item_count ||
+			hot == state->dock_drag_index) {
+		return false;
+	}
+	const char *label = orange_dock_visible_label(layout, state, config, hot);
+	if (label == NULL) {
+		return false;
+	}
+	struct orange_dock_visual_item visual[ORANGE_DOCK_MAX];
+	orange_dock_compute_visual_items(layout, state, config, visual);
+	double s = layout_scale(layout);
+	struct orange_rect item = visual[hot].rect;
+	double font_size = fmax(11.0, 19.0 * s);
+	double pad_x = fmax(8.0, 12.0 * s);
+	double bubble_h = fmax(24.0, 34.0 * s);
+	double gap = fmax(7.0, 10.0 * s);
+
+	cairo_surface_t *tmp = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
+	cairo_t *cr = cairo_create(tmp);
+	cairo_select_font_face(cr, orange_font_family,
+		CAIRO_FONT_SLANT_NORMAL,
+		CAIRO_FONT_WEIGHT_BOLD);
+	cairo_set_font_size(cr, font_size);
+	cairo_text_extents_t extents;
+	cairo_text_extents(cr, label, &extents);
+	double bubble_w = extents.x_advance + pad_x * 2.0;
+	double max_bubble_w = layout->width - 12.0 * s;
+	if (max_bubble_w < 80.0 * s) {
+		max_bubble_w = 80.0 * s;
+	}
+	if (bubble_w > max_bubble_w) {
+		bubble_w = max_bubble_w;
+	}
+	cairo_destroy(cr);
+	cairo_surface_destroy(tmp);
+
+	double bubble_x = item.x + item.width / 2.0 - bubble_w / 2.0;
+	double bubble_y = item.y - gap - bubble_h;
+	if (dock_layout_is_vertical(layout)) {
+		bubble_y = item.y + item.height / 2.0 - bubble_h / 2.0;
+		if (layout->dock_position == ORANGE_DOCK_POSITION_RIGHT) {
+			bubble_x = item.x - gap - bubble_w;
+		} else {
+			bubble_x = item.x + item.width + gap;
+		}
+	}
+	if (bubble_x < 6.0 * s) {
+		bubble_x = 6.0 * s;
+	}
+	if (bubble_x + bubble_w > layout->width - 6.0 * s) {
+		bubble_x = layout->width - 6.0 * s - bubble_w;
+	}
+	if (bubble_y < layout->menu_bar.height + 4.0 * s) {
+		bubble_y = item.y + item.height + gap;
+	}
+	if (bubble_y + bubble_h > layout->height - 6.0 * s) {
+		bubble_y = layout->height - 6.0 * s - bubble_h;
+	}
+	*out_rect = (struct orange_rect){
+		(int)bubble_x, (int)bubble_y,
+		(int)ceil(bubble_w), (int)ceil(bubble_h),
+	};
+	return true;
+}
+
 void orange_dock_draw_drag_overlay(
 		cairo_t *cr,
 		const struct orange_shell_layout *layout,
