@@ -58,6 +58,8 @@
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/xwayland/server.h>
+#include <wlr/xwayland/xwayland.h>
 #include <wlr/util/box.h>
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
@@ -134,6 +136,7 @@ struct orange_view {
 	struct wl_list link;
 	struct orange_server *server;
 	struct wlr_xdg_surface *xdg_surface;
+	struct wlr_xwayland_surface *xwayland_surface;
 	struct wlr_scene_tree *scene_tree;
 	struct wl_listener map;
 	struct wl_listener unmap;
@@ -148,6 +151,8 @@ struct orange_view {
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
 	struct wl_listener request_minimize;
+	struct wl_listener xwayland_associate;
+	struct wl_listener xwayland_dissociate;
 	int dock_launcher_index;
 	int x;
 	int y;
@@ -227,6 +232,7 @@ struct orange_server {
 	struct wl_display *display;
 	struct wlr_backend *backend;
 	struct wlr_renderer *renderer;
+	struct wlr_compositor *wlr_compositor;
 	struct wlr_allocator *allocator;
 	struct wlr_scene *scene;
 	struct wlr_scene_tree *shell_tree;
@@ -238,6 +244,7 @@ struct orange_server {
 	struct wlr_xdg_shell *xdg_shell;
 	struct wlr_viewporter *viewporter;
 	struct wlr_fractional_scale_manager_v1 *fractional_scale_manager;
+	struct wlr_xwayland *xwayland;
 	struct wlr_seat *seat;
 	struct wlr_cursor *cursor;
 	struct wlr_xcursor_manager *xcursor_manager;
@@ -260,6 +267,8 @@ struct orange_server {
 	struct wl_listener request_set_selection;
 	struct wl_listener request_set_primary_selection;
 	struct wl_listener new_xdg_decoration;
+	struct wl_listener new_xwayland_surface;
+	struct wl_listener xwayland_ready;
 
 	struct wl_listener cursor_motion;
 	struct wl_listener cursor_motion_absolute;
@@ -455,6 +464,49 @@ static void orange_listener_remove(struct wl_listener *listener) {
 	wl_list_init(&listener->link);
 }
 
+static bool view_is_xwayland(struct orange_view *view) {
+	return view != NULL && view->xwayland_surface != NULL;
+}
+
+static struct wlr_surface *view_get_wlr_surface(struct orange_view *view) {
+	if (view == NULL) {
+		return NULL;
+	}
+	if (view_is_xwayland(view)) {
+		return view->xwayland_surface->surface;
+	}
+	if (view->xdg_surface != NULL) {
+		return view->xdg_surface->surface;
+	}
+	return NULL;
+}
+
+static const char *view_get_title(struct orange_view *view) {
+	if (view == NULL) {
+		return NULL;
+	}
+	if (view_is_xwayland(view)) {
+		return view->xwayland_surface->title;
+	}
+	if (view->xdg_surface != NULL && view->xdg_surface->toplevel != NULL) {
+		return view->xdg_surface->toplevel->title;
+	}
+	return NULL;
+}
+
+static const char *view_get_app_id(struct orange_view *view) {
+	if (view == NULL) {
+		return NULL;
+	}
+	if (view_is_xwayland(view)) {
+		return view->xwayland_surface->class;
+	}
+	if (view->xdg_surface != NULL && view->xdg_surface->toplevel != NULL) {
+		return view->xdg_surface->toplevel->app_id;
+	}
+	return NULL;
+}
+
 static void server_init_listener_links(struct orange_server *server) {
 	orange_listener_init(&server->new_output);
 	orange_listener_init(&server->new_input);
@@ -509,6 +561,8 @@ static void start_dock_resize(struct orange_server *server,
 	const struct orange_shell_layout *layout);
 static void process_dock_resize(struct orange_server *server);
 static void finish_dock_resize(struct orange_server *server);
+static void handle_new_xwayland_surface(struct wl_listener *listener, void *data);
+static void handle_xwayland_ready(struct wl_listener *listener, void *data);
 static void process_launcher_drag(struct orange_server *server);
 static void process_launcher_scroll_drag(struct orange_server *server);
 static void process_launcher_app_drag(struct orange_server *server);
@@ -2601,14 +2655,14 @@ static void server_export_client_environment(void) {
 	launch_shell_command(
 		"if command -v dbus-update-activation-environment >/dev/null 2>&1; then "
 		"dbus-update-activation-environment --systemd "
-		"WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP "
+		"WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP "
 		"DESKTOP_SESSION XDG_SESSION_TYPE GTK_THEME GTK_ICON_THEME "
 		"ORANGE_APPEARANCE XCURSOR_THEME XCURSOR_SIZE "
 		"GDK_BACKEND QT_QPA_PLATFORM SDL_VIDEODRIVER CLUTTER_BACKEND "
 		"MOZ_ENABLE_WAYLAND ELECTRON_OZONE_PLATFORM_HINT NIXOS_OZONE_WL "
 		">/dev/null 2>&1 || "
 		"dbus-update-activation-environment "
-		"WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP "
+		"WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP "
 		"DESKTOP_SESSION XDG_SESSION_TYPE GTK_THEME GTK_ICON_THEME "
 		"ORANGE_APPEARANCE XCURSOR_THEME XCURSOR_SIZE "
 		"GDK_BACKEND QT_QPA_PLATFORM SDL_VIDEODRIVER CLUTTER_BACKEND "
@@ -3178,12 +3232,14 @@ static bool desktop_entry_matches_view(
 static const struct orange_desktop_entry *server_desktop_entry_for_view(
 		struct orange_server *server,
 		struct orange_view *view) {
-	if (server == NULL || view == NULL || view->xdg_surface == NULL ||
-			view->xdg_surface->toplevel == NULL) {
+	if (server == NULL || view == NULL) {
 		return NULL;
 	}
-	const char *app_id = view->xdg_surface->toplevel->app_id;
-	const char *title = view->xdg_surface->toplevel->title;
+	const char *app_id = view_get_app_id(view);
+	const char *title = view_get_title(view);
+	if (app_id == NULL) {
+		return NULL;
+	}
 	const struct orange_desktop_entry *entry =
 		server_desktop_entry_for_app_id(server, app_id);
 	if (entry != NULL) {
@@ -3340,15 +3396,17 @@ static int dock_launcher_for_visible_index(
 }
 
 static int dock_launcher_for_view(struct orange_server *server, struct orange_view *view) {
-	if (view == NULL || view->xdg_surface == NULL ||
-			view->xdg_surface->toplevel == NULL) {
+	if (view == NULL) {
 		return -1;
 	}
 	if (view->dock_launcher_index >= 0) {
 		return view->dock_launcher_index;
 	}
-	const char *app_id = view->xdg_surface->toplevel->app_id;
-	const char *title = view->xdg_surface->toplevel->title;
+	const char *app_id = view_get_app_id(view);
+	const char *title = view_get_title(view);
+	if (app_id == NULL) {
+		return -1;
+	}
 	int index = -1;
 	for (int i = 0; i < ORANGE_DOCK_MAX; i++) {
 		const char *dock_id = server->config.dock_apps[i];
@@ -3443,8 +3501,7 @@ static bool view_dock_identity(
 		return false;
 	}
 	buffer[0] = '\0';
-	if (server == NULL || view == NULL || view->xdg_surface == NULL ||
-			view->xdg_surface->toplevel == NULL) {
+	if (server == NULL || view == NULL) {
 		return false;
 	}
 
@@ -3455,13 +3512,13 @@ static bool view_dock_identity(
 		return true;
 	}
 
-	const char *app_id = view->xdg_surface->toplevel->app_id;
+	const char *app_id = view_get_app_id(view);
 	if (app_id != NULL && app_id[0] != '\0') {
 		snprintf(buffer, buffer_size, "%s", app_id);
 		return true;
 	}
 
-	const char *title = view->xdg_surface->toplevel->title;
+	const char *title = view_get_title(view);
 	if (title != NULL && title[0] != '\0') {
 		snprintf(buffer, buffer_size, "%s", title);
 		return true;
@@ -3507,12 +3564,8 @@ static bool view_matches_dock_identity(
 			dock_identity_matches(identity, app_id)) {
 		return true;
 	}
-	if (view->xdg_surface == NULL ||
-			view->xdg_surface->toplevel == NULL) {
-		return false;
-	}
-	const char *view_app_id = view->xdg_surface->toplevel->app_id;
-	const char *title = view->xdg_surface->toplevel->title;
+	const char *view_app_id = view_get_app_id(view);
+	const char *title = view_get_title(view);
 	return dock_identity_matches(view_app_id, app_id) ||
 		(title != NULL && title[0] != '\0' &&
 		 (contains_case(title, app_id) || contains_case(app_id, title)));
@@ -3530,7 +3583,7 @@ static bool focus_view_for_dock_identity(
 				!view_matches_dock_identity(server, view, app_id)) {
 			continue;
 		}
-		focus_view(view, view->xdg_surface->surface);
+		focus_view(view, view_get_wlr_surface(view));
 		return true;
 	}
 	return false;
@@ -3558,7 +3611,7 @@ static bool show_windows_for_dock_identity(
 		focus_target = view;
 	}
 	if (focus_target != NULL) {
-		focus_view(focus_target, focus_target->xdg_surface->surface);
+		focus_view(focus_target, view_get_wlr_surface(focus_target));
 	}
 	return found;
 }
@@ -3596,7 +3649,11 @@ static bool close_windows_for_dock_identity(
 			continue;
 		}
 		found = true;
-		wlr_xdg_toplevel_send_close(view->xdg_surface->toplevel);
+		if (view_is_xwayland(view)) {
+			wlr_xwayland_surface_close(view->xwayland_surface);
+		} else {
+			wlr_xdg_toplevel_send_close(view->xdg_surface->toplevel);
+		}
 	}
 	return found;
 }
@@ -3653,7 +3710,7 @@ static bool focus_view_for_dock_launcher(
 			continue;
 		}
 		if (dock_launcher_for_view(server, view) == launcher_idx) {
-			focus_view(view, view->xdg_surface->surface);
+			focus_view(view, view_get_wlr_surface(view));
 			return true;
 		}
 	}
@@ -3667,9 +3724,9 @@ static bool focus_view_for_app_id(struct orange_server *server,
 	struct orange_view *view;
 	wl_list_for_each(view, &server->views, link) {
 		if (!view->mapped) continue;
-		const char *app_id = view->xdg_surface->toplevel->app_id;
+		const char *app_id = view_get_app_id(view);
 		if (app_id != NULL && strcasestr(app_id, needle) != NULL) {
-			struct wlr_surface *surface = view->xdg_surface->surface;
+			struct wlr_surface *surface = view_get_wlr_surface(view);
 			if (surface != NULL) {
 				focus_view(view, surface);
 				return true;
@@ -3701,7 +3758,7 @@ static bool show_windows_for_dock_launcher(
 		focus_target = view;
 	}
 	if (focus_target != NULL) {
-		focus_view(focus_target, focus_target->xdg_surface->surface);
+		focus_view(focus_target, view_get_wlr_surface(focus_target));
 	}
 	return found;
 }
@@ -3739,7 +3796,11 @@ static bool close_windows_for_dock_launcher(
 			continue;
 		}
 		found = true;
-		wlr_xdg_toplevel_send_close(view->xdg_surface->toplevel);
+		if (view_is_xwayland(view)) {
+			wlr_xwayland_surface_close(view->xwayland_surface);
+		} else {
+			wlr_xdg_toplevel_send_close(view->xdg_surface->toplevel);
+		}
 	}
 	return found;
 }
@@ -3854,13 +3915,14 @@ static int server_minimized_dock_count(
 }
 
 static const char *view_minimized_dock_title(const struct orange_view *view) {
-	if (view == NULL || view->xdg_surface == NULL ||
-			view->xdg_surface->toplevel == NULL ||
-			view->xdg_surface->toplevel->title == NULL ||
-			view->xdg_surface->toplevel->title[0] == '\0') {
+	if (view == NULL) {
 		return "Minimized Window";
 	}
-	return view->xdg_surface->toplevel->title;
+	const char *title = view_get_title((struct orange_view *)view);
+	if (title == NULL || title[0] == '\0') {
+		return "Minimized Window";
+	}
+	return title;
 }
 
 static void server_populate_minimized_dock_titles(
@@ -3999,9 +4061,7 @@ static void server_active_app_label(
 	}
 	snprintf(buffer, buffer_size, "%s", "Files");
 	if (server == NULL || server->focused_view == NULL ||
-			!server->focused_view->mapped ||
-			server->focused_view->xdg_surface == NULL ||
-			server->focused_view->xdg_surface->toplevel == NULL) {
+			!server->focused_view->mapped) {
 		return;
 	}
 
@@ -4016,13 +4076,13 @@ static void server_active_app_label(
 		return;
 	}
 
-	const char *app_id = server->focused_view->xdg_surface->toplevel->app_id;
+	const char *app_id = view_get_app_id(server->focused_view);
 	format_app_id_label(buffer, buffer_size, app_id);
 	if (buffer[0] != '\0') {
 		return;
 	}
 
-	const char *title = server->focused_view->xdg_surface->toplevel->title;
+	const char *title = view_get_title(server->focused_view);
 	if (title != NULL && title[0] != '\0') {
 		snprintf(buffer, buffer_size, "%s", title);
 	}
@@ -4030,12 +4090,10 @@ static void server_active_app_label(
 
 static const char *focused_app_id(struct orange_server *server) {
 	if (server == NULL || server->focused_view == NULL ||
-			!server->focused_view->mapped ||
-			server->focused_view->xdg_surface == NULL ||
-			server->focused_view->xdg_surface->toplevel == NULL) {
+			!server->focused_view->mapped) {
 		return NULL;
 	}
-	return server->focused_view->xdg_surface->toplevel->app_id;
+	return view_get_app_id(server->focused_view);
 }
 
 static void strip_desktop_suffix(
@@ -4061,15 +4119,17 @@ static void strip_desktop_suffix(
 
 static int64_t focused_view_client_pid(struct orange_server *server) {
 	if (server == NULL || server->focused_view == NULL ||
-			!server->focused_view->mapped ||
-			server->focused_view->xdg_surface == NULL ||
-			server->focused_view->xdg_surface->surface == NULL ||
-			server->focused_view->xdg_surface->surface->resource == NULL) {
+			!server->focused_view->mapped) {
 		return 0;
 	}
 
-	struct wl_client *client = wl_resource_get_client(
-		server->focused_view->xdg_surface->surface->resource);
+	struct wlr_surface *surface =
+		view_get_wlr_surface(server->focused_view);
+	if (surface == NULL || surface->resource == NULL) {
+		return 0;
+	}
+
+	struct wl_client *client = wl_resource_get_client(surface->resource);
 	if (client == NULL) {
 		return 0;
 	}
@@ -5534,10 +5594,9 @@ static void output_redraw_shell(struct orange_output *output) {
 	state.app_switcher_count = output->server->app_switcher_count;
 	for (int i = 0; i < state.app_switcher_count && i < 128; i++) {
 		struct orange_view *v = output->server->app_switcher_views[i];
-		if (v != NULL && v->mapped && v->xdg_surface != NULL &&
-				v->xdg_surface->toplevel != NULL) {
-			const char *title = v->xdg_surface->toplevel->title;
-			const char *app_id = v->xdg_surface->toplevel->app_id;
+		if (v != NULL && v->mapped) {
+			const char *title = view_get_title(v);
+			const char *app_id = view_get_app_id(v);
 			if (title != NULL) {
 				snprintf(state.app_switcher_titles[i],
 					sizeof(state.app_switcher_titles[i]),
@@ -6305,10 +6364,11 @@ static void minimize_animation_cancel_internal(
 		server_mark_shell_dirty(server);
 	}
 	if (focus_on_complete && server_view_is_live(server, view) &&
-			view->mapped && !view->minimized &&
-			view->xdg_surface != NULL &&
-			view->xdg_surface->surface != NULL) {
-		focus_view(view, view->xdg_surface->surface);
+			view->mapped && !view->minimized) {
+		struct wlr_surface *wsurface = view_get_wlr_surface(view);
+		if (wsurface != NULL) {
+			focus_view(view, wsurface);
+		}
 	}
 	if (output != NULL && mark_dirty) {
 		output->overlay_dirty = true;
@@ -6698,8 +6758,8 @@ static void server_switch_workspace(struct orange_server *server, int workspace)
 		}
 	}
 	struct orange_view *view = server_first_visible_view(server);
-	if (view != NULL && view->xdg_surface != NULL) {
-		focus_view(view, view->xdg_surface->surface);
+	if (view != NULL && view_get_wlr_surface(view) != NULL) {
+		focus_view(view, view_get_wlr_surface(view));
 	} else {
 		focus_desktop_files(server);
 	}
@@ -7568,6 +7628,10 @@ static bool view_configure_ready(struct orange_view *view) {
 static bool view_configure_activated(
 		struct orange_view *view,
 		bool activated) {
+	if (view_is_xwayland(view)) {
+		wlr_xwayland_surface_activate(view->xwayland_surface, activated);
+		return true;
+	}
 	if (!view_configure_ready(view)) {
 		return false;
 	}
@@ -7579,6 +7643,11 @@ static bool view_configure_size(
 		struct orange_view *view,
 		int width,
 		int height) {
+	if (view_is_xwayland(view)) {
+		wlr_xwayland_surface_configure(view->xwayland_surface,
+			view->x, view->y, width, height);
+		return true;
+	}
 	if (!view_configure_ready(view)) {
 		return false;
 	}
@@ -7589,6 +7658,11 @@ static bool view_configure_size(
 static bool view_configure_maximized(
 		struct orange_view *view,
 		bool maximized) {
+	if (view_is_xwayland(view)) {
+		wlr_xwayland_surface_set_maximized(view->xwayland_surface,
+			maximized, maximized);
+		return true;
+	}
 	if (!view_configure_ready(view)) {
 		return false;
 	}
@@ -7599,6 +7673,10 @@ static bool view_configure_maximized(
 static bool view_configure_fullscreen(
 		struct orange_view *view,
 		bool fullscreen) {
+	if (view_is_xwayland(view)) {
+		wlr_xwayland_surface_set_fullscreen(view->xwayland_surface, fullscreen);
+		return true;
+	}
 	if (!view_configure_ready(view)) {
 		return false;
 	}
@@ -7607,6 +7685,9 @@ static bool view_configure_fullscreen(
 }
 
 static bool view_configure_wm_capabilities(struct orange_view *view) {
+	if (view_is_xwayland(view)) {
+		return true;
+	}
 	struct wlr_xdg_toplevel *toplevel = view_toplevel(view);
 	if (toplevel == NULL || toplevel->resource == NULL ||
 			!view_configure_ready(view)) {
@@ -7624,6 +7705,9 @@ static bool view_configure_wm_capabilities(struct orange_view *view) {
 }
 
 static bool view_send_initial_configure(struct orange_view *view) {
+	if (view_is_xwayland(view)) {
+		return true;
+	}
 	if (!view_configure_ready(view)) {
 		return false;
 	}
@@ -8256,7 +8340,13 @@ static void begin_interactive(
 
 static void close_focused_view(struct orange_server *server) {
 	if (server->focused_view != NULL && server->focused_view->mapped) {
-		wlr_xdg_toplevel_send_close(server->focused_view->xdg_surface->toplevel);
+		if (view_is_xwayland(server->focused_view)) {
+			wlr_xwayland_surface_close(
+				server->focused_view->xwayland_surface);
+		} else {
+			wlr_xdg_toplevel_send_close(
+				server->focused_view->xdg_surface->toplevel);
+		}
 	}
 }
 
@@ -8351,7 +8441,7 @@ static void cycle_focus(struct orange_server *server) {
 		candidate = first_mapped;
 	}
 	if (candidate != NULL) {
-		focus_view(candidate, candidate->xdg_surface->surface);
+		focus_view(candidate, view_get_wlr_surface(candidate));
 	}
 }
 
@@ -8791,7 +8881,7 @@ static void show_all_apps(struct orange_server *server) {
 		}
 	}
 	if (focus_target != NULL) {
-		focus_view(focus_target, focus_target->xdg_surface->surface);
+		focus_view(focus_target, view_get_wlr_surface(focus_target));
 	}
 }
 
@@ -12099,7 +12189,7 @@ static void handle_cursor_button(struct wl_listener *listener, void *data) {
 				wlr_surface_get_root_surface(surface);
 			struct wlr_surface *keyboard_surface = root != NULL &&
 				wlr_xdg_popup_try_from_wlr_surface(root) != NULL ?
-				view->xdg_surface->surface : surface;
+				view_get_wlr_surface(view) : surface;
 			focus_view(view, keyboard_surface);
 			wlr_seat_pointer_notify_enter(server->seat, surface, sx, sy);
 		} else {
@@ -12219,7 +12309,7 @@ static void app_switcher_commit(struct orange_server *server) {
 		struct orange_view *view =
 			server->app_switcher_views[server->app_switcher_index];
 		if (view != NULL && view->mapped) {
-			focus_view(view, view->xdg_surface->surface);
+			focus_view(view, view_get_wlr_surface(view));
 		}
 	}
 	server->app_switcher_count = 0;
@@ -12784,6 +12874,24 @@ static void handle_view_commit(struct wl_listener *listener, void *data) {
 	struct orange_view *view = wl_container_of(listener, view, commit);
 	(void)data;
 
+	if (view_is_xwayland(view)) {
+		if (!view->mapped) {
+			return;
+		}
+		struct wlr_surface *surface = view->xwayland_surface->surface;
+		if (surface->current.width > 0 && surface->current.height > 0 &&
+				view->server->cursor_mode != ORANGE_CURSOR_RESIZE) {
+			bool size_changed = (int)surface->current.width != view->width ||
+				(int)surface->current.height != view->height;
+			view->width = surface->current.width;
+			view->height = surface->current.height;
+			if (size_changed && view->server->config.dock_auto_hide) {
+				server_mark_shell_dirty(view->server);
+			}
+		}
+		return;
+	}
+
 	if (view->xdg_surface->initial_commit) {
 		if (!view_send_initial_configure(view)) {
 			view_schedule_initial_configure(view);
@@ -12812,9 +12920,88 @@ static void handle_view_map(struct wl_listener *listener, void *data) {
 	struct orange_view *view = wl_container_of(listener, view, map);
 	(void)data;
 
+	struct orange_server *server = view->server;
+
+	if (view_is_xwayland(view)) {
+		struct wlr_xwayland_surface *xwayland_surface = view->xwayland_surface;
+
+		if (view->scene_tree == NULL) {
+			view->scene_tree = wlr_scene_tree_create(
+				server->window_tree);
+			if (view->scene_tree == NULL) {
+				return;
+			}
+			wlr_scene_surface_create(view->scene_tree,
+				xwayland_surface->surface);
+			view->scene_tree->node.data = view;
+			xwayland_surface->surface->data = view;
+		}
+
+		view->width = xwayland_surface->surface->current.width;
+		view->height = xwayland_surface->surface->current.height;
+		if (view->width <= 0) {
+			view->width = 900;
+		}
+		if (view->height <= 0) {
+			view->height = 620;
+		}
+
+		int local_x = 0;
+		int local_y = 0;
+		struct orange_output *output = output_at_cursor(server, &local_x, &local_y);
+		(void)local_x;
+		(void)local_y;
+		if (output == NULL && !wl_list_empty(&server->outputs)) {
+			output = wl_container_of(server->outputs.next, output, link);
+		}
+		if (output != NULL) {
+			struct orange_rect work;
+			if (!output_work_area_in_layout(server, output, &work)) {
+				return;
+			}
+			int work_left = work.x;
+			int work_top = work.y;
+			int work_right = work.x + work.width;
+			int work_bottom = work.y + work.height;
+			view->x = work_left + (work_right - work_left - view->width) / 2;
+			view->y = work_top + 30;
+			constrain_view_position(server, &view->x, &view->y,
+				view->width, view->height);
+			if (view->y + view->height > work_bottom) {
+				view->y = work_top;
+			}
+		} else {
+			struct wlr_box layout_box;
+			wlr_output_layout_get_box(server->output_layout, NULL, &layout_box);
+			if (layout_box.width <= 0 || layout_box.height <= 0) {
+				layout_box = (struct wlr_box){0, 0,
+					server->options->width, server->options->height};
+			}
+			view->x = layout_box.x + (layout_box.width - view->width) / 2;
+			view->y = layout_box.y + 78;
+			if (view->x < layout_box.x + 24) {
+				view->x = layout_box.x + 24;
+			}
+		}
+
+		wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
+		wlr_scene_node_set_enabled(&view->scene_tree->node, true);
+		view->mapped = true;
+		view->minimized = false;
+		view->workspace = clamp_workspace_index(
+			server_effective_current_workspace(server), server->workspace_count);
+		if (server->launcher_open) {
+			launcher_close_overlay(server);
+		}
+		server_normalize_workspaces(server);
+		server_apply_workspace_visibility(server);
+		focus_view(view, xwayland_surface->surface);
+		server_mark_dock_dirty(server);
+		return;
+	}
+
 	struct wlr_xdg_surface *xdg_surface = view->xdg_surface;
 	struct wlr_xdg_toplevel *toplevel = xdg_surface->toplevel;
-	struct orange_server *server = view->server;
 
 	if (view->scene_tree == NULL) {
 		view->scene_tree = wlr_scene_xdg_surface_create(
@@ -12902,7 +13089,7 @@ static void handle_view_map(struct wl_listener *listener, void *data) {
 	}
 	server_normalize_workspaces(server);
 	server_apply_workspace_visibility(server);
-	focus_view(view, view->xdg_surface->surface);
+	focus_view(view, view_get_wlr_surface(view));
 	if (server->cursor_loading_active) {
 		int loading_launcher_idx = server->cursor_loading_launcher_idx;
 		if (loading_launcher_idx < 0 ||
@@ -13218,6 +13405,78 @@ static void handle_new_xdg_toplevel(struct wl_listener *listener, void *data) {
 	view->request_minimize.notify = handle_view_request_minimize;
 	wl_signal_add(&xdg_surface->toplevel->events.request_minimize,
 		&view->request_minimize);
+
+	wl_list_insert(&server->views, &view->link);
+}
+
+static void handle_xwayland_ready(struct wl_listener *listener, void *data) {
+	struct orange_server *server =
+		wl_container_of(listener, server, xwayland_ready);
+	struct wlr_xwayland *xwayland = data;
+	(void)xwayland;
+
+	setenv("DISPLAY", server->xwayland->display_name, true);
+	wlr_log(WLR_INFO, "xwayland ready, DISPLAY=%s",
+		server->xwayland->display_name);
+	server_export_client_environment();
+}
+
+static void handle_xwayland_surface_associate(struct wl_listener *listener, void *data) {
+	struct orange_view *view = wl_container_of(listener, view, xwayland_associate);
+	struct wlr_xwayland_surface *xwayland_surface = data;
+	(void)xwayland_surface;
+
+	view->map.notify = handle_view_map;
+	wl_signal_add(&view->xwayland_surface->surface->events.map, &view->map);
+	view->unmap.notify = handle_view_unmap;
+	wl_signal_add(&view->xwayland_surface->surface->events.unmap, &view->unmap);
+	view->commit.notify = handle_view_commit;
+	wl_signal_add(&view->xwayland_surface->surface->events.commit, &view->commit);
+}
+
+static void handle_xwayland_surface_dissociate(struct wl_listener *listener, void *data) {
+	struct orange_view *view = wl_container_of(listener, view, xwayland_dissociate);
+	(void)data;
+	orange_listener_remove(&view->map);
+	orange_listener_remove(&view->unmap);
+	orange_listener_remove(&view->commit);
+}
+
+static void handle_new_xwayland_surface(struct wl_listener *listener, void *data) {
+	struct orange_server *server =
+		wl_container_of(listener, server, new_xwayland_surface);
+	struct wlr_xwayland_surface *xwayland_surface = data;
+
+	if (xwayland_surface->override_redirect) {
+		return;
+	}
+
+	struct orange_view *view = calloc(1, sizeof(*view));
+	if (view == NULL) {
+		return;
+	}
+
+	view->server = server;
+	view->xwayland_surface = xwayland_surface;
+	view->scene_tree = NULL;
+	view->dock_launcher_index = -1;
+
+	view->destroy.notify = handle_view_destroy;
+	wl_signal_add(&xwayland_surface->events.destroy, &view->destroy);
+
+	view->xwayland_associate.notify = handle_xwayland_surface_associate;
+	wl_signal_add(&xwayland_surface->events.associate, &view->xwayland_associate);
+	view->xwayland_dissociate.notify = handle_xwayland_surface_dissociate;
+	wl_signal_add(&xwayland_surface->events.dissociate, &view->xwayland_dissociate);
+
+	if (xwayland_surface->surface != NULL) {
+		view->map.notify = handle_view_map;
+		wl_signal_add(&xwayland_surface->surface->events.map, &view->map);
+		view->unmap.notify = handle_view_unmap;
+		wl_signal_add(&xwayland_surface->surface->events.unmap, &view->unmap);
+		view->commit.notify = handle_view_commit;
+		wl_signal_add(&xwayland_surface->surface->events.commit, &view->commit);
+	}
 
 	wl_list_insert(&server->views, &view->link);
 }
@@ -13908,7 +14167,7 @@ static bool server_init(struct orange_server *server,
 		return false;
 	}
 
-	wlr_compositor_create(server->display, 5, server->renderer);
+	server->wlr_compositor = wlr_compositor_create(server->display, 5, server->renderer);
 	wlr_subcompositor_create(server->display);
 	server->viewporter = wlr_viewporter_create(server->display);
 	if (server->viewporter == NULL) {
@@ -13946,6 +14205,19 @@ static bool server_init(struct orange_server *server,
 	server->new_xdg_popup.notify = handle_new_xdg_popup;
 	wl_signal_add(&server->xdg_shell->events.new_popup,
 		&server->new_xdg_popup);
+
+	server->xwayland = wlr_xwayland_create(server->display, server->wlr_compositor, false);
+	if (server->xwayland != NULL) {
+		server->new_xwayland_surface.notify = handle_new_xwayland_surface;
+		wl_signal_add(&server->xwayland->events.new_surface,
+			&server->new_xwayland_surface);
+		server->xwayland_ready.notify = handle_xwayland_ready;
+		wl_signal_add(&server->xwayland->events.ready,
+			&server->xwayland_ready);
+		wlr_log(WLR_INFO, "xwayland created%s", "");
+	} else {
+		wlr_log(WLR_ERROR, "%s", "failed to create xwayland");
+	}
 
 	server->scene = wlr_scene_create();
 	server->shell_tree = wlr_scene_tree_create(&server->scene->tree);
@@ -14061,6 +14333,10 @@ static bool server_init(struct orange_server *server,
 }
 
 static void server_finish(struct orange_server *server) {
+	if (server->xwayland != NULL) {
+		wlr_xwayland_destroy(server->xwayland);
+		server->xwayland = NULL;
+	}
 	if (server->display != NULL) {
 		wl_display_destroy_clients(server->display);
 	}
