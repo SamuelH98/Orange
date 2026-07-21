@@ -599,6 +599,7 @@ static void draw_minimized_dock_snapshots(
 	const struct orange_rect *clip);
 
 static char orange_client_wayland_display[128];
+static char orange_server_xwayland_display[128];
 static bool orange_client_launch_private_dbus;
 
 #define ORANGE_APP_MENU_DISCOVERY_RETRY_MS 1000
@@ -2567,8 +2568,8 @@ static void apply_client_launch_environment(
 	if (orange_client_wayland_display[0] != '\0') {
 		setenv("WAYLAND_DISPLAY", orange_client_wayland_display, true);
 	}
-	if (server_xwayland_display[0] != '\0') {   // see note below
-		setenv("DISPLAY", server_xwayland_display, true);
+	if (orange_server_xwayland_display[0] != '\0') {
+		setenv("DISPLAY", orange_server_xwayland_display, true);
 	}
 	apply_client_toolkit_environment(force_wayland_backends);
 	apply_client_ozone_environment(command, force_wayland_backends);
@@ -13416,6 +13417,9 @@ static void handle_xwayland_ready(struct wl_listener *listener, void *data) {
 	(void)xwayland;
 
 	setenv("DISPLAY", server->xwayland->display_name, true);
+	snprintf(orange_server_xwayland_display,
+		sizeof(orange_server_xwayland_display), "%s",
+		server->xwayland->display_name);
 	wlr_log(WLR_INFO, "xwayland ready, DISPLAY=%s",
 		server->xwayland->display_name);
 	server_export_client_environment();
