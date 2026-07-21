@@ -600,6 +600,7 @@ static void draw_minimized_dock_snapshots(
 
 static char orange_client_wayland_display[128];
 static char orange_server_xwayland_display[128];
+static bool orange_xwayland_ready;
 static bool orange_client_launch_private_dbus;
 
 #define ORANGE_APP_MENU_DISCOVERY_RETRY_MS 1000
@@ -2570,6 +2571,14 @@ static void apply_client_launch_environment(
 	}
 	if (orange_server_xwayland_display[0] != '\0') {
 		setenv("DISPLAY", orange_server_xwayland_display, true);
+		// wlroots starts Xwayland without an -auth cookie file, so it accepts
+		// any local connection unauthenticated. If XAUTHORITY was inherited
+		// from an outer session (e.g. GNOME/mutter, which *does* generate one
+		// at /run/user/<uid>/.mutter-Xwaylandauth.XXXXXX), X11 client libs
+		// will try to authenticate against that stale cookie file and fail
+		// to connect with "cannot open display" even though DISPLAY is
+		// correct. Clear it so clients fall back to unauthenticated connect.
+		unsetenv("XAUTHORITY");
 	}
 	apply_client_toolkit_environment(force_wayland_backends);
 	apply_client_ozone_environment(command, force_wayland_backends);
@@ -13417,9 +13426,11 @@ static void handle_xwayland_ready(struct wl_listener *listener, void *data) {
 	(void)xwayland;
 
 	setenv("DISPLAY", server->xwayland->display_name, true);
+	unsetenv("XAUTHORITY");
 	snprintf(orange_server_xwayland_display,
 		sizeof(orange_server_xwayland_display), "%s",
 		server->xwayland->display_name);
+	orange_xwayland_ready = true;
 	wlr_log(WLR_INFO, "xwayland ready, DISPLAY=%s",
 		server->xwayland->display_name);
 	server_export_client_environment();
@@ -14333,6 +14344,37 @@ static bool server_init(struct orange_server *server,
 	if (socket != NULL) {
 		wlr_log(WLR_INFO, "running on Wayland display %s", socket);
 	}
+
+	if (server->xwayland != NULL) {
+		// wlr_xwayland_create() only starts the Xwayland process; the
+		// DISPLAY value isn't valid until the async "ready" event fires,
+		// which requires this event loop to be dispatched at least once.
+		// Without this wait, a client forked immediately after server_init()
+		// returns (an autostart entry, or a terminal opened right away) can
+		// win the race and capture an empty DISPLAY in its environment
+		// permanently, even though DISPLAY becomes valid moments later.
+		struct wl_event_loop *xwayland_wait_loop =
+			wl_display_get_event_loop(server->display);
+		const int xwayland_ready_timeout_ms = 10000;
+		struct timespec wait_start;
+		clock_gettime(CLOCK_MONOTONIC, &wait_start);
+		while (!orange_xwayland_ready) {
+			struct timespec now;
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			long elapsed_ms = (now.tv_sec - wait_start.tv_sec) * 1000 +
+				(now.tv_nsec - wait_start.tv_nsec) / 1000000;
+			if (elapsed_ms >= xwayland_ready_timeout_ms) {
+				wlr_log(WLR_ERROR, "%s",
+					"timed out waiting for xwayland to become ready; "
+					"continuing without a guaranteed DISPLAY for early clients");
+				break;
+			}
+			wl_display_flush_clients(server->display);
+			wl_event_loop_dispatch(xwayland_wait_loop,
+				(int)(xwayland_ready_timeout_ms - elapsed_ms));
+		}
+	}
+
 	return true;
 }
 
