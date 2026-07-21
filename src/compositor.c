@@ -1338,9 +1338,9 @@ static void clear_legacy_appmenu_environment(void) {
 static void apply_client_toolkit_environment(bool force_wayland_backends) {
 	clear_legacy_appmenu_environment();
 	if (force_wayland_backends) {
-		setenv("GDK_BACKEND", "wayland", true);
-		setenv("QT_QPA_PLATFORM", "wayland", true);
-		setenv("SDL_VIDEODRIVER", "wayland", true);
+		setenv("GDK_BACKEND", "wayland,x11", true);   // fallback list, not exclusive
+		setenv("QT_QPA_PLATFORM", "wayland;xcb", true);
+		setenv("SDL_VIDEODRIVER", "wayland,x11", true);
 		setenv("CLUTTER_BACKEND", "wayland", true);
 		setenv("MOZ_ENABLE_WAYLAND", "1", true);
 	} else {
@@ -2567,8 +2567,8 @@ static void apply_client_launch_environment(
 	if (orange_client_wayland_display[0] != '\0') {
 		setenv("WAYLAND_DISPLAY", orange_client_wayland_display, true);
 	}
-	if (force_wayland_backends) {
-		unsetenv("DISPLAY");
+	if (server_xwayland_display[0] != '\0') {   // see note below
+		setenv("DISPLAY", server_xwayland_display, true);
 	}
 	apply_client_toolkit_environment(force_wayland_backends);
 	apply_client_ozone_environment(command, force_wayland_backends);
