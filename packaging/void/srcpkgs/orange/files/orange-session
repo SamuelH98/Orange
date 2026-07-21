@@ -7,7 +7,7 @@ config_file="${config_dir}/orange.conf"
 
 mkdir -p "$config_dir"
 if [ ! -f "$config_file" ]; then
-	cp /usr/share/orange/orange.conf "$config_file"
+    cp /usr/share/orange/orange.conf "$config_file"
 fi
 
 unset GTK_MODULES
@@ -22,31 +22,43 @@ export WLR_BACKENDS=${WLR_BACKENDS:-drm,libinput}
 # On Optimus laptops, prefer the iGPU (AMD/Intel) over the NVIDIA dGPU.
 # The NVIDIA card often appears as card0 but does not drive the internal display.
 if [ -z "${WLR_DRM_DEVICES:-}" ]; then
-	for dev in /dev/dri/card*; do
-		[ -e "$dev" ] || continue
-		syspath=$(readlink -f "/sys/class/drm/$(basename "$dev")/device" 2>/dev/null) || continue
-		vendor=$(cat "$syspath/vendor" 2>/dev/null) || continue
-		# AMD=0x1002, Intel=0x8086 — prefer these over NVIDIA (0x10de)
-		case "$vendor" in
-			0x1002|0x8086)
-				WLR_DRM_DEVICES="$dev"
-				break
-				;;
-		esac
-	done
-	export WLR_DRM_DEVICES
+    for dev in /dev/dri/card*; do
+        [ -e "$dev" ] || continue
+        syspath=$(readlink -f "/sys/class/drm/$(basename "$dev")/device" 2>/dev/null) || continue
+        vendor=$(cat "$syspath/vendor" 2>/dev/null) || continue
+        # AMD=0x1002, Intel=0x8086 — prefer these over NVIDIA (0x10de)
+        case "$vendor" in
+            0x1002|0x8086)
+                WLR_DRM_DEVICES="$dev"
+                break
+                ;;
+        esac
+    done
+    export WLR_DRM_DEVICES
 fi
 export ORANGE_TERMINAL=${ORANGE_TERMINAL:-ghostty}
 export GTK_THEME=${GTK_THEME:-Adwaita}
 export GTK_ICON_THEME=${GTK_ICON_THEME:-Adwaita}
 export XCURSOR_THEME=${XCURSOR_THEME:-Adwaita}
 export XCURSOR_SIZE=${XCURSOR_SIZE:-28}
-export SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-wayland}
-export CLUTTER_BACKEND=${CLUTTER_BACKEND:-wayland}
+# Let orange's own C code manage toolkit backend fallback lists per-launch
+# (apply_client_toolkit_environment) instead of pinning these to Wayland-only
+# here, which removes the fallback for anything that doesn't go through
+# orange's own launch path.
 export MOZ_ENABLE_WAYLAND=${MOZ_ENABLE_WAYLAND:-1}
 export ELECTRON_OZONE_PLATFORM_HINT=${ELECTRON_OZONE_PLATFORM_HINT:-wayland}
 export NIXOS_OZONE_WL=${NIXOS_OZONE_WL:-1}
 
+# On Void (no systemd/pam_systemd), nothing guarantees a D-Bus session bus
+# exists for a custom Wayland session the way gnome-session provides one for
+# GNOME. Without one, orange's own dbus-update-activation-environment call
+# (used to propagate DISPLAY/WAYLAND_DISPLAY to session services once
+# Xwayland is ready) silently fails, and D-Bus-dependent client apps can fail
+# to start outright. dbus-run-session starts a fresh session bus, exports
+# DBUS_SESSION_BUS_ADDRESS, and runs orange as its child — but only if one
+# isn't already running (e.g. under GDM setups that do provide one).
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session -- /usr/bin/orange --config "$config_file"
+fi
 
-exec /usr/bin/orange \
-	--config "$config_file"
+exec /usr/bin/orange --config "$config_file"
